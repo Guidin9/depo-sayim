@@ -9,6 +9,28 @@ kullanım anlatır.
 
 ---
 
+## Yeni bilgisayara kurmak
+
+Önce **Python 3.10+** ve **Node.js LTS** kurun (Python kurulumunda
+*"Add python.exe to PATH"* kutusunu işaretleyin). Sonra:
+
+```powershell
+git clone https://github.com/Guidin9/depo-sayim.git
+cd depo-sayim
+.\kurulum.bat
+```
+
+`kurulum.bat` sanal ortamı kurar, paketleri indirir, arayüzü derler ve
+masaüstüne kısayol koyar. Bir kez, internet varken. Sonrası offline çalışır.
+
+> **Klasörü USB ile kopyalamayın.** `.venv` içinde onu yaratan bilgisayarın
+> Python yolu, `node_modules` içinde o makineye derlenmiş ikili dosyalar durur;
+> kopyalanınca `No Python at ...` hatası verir. `git clone` bunları hiç
+> taşımaz. Yine de kopyalanmış bir klasörle karşılaşırsanız `kurulum.bat`
+> bozuk `.venv`'i kendisi silip yeniden kurar.
+
+Güncelleme: `git pull` sonra `kurulum.bat`.
+
 ## Çift tıkla çalıştırma (depodaki laptop için)
 
 | Dosya | Ne yapar |
