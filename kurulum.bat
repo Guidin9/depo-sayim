@@ -9,6 +9,10 @@ echo  ============================================
 echo   DEPO SAYIM - KURULUM
 echo   Bu adim internet baglantisi ister.
 echo   Bir kez calistirmak yeterlidir.
+echo.
+echo   DIKKAT: Adimlar uzun surebilir (yavas disk veya antivirus
+echo   taramasi varsa 10+ dakika). Ekranda bir sure hicbir sey
+echo   yazmayabilir - bu normaldir. Ctrl+C ile KESMEYIN.
 echo  ============================================
 echo.
 
@@ -57,13 +61,16 @@ if defined VENV_OK (
     echo        Siliniyor ve sifirdan kuruluyor...
     rmdir /s /q ".venv"
   )
+  echo        Sanal ortam olusturuluyor - bu adim ciktisi olmadan
+  echo        birkac dakika surebilir, bekleyin...
   python -m venv .venv
   if errorlevel 1 goto :hata
+  echo        Sanal ortam hazir.
 )
 
 rem ---------------------------------------------------------------- 2/3 pip
 echo  [2/4] Python paketleri kuruluyor ^(fastapi, openpyxl, ...^)
-.venv\Scripts\python.exe -m pip install --disable-pip-version-check -q -r requirements.txt
+.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements.txt
 if errorlevel 1 goto :hata
 
 rem ---------------------------------------------------------------- 3/4 arayüz
@@ -72,7 +79,8 @@ rem tsc'yi "her sey guncel" diye yaniltabilir. Silmek bedava, garanti ucuz.
 if exist "web\tsconfig.tsbuildinfo" del /q "web\tsconfig.tsbuildinfo"
 echo  [3/4] Arayuz derleniyor ^(npm install + build^)
 cd web
-call npm install --no-audit --no-fund --silent
+echo        npm install calisiyor - ilk kurulumda uzun surer...
+call npm install --no-audit --no-fund
 if errorlevel 1 goto :hata_web
 call npm run build
 if errorlevel 1 goto :hata_web
