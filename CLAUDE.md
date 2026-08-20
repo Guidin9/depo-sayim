@@ -267,10 +267,13 @@ Excel çıktısı üretiyoruz.
 
 ## 7. Mevcut durum
 
-`depo_sayim.py` çalışan bir prototiptir (stdlib + openpyxl, tek dosya).
-Eşleştirme motoru, grup mantığı, kuyruk, ses geri bildirimi ve 5 sekmeli rapor
-çalışıyor ve gerçek veriyle test edildi. **Referans implementasyondur** —
-eşleştirme mantığı buradan alınmalı, arayüz sıfırdan yazılacak.
+Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
+altında React + Vite + Tailwind arayüz, 136 test geçiyor. Arayüzün tasarım
+dili §10'da, dağıtım ve kurulum tuzakları §11'de.
+
+`depo_sayim.py` ilk prototiptir (stdlib + openpyxl, tek dosya) ve **eşleştirme
+mantığının referansı olarak durur** — `app/matching.py` ile davranışı aynı
+olmalıdır.
 
 `komut_karti.py` Code128 komut barkodu kartı üretir (python-barcode gerektirir).
 
@@ -371,3 +374,117 @@ akmıyorsa bağlantı/sunucu tarafında (sunucu `--host 0.0.0.0` ile mi açık,
 Windows güvenlik duvarı 8000'i kapatıyor mu).
 
 Bu adımlar geçilmeden README'deki telefon bölümü doğrulanmış sayılmaz.
+---
+
+## 10. Arayüz tasarım dili
+
+**Durum: 2026-08-20'de yazıldı. Laptop tarayıcısında gerçek veriyle doğrulandı,
+gerçek telefonda test edilmedi (bkz. §9).**
+
+`Design.md` başka bir ürünün ("Measured") tanıtım sayfası promptudur — bizim
+projeyle işlevsel ilgisi yoktur, yalnızca **görsel dili** alınmıştır. Damıtılmış
+hâli: katmanlı koyu zemin, frosted cam kabuk, hap geometrisi, serif başlık /
+sans gövde ayrımı, `cubic-bezier(0.77, 0, 0.18, 1)` ile kademeli giriş.
+
+### 10.1 Değiştirilmeyen kurallar
+
+Design.md'nin bazı kararları depo koşullarıyla çelişir (§ kötü aydınlatma,
+uzaktan bakış, eldiven). Aşağıdakiler **bilerek** uyarlanmıştır:
+
+| Design.md | Bizde neden farklı |
+|---|---|
+| `.liquid-glass` yüzeyi `rgba(255,255,255,0.01)` | Arkasında koyu ürün fotoğrafı olduğu için okunuyor. Bizde arkada ızgara var; o opaklıkta nav metni depoda okunmaz. Panel renginin %72'si kullanıldı. |
+| Cam her yerde | Cam **yalnızca kabukta**: nav, panel başlığı, modal, telefon başlığı. Barkod girişi, sayaçlar, okutma şeridi ve liste satırları **opak** kalır. |
+| Google Fonts `<link>` | CDN yok (`vite.config.ts`). Fontlar `web/src/fonts/` altında self-host. **latin-ext şart** — `ğ Ğ ş Ş İ` o blokta, `ı` (U+0131) latin bloğunda. |
+| İmleç takipli spot ışık + video | Video yok, telefonda imleç yok. Yerine okutma sonucunun rengiyle kısa ambiyans ışıması (`Isima.tsx`) — sesli geri bildirimin görsel eşi. |
+
+### 10.2 CSS sınıfları (`web/src/stil.css`)
+
+| Sınıf | Nerede | Not |
+|---|---|---|
+| `.cam` | nav, panel kabuğu, modal, bölüm kartı | Gerçek `backdrop-filter`. **Önek sırası kritik**: `-webkit-backdrop-filter` önce, öneksiz sonra — ters yazılırsa Lightning CSS öneksizi eler ve bulanıklık hiç uygulanmaz. |
+| `.cam-hafif` | düğmeler | Aynı yüzey ve gradyan kenarlık, `backdrop-filter` YOK. Sayım ekranında ~10 sade düğme var; her biri gerçek cam olsa 10 ayrı backdrop katmanı çıkardı. |
+| `.cam-yogun` | telefonun yapışkan başlığı | %94 opak. %72'de altından kayan satırlar camın içinden okunup başlıkla yarışıyordu. |
+| `.girdi` | okutma şeridi, tampon satırı | 0.18s / 10px — kısa tutuldu, sahada geri bildirim gecikmesi hataya dönüşüyor. |
+| `.kademe` + `.kademe-1..8` | kuyruk kartları | Design.md'nin 100ms + n×60ms kademesi. 8'den sonrası sabit. |
+| `.isima` | okutma sonucu | 900ms'de sönen radyal ışık, `mix-blend-mode: screen`. |
+
+`prefers-reduced-motion` altında hepsi kapanır; `.isima` hiç çizilmez.
+
+### 10.3 Emoji kullanma
+
+Arayüzde **emoji yoktur**. Emoji her işletim sisteminde başka çizilir, kendi
+rengini dayatır, yazı tipi ölçeğine uymaz ve depo aydınlatmasında uzaktan
+bakınca renk lekesine döner. Bunun yerine `web/src/ikonlar.tsx` — 28 çizgi
+ikon, 24'lük ızgara, 1.75 kalınlık, `currentColor`. Yeni bir ikon gerekiyorsa
+oraya ekleyin; `📷` yazmayın.
+
+`▣ ✓ ⚠ ⛔` gibi geometrik glifler de ikona çevrildi. Metin içindeki `→` okları
+kaldı — onlar emoji değil, cümlenin parçası.
+
+**Ama ikon+metin çifti korunur**: `Rozet` ve durum şeritleri hem ikon hem yazı
+gösterir. Renk tek başına bilgi taşımaz (§ kötü aydınlatma).
+
+### 10.4 Tipografi
+
+- Başlıklar ve boş durumlar: `font-serif` (Instrument Serif). Boş durumlar italik.
+- Gövde: Inter.
+- **Sayaçlar serif DEĞİL** — Instrument Serif'te sabit genişlikli rakam
+  garantisi yok, sayaçlar her okutmada zıplardı. Inter + `.rakam`
+  (`tabular-nums`) kalır; "dev tipografi" karakteri boyutla verilir.
+
+### 10.5 Şirket logosu
+
+`app.ico` (kaynak) ve `web/public/logo.png` (256px, ico'dan çıkarıldı).
+Sekmede favicon, telefonda ana ekran kısayolu, PC'de sol üstte isimle,
+Sayım ekranı ve telefon başlığında yalnız işaret olarak kullanılır.
+
+---
+
+## 11. Dağıtım ve kurulum tuzakları
+
+**Dağıtım git ile yapılır**, USB ile klasör kopyalayarak değil:
+
+```
+git clone https://github.com/Guidin9/depo-sayim.git
+cd depo-sayim
+.\kurulum.bat
+```
+
+### 11.1 Klasör kopyalamak neden bozuluyor
+
+Python sanal ortamı, onu yaratan Python'un **mutlak yolunu** `pyvenv.cfg`
+içinde taşır:
+
+```
+home = C:\Users\<kullanici>\AppData\Local\Programs\Python\Python311
+```
+
+Klasör başka bilgisayara kopyalanınca `.venv\Scripts\python.exe` yerinde
+durur ama çalışmaz — `No Python at '...'` der. Aynı şekilde
+`web/node_modules` platforma özel derlenmiş ikili dosyalar (esbuild, rollup,
+lightningcss) içerir ve `tsconfig.tsbuildinfo` mutlak yol tutar.
+
+Hepsi `.gitignore`'da, yani `git clone` bunları hiç taşımaz. Buna rağmen
+`kurulum.bat` ve `baslat.bat` artık `.venv`'in **varlığına değil çalışıp
+çalışmadığına** bakar (`python -c "import sys"`); bozuksa silip yeniden kurar.
+
+### 11.2 Kurulum uzun sürebilir, sessiz değildir
+
+`pip -q` ve `npm --silent` bayrakları **bilerek kaldırıldı**: çıktıyı
+bastırdıkları için yavaş diskte veya antivirüs taramalı makinede kurulum
+donmuş gibi görünüyor ve Ctrl+C ile kesiliyordu. Yarım kesilen kurulumda
+arayüz derlenmemiş oluyor ve `baslat.bat` "Arayuz derlenmemis" hatası veriyor.
+
+Referans: `python -m venv` temiz bir makinede ~4 saniye. Dakikalar sürüyorsa
+klasör USB sürücüde ya da antivirüs her dosyayı tarıyordur.
+
+### 11.3 Batch dosyalarında çıplak ad kullanmayın
+
+`call kisayol.bat` bazı sistemlerde çözümlenmez
+(`NoDefaultCurrentDirectoryInExePath=1` ayarlıysa, kurumsal politikalarda ve
+UNC yollarında). Her zaman `call "%~dp0kisayol.bat"` yazın.
+
+`.gitattributes` `.bat` dosyalarını CRLF'te tutar — LF satır sonuyla cmd.exe
+etiket/goto çözümlemesini bozabilir.
+

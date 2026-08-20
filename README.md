@@ -23,6 +23,15 @@ cd depo-sayim
 `kurulum.bat` sanal ortamı kurar, paketleri indirir, arayüzü derler ve
 masaüstüne kısayol koyar. Bir kez, internet varken. Sonrası offline çalışır.
 
+> **Kurulum uzun sürebilir — Ctrl+C ile kesmeyin.** Yavaş diskte veya antivirüs
+> taramalı bir makinede `npm install` adımı 10+ dakika sürebilir ve arada uzun
+> süre yeni satır yazmayabilir. Yarım kesilirse arayüz derlenmemiş kalır ve
+> `baslat.bat` "Arayuz derlenmemis" hatası verir; çözüm `kurulum.bat`'ı yeniden
+> çalıştırmaktır (bozuk `.venv`'i kendisi temizler).
+>
+> Referans: `python -m venv` normal bir makinede ~4 saniyedir. Dakikalar
+> sürüyorsa klasör büyük ihtimalle **USB sürücüde**; `C:\` altına taşıyın.
+
 > **Klasörü USB ile kopyalamayın.** `.venv` içinde onu yaratan bilgisayarın
 > Python yolu, `node_modules` içinde o makineye derlenmiş ikili dosyalar durur;
 > kopyalanınca `No Python at ...` hatası verir. `git clone` bunları hiç
