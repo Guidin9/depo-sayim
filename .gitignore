@@ -1,0 +1,26 @@
+# Makineye ozel - asla depoya girmez, USB ile de tasinmamali:
+# sanal ortam kendi Python'unun MUTLAK yolunu icinde tasir, node_modules
+# platforma ozel ikili dosyalar icerir, tsbuildinfo mutlak yol tutar.
+.venv/
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Derleme ciktisi - kurulum.bat uretiyor
+app/static/
+
+# Calisma verisi
+data/
+sayim.db
+komut_karti.html
+
+# Gercek Tiger ciktilari: stok miktarlari, seri numaralari ve tutarlar icerir.
+# Bunlar sirket verisidir, public depoya girmez.
+deneme.XLSX
+*.XLSX
+*.xlsx
+*.xls
+*.xlsm

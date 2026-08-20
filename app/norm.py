@@ -1,0 +1,83 @@
+"""Normalizasyon ve sınıflandırma kuralları.
+
+Bu modül depo_sayim.py:15-50'den BİREBİR taşındı. Kurallar sahada gerçek
+veriyle doğrulandı — davranışı değiştirmeyin (CLAUDE.md 4.1, 4.3).
+"""
+import re
+
+TR = str.maketrans("ıİğĞüÜşŞöÖçÇ", "iigguussoocc")
+
+
+def norm(s):
+    """Büyük harf, Türkçe katla, harf-rakam dışını at."""
+    if s is None:
+        return ""
+    return re.sub(r"[^A-Z0-9]", "", str(s).translate(TR).upper())
+
+
+def sifirsiz(n):
+    """Baştaki sıfırlar atılmış varyant. Sadece tamamı rakam olan değerler için.
+
+    Tiger'da 00008682122630086 durabilir ama okuyucu 8682122630086 yazar
+    (CLAUDE.md 4.1). Rakam olmayan değerler için None döner ki alfanümerik
+    kodlarda yanlış eşleşme olmasın.
+    """
+    if not n or not n.isdigit():
+        return None
+    k = n.lstrip("0")
+    return k or None
+
+
+KOMUT = {"##SONRAKI##": "sonraki", "##IPTAL##": "iptal", "##GERIAL##": "gerial",
+         "##FAZLA##": "fazla", "##ATLA##": "atla", "##BITIR##": "bitir"}
+
+RAF_ONEK = "##RAF-"
+
+
+def komut_coz(ham):
+    """Okutulan değer komut barkodu mu? (komut_adi, raf) döner."""
+    u = str(ham).strip().upper()
+    if u in KOMUT:
+        return KOMUT[u], None
+    if u.startswith(RAF_ONEK) and u.endswith("##") and len(u) > len(RAF_ONEK) + 2:
+        return "raf", u[len(RAF_ONEK):-2]
+    return None, None
+
+
+def upc_mi(s):
+    """12-13 haneli, kontrol hanesi tutan perakende barkodu mu?"""
+    s = re.sub(r"\D", "", str(s))
+    if len(s) not in (12, 13):
+        return False
+    d = [int(c) for c in s]
+    t = sum(d[i] * (3 if (len(s) - 2 - i) % 2 == 0 else 1) for i in range(len(s) - 1))
+    return (10 - t % 10) % 10 == d[-1]
+
+
+KIRLI_KELIME = re.compile(r"SAYIM|SAYIN|STOK|CIKAN|DENEME|FAZLA|TEST|PROJE|DEPO|BAKIM")
+
+
+def kirli_mi(seri, kod):
+    """Seri numarası gerçek mi, yoksa stok tutturmak için uydurulmuş mu?"""
+    n, k = norm(seri), norm(kod)
+    if not n:
+        return 1, "bos"
+    if re.search(r"[ ]", str(seri)):
+        return 1, "bosluk"
+    if KIRLI_KELIME.search(n):
+        return 1, "placeholder"
+    if k and len(k) > 3 and n.startswith(k):
+        return 1, "kod+sayac"
+    if len(n) > 25:
+        return 1, "asiri uzun"
+    return 0, ""
+
+
+def izleme_coz(deger):
+    """Tiger'ın 'İzleme Yöntemi' metnini seri / lot / yok değerine indirger."""
+    s = str(deger or "")
+    if "Seri" in s or "SERI" in s.upper():
+        return "seri"
+    if "Lot" in s or "LOT" in s.upper():
+        return "lot"
+    return "yok"

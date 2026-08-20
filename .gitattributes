@@ -1,0 +1,16 @@
+# Varsayilan: metin dosyalari depoda LF.
+* text=auto eol=lf
+
+# Windows toplu is dosyalari CRLF olmali. LF satir sonuyla cmd.exe bazi
+# durumlarda etiket/goto cozumlemesini bozar; bu dosyalarin tek isi
+# Windows'ta cift tiklanmak.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Ikili dosyalar - donusum yok
+*.ico binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.XLSX binary
+*.xlsx binary
