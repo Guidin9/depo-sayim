@@ -16,6 +16,7 @@ sırasında tarayıp ilk tutanı döndürüyordu.
 import datetime
 import json
 
+from . import etiketler
 from .norm import komut_coz, norm, sifirsiz, upc_mi
 
 SAYILMADI = ("AND NOT EXISTS(SELECT 1 FROM okutma o WHERE o.oturum=? "
@@ -59,6 +60,29 @@ def coz(c, ham, yukleme, ambar, oturum):
         if notu:
             d["not"] = notu
         return d
+
+    # 1c) Kendi bastığımız SERİ etiketi (CLAUDE.md 12)
+    #
+    # Bağlanmış etiket burada yakalanmazsa ikinci okutulduğunda 'bilinmiyor'a
+    # düşer ve aynı malzemenin BİR SONRAKİ kirli slotunu doldurur — çift sayım.
+    # Gerçek S/N'lerde bu sorun yok çünkü onlar Tiger'da yazılı; bizim
+    # etiketimiz ise henüz yalnızca raporda duruyor.
+    #
+    # Malzeme etiketleri buraya girmez: onlar basımda `eslesme`'ye yazılıyor ve
+    # aşağıdaki 4. adımdan normal öğrenilmiş barkod gibi geçiyor.
+    # (etiket.tur='seri' bu satırdaki r["t"]=="seri" ile aynı şey değil: biri
+    # etiketin türü, diğeri çözümleme sonucu.)
+    e = c.execute("SELECT * FROM etiket WHERE kod=? AND tur='seri'", (n,)).fetchone()
+    if e:
+        if e["beklenen_id"]:
+            r = c.execute("SELECT * FROM beklenen WHERE id=?",
+                          (e["beklenen_id"],)).fetchone()
+            if r:
+                return {"t": "tekrar" if _sayildi(c, oturum, r["id"]) else "seri",
+                        "id": r["id"], "kod": r["kod"], "aciklama": r["aciklama"],
+                        "seri": r["seri"], "izleme": r["izleme"], "birim": r["birim"],
+                        "not": "etiket %s" % e["gosterim"]}
+        return {"t": "etiket_bos", "ham": ham, "etiket": e["gosterim"]}
 
     # 2) Birebir malzeme kodu
     r = c.execute("SELECT * FROM beklenen WHERE yukleme=? AND ambar=? AND kod_n=? "
@@ -127,6 +151,11 @@ def grup_coz(c, ot, raf=None):
     kod_h = next((x for x in coz_list if x[1]["t"] in ("kod", "ogrenilmis")), None)
     tekrar = next((x for x in coz_list if x[1]["t"] == "tekrar"), None)
     bilinmeyen = [h for h, r in coz_list if r["t"] in ("bilinmiyor", "upc")]
+    # Boş seri etiketi tanınmayan barkod DEĞİLDİR: bilinmeyen listesine girerse
+    # aşağıda `eslesme`'ye yazılır ve tekil cihaza özgü numara malzeme
+    # seviyesine yükselir — üstelik Barkod Tablosu sekmesi onu Tiger'ın malzeme
+    # kartına yazılacak barkod diye listeler.
+    bos_etiket = [h for h, r in coz_list if r["t"] == "etiket_bos"]
 
     if tekrar and not seri_h:
         return {"tip": "tekrar", "kod": tekrar[1]["kod"], "seri": tekrar[1]["seri"],
@@ -134,11 +163,13 @@ def grup_coz(c, ot, raf=None):
 
     kaynak = seri_h or kod_h
     if not kaynak:
-        kid = c.execute("INSERT INTO kuyruk(oturum,ts,barkodlar,raf) VALUES(?,?,?,?)",
-                        (oturum, ts, json.dumps(hamlar, ensure_ascii=False),
-                         raf)).lastrowid
+        kid = c.execute("INSERT INTO kuyruk(oturum,ts,barkodlar,raf,not_) "
+                        "VALUES(?,?,?,?,?)",
+                        (oturum, ts, json.dumps(hamlar, ensure_ascii=False), raf,
+                         "boş etiket okutuldu, malzeme belirtilmedi"
+                         if bos_etiket else None)).lastrowid
         return {"tip": "kuyruk", "kuyruk_id": kid, "barkodlar": hamlar, "raf": raf,
-                "ses": "kuyruk"}
+                "bos_etiket": bos_etiket, "ses": "kuyruk"}
 
     kod = kaynak[1]["kod"]
     aciklama = kaynak[1]["aciklama"]
@@ -154,11 +185,15 @@ def grup_coz(c, ot, raf=None):
         notu = (r.get("not") or "")
         if ogrenilen:
             notu += " | öğrenildi: " + ",".join(ogrenilen)
+        if bos_etiket:
+            etiketler.bagla(c, bos_etiket[0], kod, r["id"], oturum, ts, raf)
+            notu += " | etiket: " + bos_etiket[0]
         c.execute("""INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,beklenen_id,tip,
                      raf,grup,not_) VALUES(?,?,?,?,?,1,?,'eslesti',?,?,?)""",
                   (oturum, ts, seri_h[0], kod, r["seri"], r["id"], raf, grup, notu))
         return {"tip": "eslesti", "kod": kod, "aciklama": aciklama, "seri": r["seri"],
-                "ogrenilen": ogrenilen, "raf": raf, "not": notu.strip(" |"), "ses": "ok"}
+                "ogrenilen": ogrenilen, "etiket": bos_etiket[0] if bos_etiket else None,
+                "raf": raf, "not": notu.strip(" |"), "ses": "ok"}
 
     # Malzeme belli ama seri eşleşmedi
     izleme = kaynak[1].get("izleme", "yok")
@@ -166,32 +201,53 @@ def grup_coz(c, ot, raf=None):
         slot = c.execute("""SELECT * FROM beklenen b WHERE yukleme=? AND ambar=? AND kod=?
                             AND kirli=1 """ + SAYILMADI + " ORDER BY id LIMIT 1",
                          (yukleme, ambar, kod, oturum)).fetchone()
-        yeni_sn = max(bilinmeyen, key=len) if bilinmeyen else ""
+        # Tiger'a yazılacak seri numarası seçimi. Üretici S/N okutulduysa ya da
+        # elle yazıldıysa O kazanır; havuz etiketi son çaredir. Cihazın gerçek
+        # seri numarası garanti/RMA izidir, uydurma numarayla değiştirilmez.
+        yeni_sn = (max(bilinmeyen, key=len) if bilinmeyen
+                   else (bos_etiket[0] if bos_etiket else ""))
         if slot:
             c.execute("""INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,beklenen_id,
                          tip,raf,grup,not_)
-                         VALUES(?,?,?,?,?,1,?,'eslesti',?,?,'slot dolduruldu')""",
+                         VALUES(?,?,?,?,?,1,?,'eslesti',?,?,?)""",
                       (oturum, ts, yeni_sn or kod, kod, slot["seri"], slot["id"],
-                       raf, grup))
+                       raf, grup,
+                       "slot dolduruldu" + (" | etiket: " + bos_etiket[0]
+                                            if bos_etiket else "")))
+            if bos_etiket:
+                etiketler.bagla(c, bos_etiket[0], kod, slot["id"], oturum, ts, raf)
             return {"tip": "slot", "kod": kod, "aciklama": aciklama, "eski": slot["seri"],
-                    "yeni": yeni_sn, "raf": raf, "ses": "ok"}
+                    "yeni": yeni_sn, "etiket": bos_etiket[0] if bos_etiket else None,
+                    "raf": raf, "ses": "ok"}
         c.execute("""INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,tip,raf,grup,not_)
-                     VALUES(?,?,?,?,?,1,'fazla',?,?,'seri takipli, karşılığı yok')""",
-                  (oturum, ts, yeni_sn or kod, kod, yeni_sn, raf, grup))
+                     VALUES(?,?,?,?,?,1,'fazla',?,?,?)""",
+                  (oturum, ts, yeni_sn or kod, kod, yeni_sn, raf, grup,
+                   "seri takipli, karşılığı yok" + (" | etiket: " + bos_etiket[0]
+                                                    if bos_etiket else "")))
+        if bos_etiket:
+            etiketler.bagla(c, bos_etiket[0], kod, None, oturum, ts, raf)
         return {"tip": "fazla", "kod": kod, "aciklama": aciklama, "yeni": yeni_sn,
+                "etiket": bos_etiket[0] if bos_etiket else None,
                 "raf": raf, "ses": "uyari"}
 
+    # Lot / izlemesiz: Tiger'da adet başına seri saklanmıyor, boş etiketi
+    # bağlayacak kayıt yok. Sayımı yine de işleriz — malzeme doğru tanındı —
+    # ama etiket bağlanmaz ve kullanıcı uyarılır, yoksa etiket havuzu sessizce
+    # tükenir.
     b = c.execute("SELECT * FROM beklenen WHERE yukleme=? AND ambar=? AND kod=? "
                   "ORDER BY id LIMIT 1", (yukleme, ambar, kod)).fetchone()
     c.execute("""INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,beklenen_id,tip,raf,
-                 grup,not_) VALUES(?,?,?,?,?,1,?,'kod',?,?,'adet +1')""",
+                 grup,not_) VALUES(?,?,?,?,?,1,?,'kod',?,?,?)""",
               (oturum, ts, kaynak[0], kod, b["seri"] if b else "",
-               b["id"] if b else None, raf, grup))
+               b["id"] if b else None, raf, grup,
+               "adet +1" + (" | etiket bağlanmadı: izleme=%s" % izleme
+                            if bos_etiket else "")))
     top = c.execute("SELECT SUM(miktar) s FROM okutma WHERE oturum=? AND kod=?",
                     (oturum, kod)).fetchone()["s"]
     return {"tip": "adet", "kod": kod, "aciklama": aciklama, "toplam": top,
             "beklenen": b["miktar"] if b else 0, "ogrenilen": ogrenilen, "raf": raf,
-            "ses": "ok"}
+            "etiket_yersiz": bos_etiket[0] if bos_etiket else None,
+            "ses": "uyari" if bos_etiket else "ok"}
 
 
 # ---------------------------------------------------------------- okutma girişi
@@ -421,9 +477,19 @@ def kuyruk_coz(c, kuyruk_id, beklenen_id):
         return {"hata": "malzeme yok"}
     ts = _ts()
     hs = json.loads(q["barkodlar"])
-    for h in hs:
+    # Yalnızca SERİ etiketi öğrenilmez: tekil bir cihaza ait, malzeme
+    # seviyesine yükseltilemez. Boş MALZEME etiketi ise tam tersine burada
+    # öğrenilmelidir — kodu olmayan ürüne yapıştırılan etiket ancak böyle
+    # kalıcı bir malzeme barkoduna dönüşür (CLAUDE.md 12).
+    ogrenilecek = [h for h in hs if etiketler.etiket_turu(h) != "seri"]
+    bos_etiket = [h for h in hs if etiketler.etiket_mi(h)
+                  and c.execute("SELECT 1 FROM etiket WHERE kod=? AND tur='seri' "
+                                "AND beklenen_id IS NULL", (norm(h),)).fetchone()]
+    for h in ogrenilecek:
         c.execute("INSERT OR REPLACE INTO eslesme VALUES(?,?,?,?)",
                   (norm(h), b["kod"], "", ts))
+    if bos_etiket:
+        etiketler.bagla(c, bos_etiket[0], b["kod"], b["id"], q["oturum"], ts, q["raf"])
     grup = _yeni_grup(c, q["oturum"])
     c.execute("""INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,beklenen_id,tip,raf,
                  grup,not_) VALUES(?,?,?,?,?,1,?,'eslesti',?,?,'kuyruktan çözüldü')""",
@@ -431,4 +497,5 @@ def kuyruk_coz(c, kuyruk_id, beklenen_id):
                q["raf"], grup))
     c.execute("UPDATE kuyruk SET cozuldu=1 WHERE id=?", (kuyruk_id,))
     return {"tip": "eslesti", "kod": b["kod"], "aciklama": b["aciklama"],
-            "seri": b["seri"], "ogrenilen": hs}
+            "seri": b["seri"], "ogrenilen": ogrenilecek,
+            "etiket": bos_etiket[0] if bos_etiket else None}

@@ -51,6 +51,7 @@ export type CozTipi =
   | "upc"
   | "bilinmiyor"
   | "tekrar"
+  | "etiket_bos"
   | "bos";
 
 export type TamponSatiri = {
@@ -88,6 +89,10 @@ export type OkutmaSonucu = {
   tip: string;
   ses?: Ses;
   kod?: string;
+  /* Kendi bastığımız etiketler (CLAUDE.md 12) */
+  etiket?: string | null;
+  etiket_yersiz?: string | null;
+  bos_etiket?: string[];
   aciklama?: string;
   seri?: string;
   eski?: string;
@@ -179,6 +184,48 @@ export type OturumOzeti = {
   kuyruk: number;
 };
 
+/* Kesin sayı değil, ÜST SINIR: kutuların çoğunda üretici kodu/serisi zaten
+   basılı olabilir (Tiger'a girilmemiş olsa da), onlara etiket gerekmez. */
+export type EtiketIhtiyaci = {
+  malzeme: { tekil: number; basili: number; eksik: number; barkodsuz: number };
+  seri: { kirli_kayit: number; havuzda: number; ust_sinir: number };
+};
+
+export type EtiketSatiri = {
+  kod: string;
+  gosterim: string;
+  tur: "malzeme" | "seri";
+  basim: number | null;
+  ts: string | null;
+  malzeme: string | null;
+  aciklama: string | null;
+  slot: string | null;
+  beklenen_id: number | null;
+  raf: string | null;
+  ts_bagla: string | null;
+};
+
+export type BasimOzeti = {
+  id: number;
+  ts: string;
+  tur: string;
+  adet: number;
+  ilk: string;
+  son: string;
+  duzen: string;
+};
+
+export type BasimIstegi = {
+  tur: "malzeme" | "seri";
+  adet?: number;      // kaç etiket (malzeme: atlanırsa hepsi)
+  kopya?: number;     // malzeme: her koddan kaç kopya
+  kapsam?: "eksik" | "hepsi" | "bos";
+  yukleme?: number;
+  ambar?: string;
+  duzen: "a4" | "rulo";
+  atla?: number;
+};
+
 export class ApiHatasi extends Error {}
 
 async function istek<T>(yol: string, secenek?: RequestInit): Promise<T> {
@@ -268,6 +315,38 @@ export const api = {
 
   onizleme: (id: number) => istek<RaporOnizleme>(`/api/oturum/${id}/rapor/onizleme`),
   raporUrl: (id: number) => `/api/oturum/${id}/rapor.xlsx`,
+
+  etiketIhtiyac: (yukleme: number, ambar: string) =>
+    istek<EtiketIhtiyaci>(
+      `/api/etiket/ihtiyac?yukleme=${yukleme}&ambar=${encodeURIComponent(ambar)}`,
+    ),
+  etiketler: (tur?: "malzeme" | "seri", q?: string) => {
+    const p = new URLSearchParams();
+    if (tur) p.set("tur", tur);
+    if (q) p.set("q", q);
+    return istek<EtiketSatiri[]>(`/api/etiket?${p}`);
+  },
+  basimlar: () => istek<BasimOzeti[]>("/api/etiket/basimlar"),
+
+  // Komut kartı gibi: JSON değil yazdırılabilir HTML döner.
+  etiketBas: async (istek_: BasimIstegi) => {
+    const y = await fetch("/api/etiket/basim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Istemci": ISTEMCI },
+      body: JSON.stringify(istek_),
+    });
+    if (!y.ok) {
+      let mesaj = `${y.status} ${y.statusText}`;
+      try {
+        const g = await y.json();
+        if (g?.detail) mesaj = typeof g.detail === "string" ? g.detail : JSON.stringify(g.detail);
+      } catch {
+        /* gövde JSON değilse durum metni kalsın */
+      }
+      throw new ApiHatasi(mesaj);
+    }
+    return y.text();
+  },
 
   komutKarti: async (raflar: string[]) => {
     const y = await fetch("/api/komut-karti", {

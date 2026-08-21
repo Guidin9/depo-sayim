@@ -200,22 +200,96 @@ Yazdırılabilir kart: `POST /api/komut-karti` gövdesinde `{"raflar":["A1","B2"
 
 ---
 
+## Etiketi olmayan ürünler
+
+Kablo, fan, dökme parça gibi kalemlerde ne üretici parça numarası ne de okunabilir
+seri numarası var. **Etiket** ekranı bunlar için iki ayrı etiket basar:
+
+| Etiket | Ne söyler | Kaç farklı kod | Nereye |
+|---|---|---|---|
+| **Malzeme** `DM-000123` | Malzeme kodunun taranabilir hâli | Malzeme kodu sayısı | Raf gözüne / kutuya |
+| **Seri** `DS-000045` | Sadece sıralı numara | Etiketlenecek adet kadar | Okutulduğunda hangi ürüne yapıştıysa ona |
+
+Bunlar `##RAF-A1##` konum barkodundan farklıdır: `##RAF-A1##` "neredeyim",
+`DM-` "ne bu", `DS-` "hangisi bu" der.
+
+Malzeme etiketi kod başına **bir numaradır**, ama **kaç tane** basacağınızı siz
+seçersiniz. 160 malzemenin hepsine etiket gerekmez; bir sayfa basıp devam edin,
+sonraki basım kaldığı yerden sürer.
+
+Hangi 24'ünün basılacağı rastgele değil: **kodu hiç barkod olamayan malzemeler
+başa alınır.** Kodunda boşluk ya da Türkçe karakter olanın
+(`210-ACXU-TİP2`, `SC9000 CONTROLLER CARD`) kutusunda taranabilir kod bulunamaz,
+etiket orada kesin gereklidir. Ekrandaki "Barkodsuz" düğmesi tam o sayıyı
+doldurur.
+
+Ayrıca kaç **kopya** basacağınızı seçebilirsiniz — aynı malzeme üç rafta
+duruyorsa aynı kodu üç kez bastırın. Kopya yeni numara üretmez.
+
+Seri etiketi basılırken **hiçbir ürüne ait değildir** — hangi ürüne ait olduğu
+okutulduğunda belli olur. Bu yüzden "A ürününden kaç tane basayım" diye
+hesaplamanız gerekmez.
+
+### Kaç tane basmalı
+
+Ekran bir sayı gösterir ama bu **tavandır, hedef değil**. Depodaki ürünlerin
+birçoğunun kutusunda üretici kodu ya da seri numarası zaten basılıdır — sisteme
+girilmemiş olsa bile. Onlar okutulduğunda etiket hiç gerekmez.
+
+Gerçek ihtiyaç ancak bir raf sayıldıktan sonra belli olur. Bu yüzden **az basıp
+devam edin**: bir iki sayfayla başlayın, oran belli olunca gerisini bastırın.
+Numaralar tükenmez, sonraki basım kaldığı yerden sürer.
+
+Her iki etiket türünde de adedi elle yazabilir ya da hazır düğmeleri
+kullanabilirsiniz: **1 sayfa (24)**, **4 sayfa (96)**, **Barkodsuz**, **Tümü**.
+
+### Depodaki sıra
+
+```
+##RAF-A1##      rafa gir
+DM-000123       malzeme etiketini okut
+[üretici S/N]   kutuda/cihazda yazıyorsa okut ya da elle yaz + Enter
+DS-000045       gerekiyorsa etiket al, ÖNCE OKUT sonra yapıştır
+##SONRAKI##     grubu kapat
+```
+
+Kutusunda okunabilir kod varsa seri etiketi hiç kullanılmaz. Etiketi
+yapıştırmadan önce okutun: bağlama okutmada olur.
+
+Çıktı iki düzende: A4 lazer etiket sayfası (3 × 8, 70 × 37 mm — yarım kalmış
+sayfayı israf etmemek için "kaçıncı hücreden başla" seçeneğiyle) veya termal rulo
+(50 × 25 mm).
+
+Sayım sonunda raporun **Tiger Düzeltme** sekmesi seri etiketlerini
+(`BC-U6030SAYIM1 → DS-000045`), **Barkod Tablosu** sekmesi malzeme etiketlerini
+Tiger'a girilecek biçimde listeler. Malzeme etiketi, boşluk ya da Türkçe karakter
+yüzünden hiç barkod olamayan kodları (`210-ACXU-TİP2`) da taranabilir yapar.
+
+> **`data/etiket` klasörünü silmeyin.** Basılmış etiket veritabanından uzun
+> ömürlüdür; basım kayıtları orada tutulur ki `sifirla.bat` sonrası sayaç aynı
+> numarayı ikinci kez vermesin.
+
+---
+
 ## Yapı
 
 ```
 app/
   main.py        FastAPI + statik servis
-  db.py          SQLite şema (yukleme / beklenen / oturum / okutma / eslesme / kuyruk)
+  db.py          SQLite şema (yukleme / beklenen / oturum / okutma / eslesme /
+                 kuyruk / etiket / basim)
   norm.py        normalizasyon, UPC checksum, kirli kayıt tespiti, komut barkodları
   matching.py    eşleştirme motoru — prototipten birebir taşındı
   importer.py    Excel + JSON yükleyici, sayım dışı kural motoru
-  reports.py     5 sekmeli Excel + arayüz önizlemesi (tek kaynak)
-  barkod.py      komut kartı üretimi
+  reports.py     6 sekmeli Excel + arayüz önizlemesi (tek kaynak)
+  etiketler.py   kendi bastığımız etiketlerin defteri ve numaralandırması
+  barkod.py      komut kartı ve etiket sayfası üretimi
   cli.py         komut satırı
   routers/       API uç noktaları
 web/             React arayüz kaynağı
 tests/           pytest
-data/            sayim.db, yüklenen dosyalar, üretilen raporlar (sürüm dışı)
+data/            sayim.db, yüklenen dosyalar, raporlar, etiket/ basım kayıtları
+                 (sürüm dışı — etiket/ klasörünü silmeyin)
 ```
 
 `depo_sayim.py` ve `komut_karti.py` referans prototiptir, çalışan uygulamanın

@@ -14,7 +14,7 @@ type Props = {
   canli: BaglantiHali;
   uzaktan: boolean;
   modDegistir: () => void;
-  git: (ekran: "kuyruk" | "rapor" | "gecmis" | "ayarlar") => void;
+  git: (ekran: "kuyruk" | "rapor" | "gecmis" | "ayarlar" | "etiket") => void;
 };
 
 const KISAYOL: Record<string, string> = {
@@ -47,23 +47,37 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
       return {
         Ikon: Ik.Onay,
         ana: `${r.kod} — ${r.seri}`,
-        alt: `${r.aciklama ?? ""}${r.ogrenilen?.length ? ` · öğrenildi: ${r.ogrenilen.join(", ")}` : ""}`,
+        alt:
+          `${r.aciklama ?? ""}` +
+          (r.ogrenilen?.length ? ` · öğrenildi: ${r.ogrenilen.join(", ")}` : "") +
+          (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
         ...YESIL,
       };
     case "slot":
       return {
         Ikon: Ik.Onay,
         ana: `${r.kod} — uydurma kayıt düzeltildi`,
-        alt: `${r.eski} → ${r.yeni || "?"} · ${r.aciklama ?? ""}`,
+        alt:
+          `${r.eski} → ${r.yeni || "?"} · ${r.aciklama ?? ""}` +
+          (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
         ...YESIL,
       };
     case "adet":
-      return {
-        Ikon: Ik.Onay,
-        ana: `${r.kod} — sayılan ${r.toplam} / beklenen ${r.beklenen}`,
-        alt: r.aciklama ?? "",
-        ...YESIL,
-      };
+      // Lot/izlemesiz kalemde boş etiket okutulmuşsa bağlanacak kayıt yok:
+      // sayım işlendi ama etiket havuzda kalsın diye kullanıcı uyarılır.
+      return r.etiket_yersiz
+        ? {
+            Ikon: Ik.Uyari,
+            ana: `${r.etiket_yersiz} bağlanmadı — ${r.kod} birim izlemeli değil`,
+            alt: `Sayıldı (${r.toplam} / ${r.beklenen}). Etiketi çıkarıp havuza geri koy.`,
+            ...SARI,
+          }
+        : {
+            Ikon: Ik.Onay,
+            ana: `${r.kod} — sayılan ${r.toplam} / beklenen ${r.beklenen}`,
+            alt: r.aciklama ?? "",
+            ...YESIL,
+          };
     case "fazla":
     case "fazla_elle":
       return {
@@ -83,7 +97,9 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
       return {
         Ikon: Ik.Soru,
         ana: "KUYRUĞA ATILDI",
-        alt: `${(r.barkodlar ?? []).join(" + ")} — sayımı durdurma, sonunda çözersin.`,
+        alt: r.bos_etiket?.length
+          ? `${r.bos_etiket[0]} boş etiketi tek başına okutuldu — hangi malzeme olduğu belli değil.`
+          : `${(r.barkodlar ?? []).join(" + ")} — sayımı durdurma, sonunda çözersin.`,
         ...SARI,
       };
     case "iptal":
@@ -296,6 +312,7 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               tur={s.kuyruk ? "tehlike" : "sade"}
             />
             <Dugme cocuk="Rapor" tikla={() => git("rapor")} />
+            <Dugme cocuk="Etiket" tikla={() => git("etiket")} />
             <Dugme cocuk="Ayarlar" tikla={() => git("ayarlar")} />
           </div>
 

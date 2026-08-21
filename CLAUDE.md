@@ -277,6 +277,8 @@ olmalıdır.
 
 `komut_karti.py` Code128 komut barkodu kartı üretir (python-barcode gerektirir).
 
+Etiketi olmayan kalemler için kendi etiketimizi basıyoruz — §12.
+
 Test verisi: `deneme.XLSX` — Tiger'dan alınmış bir Seri/Lot Envanter Raporu
 (örnekte Ambar 1, 870 satır). **Depoda yok**, gerçek stok ve tutar içerdiği için
 `.gitignore`'da. Test paketi bu dosya olmadan kendini atlar; çalıştırmak için
@@ -488,3 +490,145 @@ UNC yollarında). Her zaman `call "%~dp0kisayol.bat"` yazın.
 `.gitattributes` `.bat` dosyalarını CRLF'te tutar — LF satır sonuyla cmd.exe
 etiket/goto çözümlemesini bozabilir.
 
+---
+
+## 12. Kendi bastığımız etiketler
+
+**Durum: 2026-08-21'de yazıldı. Gerçek Tiger verisiyle (Ambar 1) doğrulandı;
+basılan sayfa gerçek barkod okuyucuyla HENÜZ test edilmedi.**
+
+Depodaki kalemlerin bir kısmında ne üretici parça numarası ne de okunabilir bir
+seri numarası var: kablo, fan, dökme parça, `0,70MM TEL` gibi şirket içi kodlu
+kalemler. Depoda yazıcı yok, etiketler ofiste toplu basılıp elde götürülüyor.
+
+### 12.1 İki etiket sınıfı
+
+Bunların ikisi de `##RAF-A1##` konum barkodu (§4.5) DEĞİLDİR. Üç ayrı soru var:
+`##RAF-A1##` "nerede duruyorum", `DM-` "ne bu", `DS-` "hangisi bu".
+
+| Sınıf | Ne söyler | Kaç FARKLI kod | Nereye |
+|---|---|---|---|
+| **Malzeme** `DM-000123` | Malzeme kodunun taranabilir hâli | Malzeme kodu sayısı | Raf gözüne / kutuya |
+| **Seri** `DS-000045` | Sadece sıralı numara, basılırken hiçbir şeye ait değil | Etiketlenecek adet sayısı | Okutma anında hangi ürüne yapıştıysa ona |
+
+Malzeme etiketi **kod başına bir numaradır**, ama kaç tanesinin basılacağı
+kullanıcının seçimidir (`bas(..., adet=24)`). 160 malzemenin hepsine etiket
+gerekmez: çoğunun kutusunda üretici kodu zaten basılıdır. `adet` verilmezse
+kalan hepsi basılır; `kapsam="eksik"` (varsayılan) sayesinde her parti kaldığı
+yerden sürer.
+
+Sıralama rastgele değil: **kodu hiç barkod olamayanlar başa alınır.** Kodunda
+boşluk ya da Türkçe karakter olan malzemenin (`210-ACXU-TİP2`,
+`SC9000 CONTROLLER CARD`) kutusunda taranabilir bir kod bulunma ihtimali
+yoktur — etiket orada kesin gerekli. `etiketler.kod_barkodlanabilir()` bunu
+ayırır; örnek veride Ambar 1'in 160 kodundan 6'sı böyle.
+
+**Boş malzeme havuzu** (`kapsam="bos"`): Tiger'da hiç malzeme kodu OLMAYAN
+kalemler için — 5 m kablo gibi. Kod uyduramayız, o yüzden etiket bağlantısız
+basılır. Ürüne yapıştırılıp okutulunca grup kuyruğa düşer; bir kez çözüldüğünde
+`eslesme`'ye yazılır ve o koddan sonraki her üründe sorusuz tanınır. Bu yüzden
+`kuyruk_coz()` yalnızca SERİ etiketini öğrenmekten kaçınır, malzeme etiketini
+bilerek öğrenir.
+
+`kopya` ayrı bir eksendir: aynı malzeme üç rafta duruyorsa aynı kod üç kez
+basılır (`kopya=3`). Kopya yeni numara tüketmez — yoksa aynı malzeme için depoda
+iki farklı kod dolaşırdı; yeniden basım da hep aynı kodu verir.
+
+Seri etiketi basıldığında anonimdir; bağlanma **okutma anında** olur. Bu yüzden
+"hangi üründen kaç etiket basayım" sorusu hiç sorulmaz ve fazla basmak israf
+değildir.
+
+### 12.2 Sayı vermiyoruz, tavan veriyoruz
+
+`etiketler.ihtiyac()` **üst sınır** döner, hedef değil. Kesin bir sayı vermek
+yanıltıcı olurdu: depodaki ürünlerin birçoğunun kutusunda üretici parça numarası
+ya da seri numarası zaten basılı — Tiger'a girilmemiş olsa bile. Onlar
+okutulduğunda hiç etiket gerekmez. Gerçek ihtiyaç ancak bir raf sayıldıktan
+sonra ortaya çıkar.
+
+Bu yüzden ekran karar vermez, öneri yapar; adedi kullanıcı seçer. Doğru kullanım
+az basıp devam etmektir: numaralar tükenmez, sonraki basım kaldığı yerden sürer.
+
+Örnek veride Ambar 1: 160 tekil malzeme (6'sı barkod olamayan kod), 393 kirli
+seri kaydı → seri etiketi tavanı 393. Gerçekte gereken bunun çok altındadır.
+
+Arayüzde her iki tür için de adet elle girilir; hızlı düğmeler bir sayfa (24),
+dört sayfa (96), barkodsuz kod sayısı ve tavan değerini doldurur.
+
+### 12.3 Sahadaki akış
+
+```
+##RAF-A1##          rafa gir
+DM-000123           malzeme etiketini okut          -> malzeme belli
+[üretici S/N]       kutuda/cihazda yazıyorsa okut ya da elle yaz + Enter
+DS-000045           gerekiyorsa havuzdan etiket al, ÖNCE OKUT sonra yapıştır
+##SONRAKI##         grubu kapat
+```
+
+Kutusunda okunabilir bir kod varsa seri etiketi hiç kullanılmaz. Etiketi
+yapıştırmadan **önce** okutun: bağlama okutmada olur, yapıştırmada değil.
+
+### 12.4 Kod biçimi
+
+- **Sabit 6 hane.** Değişken uzunlukta bir etiket kodu diğerinin öneki olabilirdi
+  ve `coz()` 3. adımı ≥8 karakterde önek eşleşmesi yapıyor
+  (`norm("DM-000123") = "DM000123"` tam 8 karakter).
+- **Kontrol hanesi yok.** Code128'in kendi kontrol hanesi var; Tiger'a giriş
+  Excel'den kopyalanıyor.
+- Ön ek `norm.KIRLI_KELIME` desenlerinden hiçbirini içermemeli (`DEPO`, `STOK`,
+  `SAYIM`… — `DM`/`DS` temiz), yoksa etiket ertesi yıl kirli sayılırdı.
+- `barkod.ETIKET_SVG` modül genişliği 0.45 mm: 9 karakterlik Code128 ≈ 135 modül
+  → ~60 mm, yani 70 mm'lik hücrenin neredeyse tamamı. İnce çubuk sayfaya daha çok
+  etiket sığdırmaz (hücre sayısı sabit), sadece okumayı zorlaştırır.
+
+### 12.5 Mevcut motora nasıl oturuyor
+
+Yeni rapor mantığı gerekmedi; iki sınıf da var olan Tiger'a-geri-yazma yollarına
+düşüyor:
+
+- **Malzeme etiketi** basımda `eslesme`'ye yazılır → `coz()` 4. adımı tanır →
+  **Barkod Tablosu** sekmesinde çıkar → Tiger malzeme kartı > Birimler > Barkod
+  alanına girilir. Bu, boşluk ya da Türkçe karakter yüzünden hiç barkod olamayan
+  57 kodu da (`210-ACXU-TİP2`, `0,70MM TEL`) taranabilir yapar.
+- **Seri etiketi** kirli slotu doldurur → **Tiger Düzeltme** sekmesinde
+  `BC-U6030SAYIM1 → DS-000045` olarak çıkar.
+
+**Kendi kendini iyileştirir:** `kirli_mi("DS-000045", kod)` **temiz** döner.
+Düzeltme Tiger'a işlendikten sonraki sayımda etiket normal bir seri numarası
+olarak yüklenir ve `coz()` 1. adımda birebir eşleşir — etiket defterine hiç
+ihtiyaç kalmaz.
+
+### 12.6 Motorda değiştirilen üç davranış
+
+Etiketler eklenmeseydi de birer tuzaktı; hepsinin regresyon testi var.
+
+1. `coz()` 1c adımı — bağlanmış seri etiketi burada yakalanmazsa ikinci
+   okutulduğunda `bilinmiyor`a düşer ve aynı malzemenin **bir sonraki** kirli
+   slotunu doldurur → çift sayım. Gerçek S/N'lerde bu sorun yok çünkü onlar
+   Tiger'da yazılı; bizim etiketimiz henüz yalnızca raporda duruyor.
+2. `grup_coz()` boş etiketi `bilinmeyen` listesinden çıkarır — yoksa `eslesme`'ye
+   yazılır ve tekil cihaza özgü numara malzeme seviyesine yükselir; üstelik
+   Barkod Tablosu onu Tiger'ın malzeme kartına yazılacak barkod diye listelerdi.
+   `kuyruk_coz()` de aynı ayrımı yapar.
+3. `reports._yeni_seri` etiketleri son sıraya atar. `"DM-000123 + DS-000045"`
+   grubunda iki parça aynı uzunlukta olduğu için `max()` ilkini — yani **malzeme**
+   etiketini — seri numarası diye yazardı.
+
+**Üretici S/N her zaman kazanır** (`yeni_sn` sırası): garanti/RMA izi uydurma
+numarayla değiştirilmez. Havuz etiketi yalnızca başka kimlik yokken kullanılır.
+
+Lot / izlemesiz malzemede boş seri etiketi okutulursa bağlama yapılmaz — Tiger'da
+adet başına seri saklanmıyor. Sayım yine işlenir, kullanıcı uyarılır.
+
+### 12.7 Sıfırlama uyarısı
+
+Basılmış fiziksel etiket veritabanından uzun ömürlüdür. Sayaç sıfırlanıp aynı
+numarayı ikinci kez verirse depoda iki ayrı ürün aynı kodu taşır.
+
+Bu yüzden her basım partisi `data/etiket/basim-<id>.csv` olarak da yazılır.
+`sifirla.bat` yalnızca `data\*.db`, `data\yuklenen` ve `data\rapor` taşıdığı için
+`data/etiket` hayatta kalır ve `db.baglan()` açılışta defteri geri yükler.
+**`data/etiket` klasörünü elle silmeyin.**
+
+Yükleme özeti `etiket_cakisma` alanında, Tiger'da etiket desenine uyup defterde
+karşılığı olmayan kayıtları bildirir — defter kaybının sessiz kalmaması için.

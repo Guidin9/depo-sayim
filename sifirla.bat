@@ -6,6 +6,9 @@ title Depo Sayim - veritabanini sifirla
 
 rem Deneme sayimlarindan kalan verileri temizler: oturumlar, okutmalar, kuyruk,
 rem fotograflar, OGRENILMIS BARKODLAR, yuklenen Excel dosyalari ve raporlar.
+rem ETIKET DEFTERINE DOKUNMAZ: data\etiket yerinde kalir, cunku basilmis
+rem fiziksel etiket veritabanindan uzun omurludur ve sayac ayni numarayi
+rem ikinci kez vermemelidir.
 rem Silmez, tasir: her sey data\yedek-<tarih> klasorune alinir, geri donulebilir.
 rem Tiger'daki hicbir kayda dokunmaz - bu sadece bu uygulamanin kendi veritabani.
 
@@ -19,6 +22,9 @@ echo     - tum sayim oturumlari ve okutmalar
 echo     - kuyruk kayitlari ve fotograflar
 echo     - OGRENILMIS BARKODLAR (barkod -^> malzeme kodu tablosu)
 echo     - yuklenen Excel raporlari ve uretilmis rapor dosyalari
+echo.
+echo   Basili etiketler GECERSIZ OLMAZ - etiket defteri data\etiket
+echo   klasorunde duruyor, uygulama acilista geri yukluyor.
 echo.
 echo   Tiger'daki verilere DOKUNULMAZ.
 echo.

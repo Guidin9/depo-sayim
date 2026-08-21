@@ -1,17 +1,19 @@
-"""5 sekmeli sayım raporu (CLAUDE.md 5).
+"""6 sekmeli sayım raporu (CLAUDE.md 5, 12).
 
 depo_sayim.py:307-375 taşındı. Sekme adları ve sütun düzeni korundu, üstüne:
   * Fazla / Eşleşen / Tiger Düzeltme sekmelerine Raf sütunu
   * Eksik sekmesi sayım dışı kalemleri listelemez, sayıyı dipnot olarak yazar
   * Lot ve izlemesiz kalemlerde adet farkı hesaplanır (seri takipli kalemlerde
     prototipteki davranış aynen korunur: okutulmayan satır eksiktir)
+  * Etiketler sekmesi: kendi bastığımız etiketlerin defteri (CLAUDE.md 12)
 
 rapor_verisi() hem Excel yazıcısını hem arayüzdeki sekme önizlemesini besler ki
 iki yerde iki ayrı gerçek olmasın.
 """
 import os
 
-SEKME = ("Eksik", "Fazla", "Eşleşen", "Tiger Düzeltme", "Barkod Tablosu")
+SEKME = ("Eksik", "Fazla", "Eşleşen", "Tiger Düzeltme", "Barkod Tablosu",
+         "Etiketler")
 
 BASLIKLAR = {
     "Eksik": ["Malzeme Kodu", "Açıklama", "Beklenen Seri/Lot", "İzleme", "Miktar",
@@ -24,6 +26,8 @@ BASLIKLAR = {
                        "YENİ (gerçek) Seri No", "Raf", "Zaman"],
     "Barkod Tablosu": ["Okutulan Barkod", "Malzeme Kodu", "Açıklama",
                        "Öğrenildiği An"],
+    "Etiketler": ["Etiket", "Tür", "Malzeme Kodu", "Açıklama",
+                  "Bağlandığı Kayıt", "Raf", "Basıldığı An", "Bağlandığı An"],
 }
 
 DIPNOT = {
@@ -32,6 +36,11 @@ DIPNOT = {
                        "kullanın."],
     "Barkod Tablosu": ["Bu barkodları Tiger'da malzeme kartı > Birimler > Barkod "
                        "alanına yazın.", "Yazdıktan sonra bu ürünler sorusuz eşleşir."],
+    "Etiketler": ["Kendi bastığımız etiketlerin defteri: hangi numara neye yapıştı.",
+                  "Tiger'a yazılacak değerler Tiger Düzeltme ve Barkod Tablosu "
+                  "sekmelerinde; bu sayfa fiziksel etiketi bulmak içindir.",
+                  "Malzemesi boş satırlar henüz kullanılmamış, havuzda bekleyen "
+                  "etiketlerdir."],
 }
 
 
@@ -45,12 +54,22 @@ def _yeni_seri(ham):
     Kuyruktan çözülen grupta okutma 'A + B' biçiminde saklanır (denetim izi).
     Tiger Düzeltme sekmesine tek bir değer yazılmalı: perakende barkodu olmayan
     en uzun parça — grup çözümlemesindeki kuralın aynısı (matching.grup_coz).
+
+    Kendi bastığımız etiketler son sıraya düşer. 'DM-000123 + DS-000045'
+    grubunda iki parça da aynı uzunlukta olduğu için max() ilkini — yani MALZEME
+    etiketini — seçerdi; malzeme etiketi seri numarası değildir. Seri etiketi
+    ancak başka aday yoksa kullanılır (grup_coz'daki yeni_sn sırasının aynısı).
     """
+    from .etiketler import etiket_turu
     from .norm import upc_mi
     parcalar = [p.strip() for p in str(ham or "").split(" + ") if p.strip()]
     if len(parcalar) <= 1:
         return ham
     adaylar = [p for p in parcalar if not upc_mi(p)] or parcalar
+    for sinif in (None, "seri"):            # önce gerçek S/N, sonra seri etiketi
+        havuz = [p for p in adaylar if etiket_turu(p) == sinif]
+        if havuz:
+            return max(havuz, key=len)
     return max(adaylar, key=len)
 
 
@@ -122,9 +141,19 @@ def rapor_verisi(c, oturum_id):
                                        WHERE kod=e.kod ORDER BY yukleme DESC LIMIT 1)
                                        aciklama FROM eslesme e ORDER BY e.kod""")]
 
+    etiket_satir = [[r["gosterim"], "Malzeme" if r["tur"] == "malzeme" else "Seri",
+                     r["malzeme"] or "", r["aciklama"] or "", r["slot"] or "",
+                     r["raf"] or "", _kisa(r["ts"]), _kisa(r["ts_bagla"])]
+                    for r in c.execute("""SELECT e.*,
+                          (SELECT aciklama FROM beklenen WHERE kod=e.malzeme
+                           ORDER BY yukleme DESC LIMIT 1) aciklama,
+                          (SELECT seri FROM beklenen WHERE id=e.beklenen_id) slot
+                          FROM etiket e ORDER BY e.tur, e.kod""")]
+
     veri = {}
     for ad, satirlar in (("Eksik", eksik), ("Fazla", fazla), ("Eşleşen", eslesen),
-                         ("Tiger Düzeltme", duzeltme), ("Barkod Tablosu", barkodlar)):
+                         ("Tiger Düzeltme", duzeltme), ("Barkod Tablosu", barkodlar),
+                         ("Etiketler", etiket_satir)):
         veri[ad] = {"basliklar": BASLIKLAR[ad], "satirlar": satirlar,
                     "dipnot": list(DIPNOT.get(ad, []))}
     if haric_sayisi:

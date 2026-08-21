@@ -1,9 +1,13 @@
-"""Komut barkodu kartı üretici (komut_karti.py'nin fonksiyon hali).
+"""Komut barkodu kartı ve etiket sayfası üreticisi.
 
-Code128 ile basılır, laminatlanıp sahada taşınır (CLAUDE.md 4.5). Raf listesi
-kullanıcıdan gelir.
+Komut kartı komut_karti.py'nin fonksiyon hâli: Code128 ile basılır,
+laminatlanıp sahada taşınır (CLAUDE.md 4.5). Raf listesi kullanıcıdan gelir.
+
+etiket_html() ise kendi bastığımız raf/birim etiketlerini kâğıda dizer
+(CLAUDE.md 12). İki düzen: A4 lazer etiket sayfası ve termal rulo.
 """
 import base64
+import html
 import io
 
 KOMUTLAR = [
@@ -67,3 +71,92 @@ p.alt{margin:0 0 14px;color:#555;font-size:12px}
 <b>Akış:</b> Ürünün üstündeki barkodları sırayla okut (P/N, S/N, UPC — hangisi varsa),
 sonra <b>SIRADAKİ ÜRÜN</b> okut. Uygulama o gruptaki barkodların aynı ürüne ait
 olduğunu anlar, tanımadıklarını tanıdıklarına bağlayarak öğrenir.</p></html>"""
+
+
+# ---------------------------------------------------------------- etiketler
+# A4 lazer etiket sayfası: 3 sütun x 8 satır, 70x37 mm (piyasadaki en yaygın
+# kesim). Termal rulo: etiket başına bir sayfa.
+A4 = {"sutun": 3, "satir": 8, "en": 70.0, "boy": 37.0, "kenar": 8.0}
+RULO = {"en": 50.0, "boy": 25.0, "kenar": 1.0}
+
+# Çubuk genişliği etiketin okunabilirliğini belirleyen tek şey: depo aydınlatması
+# kötü, okuyucu açılı tutuluyor. 9 karakterlik Code128 ~135 modül eder; 0.45 mm
+# modülle ~60 mm genişliğe çıkıyor, yani 70 mm'lik hücrenin neredeyse tamamına.
+# Daha ince çubuk sayfaya daha çok etiket sığdırmaz — hücre sayısı sabit — sadece
+# okumayı zorlaştırır.
+ETIKET_SVG = {"module_height": 11.0, "module_width": 0.45, "font_size": 0,
+              "text_distance": 0, "quiet_zone": 2.0}
+
+
+def _etiket_svg(kod):
+    import barcode
+    from barcode.writer import SVGWriter
+    b = barcode.get("code128", kod, writer=SVGWriter())
+    f = io.BytesIO()
+    b.write(f, options=ETIKET_SVG)
+    return base64.b64encode(f.getvalue()).decode()
+
+
+def _kisalt(s, n=34):
+    s = str(s or "").strip()
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _etiket(s):
+    """Tek etiket hücresi. Malzeme etiketinde kod ve açıklama da basılır."""
+    g = s["gosterim"]
+    alt = ""
+    if s.get("tur") == "malzeme":
+        alt = ("<div class=m>%s</div><div class=a>%s</div>"
+               % (html.escape(str(s.get("malzeme") or "")),
+                  html.escape(_kisalt(s.get("aciklama")))))
+    else:
+        alt = "<div class=a>SAYIM ETİKETİ</div>"
+    return ('<div class=k><img src="data:image/svg+xml;base64,%s">'
+            '<div class=kod>%s</div>%s</div>'
+            % (_etiket_svg(g), html.escape(g), alt))
+
+
+def etiket_html(satirlar, duzen="a4", atla=0, olcu=None):
+    """Basılabilir etiket sayfası HTML'i döner.
+
+    atla: yarım kalmış etiket sayfasını israf etmemek için ilk N hücre boş
+    bırakılır — kullanıcı sayfayı yazıcıya kaldığı yerden koyar.
+    """
+    if duzen not in ("a4", "rulo"):
+        raise ValueError("bilinmeyen düzen: %s" % duzen)
+    o = dict(RULO if duzen == "rulo" else A4)
+    o.update(olcu or {})
+    hucreler = ['<div class="k bos"></div>'] * max(0, int(atla or 0)) if duzen == "a4" else []
+    hucreler += [_etiket(s) for s in satirlar]
+
+    if duzen == "rulo":
+        sayfa = "@page{size:%gmm %gmm;margin:%gmm}" % (o["en"], o["boy"], o["kenar"])
+        yerlesim = (".grid{display:block}"
+                    ".k{width:100%%;height:%gmm;break-after:page}"
+                    ".k:last-child{break-after:auto}"
+                    # Ekranda da gerçek etiket oranı görünsün: yazdırmada @page
+                    # zaten sınırlıyor ama önizleme yanıltıcı olmasın.
+                    "@media screen{.grid{width:%gmm}}"
+                    % (o["boy"] - 2 * o["kenar"], o["en"] - 2 * o["kenar"]))
+    else:
+        sayfa = "@page{size:A4;margin:%gmm}" % o["kenar"]
+        yerlesim = (".grid{display:grid;grid-template-columns:repeat(%d,%gmm);"
+                    "grid-auto-rows:%gmm}" % (o["sutun"], o["en"], o["boy"]))
+
+    return """<!doctype html><html lang=tr><meta charset=utf-8>
+<title>Sayım Etiketleri</title><style>
+%s
+body{font:11px/1.25 Arial,sans-serif;margin:0;color:#000;background:#fff}
+%s
+.k{display:flex;flex-direction:column;justify-content:center;align-items:center;
+   padding:1.5mm;box-sizing:border-box;break-inside:avoid;overflow:hidden;text-align:center}
+.k.bos{visibility:hidden}
+.k img{width:96%%;height:11mm;object-fit:contain}
+.kod{font-family:ui-monospace,Consolas,monospace;font-size:12px;font-weight:700;
+     letter-spacing:.5px;margin-top:.6mm}
+.m{font-weight:700;font-size:10px;margin-top:.6mm}
+.a{font-size:8px;color:#444}
+@media screen{body{padding:10px;background:#eee}
+  .k{outline:1px dashed #bbb;background:#fff}}
+</style><div class=grid>%s</div></html>""" % (sayfa, yerlesim, "".join(hucreler))

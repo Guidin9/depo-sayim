@@ -63,6 +63,23 @@ CREATE INDEX IF NOT EXISTS ix_kuy ON kuyruk(oturum, cozuldu);
 CREATE TABLE IF NOT EXISTS kuyruk_foto(
   id INTEGER PRIMARY KEY, kuyruk INT, ts TEXT, tur TEXT, boyut INT, veri BLOB);
 CREATE INDEX IF NOT EXISTS ix_foto ON kuyruk_foto(kuyruk);
+
+-- Kendi bastığımız etiketler (CLAUDE.md 12). Basım partisi ve tekil etiket
+-- ayrı tutulur: parti "hangi numaralar kâğıda çıktı"yı, etiket "o numara
+-- sonunda neye yapıştı"yı bilir.
+CREATE TABLE IF NOT EXISTS basim(
+  id INTEGER PRIMARY KEY, ts TEXT, tur TEXT, adet INT,
+  ilk TEXT, son TEXT, duzen TEXT, not_ TEXT);
+
+CREATE TABLE IF NOT EXISTS etiket(
+  kod TEXT PRIMARY KEY,      -- normalize edilmiş: DM000123 / DS000045
+  gosterim TEXT,             -- insan okur hâli: DM-000123
+  tur TEXT,                  -- 'raf' | 'birim'
+  basim INT, ts TEXT,
+  malzeme TEXT,              -- raf: basımda dolu · birim: bağlanınca dolar
+  beklenen_id INT,           -- birim: doldurduğu kirli slot
+  oturum INT, ts_bagla TEXT, raf TEXT);
+CREATE INDEX IF NOT EXISTS ix_etiket_tur ON etiket(tur, malzeme);
 """
 
 # Eski veritabanlarına sonradan eklenen sütunlar.
@@ -98,6 +115,7 @@ def baglan(yol=None):
     c.executescript(SEMA)
     goc(c)
     kurallari_tohumla(c)
+    etiketleri_geri_yukle(c)
     c.commit()
     return c
 
@@ -108,6 +126,19 @@ def goc(c):
         var = {r["name"] for r in c.execute("PRAGMA table_info(%s)" % tablo)}
         if sutun not in var:
             c.execute("ALTER TABLE %s ADD COLUMN %s %s" % (tablo, sutun, tur))
+
+
+def etiketleri_geri_yukle(c):
+    """sifirla.bat sonrası etiket defterini data/etiket CSV'lerinden tamamlar.
+
+    Basılmış fiziksel etiket veritabanından uzun ömürlü; sayaç sıfırlanıp aynı
+    numarayı ikinci kez verirse depoda iki ayrı ürün aynı kodu taşır.
+    """
+    from . import etiketler
+    try:
+        etiketler.csv_geri_yukle(c)
+    except OSError:
+        pass
 
 
 def kurallari_tohumla(c):

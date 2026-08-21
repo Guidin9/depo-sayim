@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Durum } from "./api";
 import { Dugme, Marka, Uyari } from "./bilesenler";
 import Ayarlar from "./ekranlar/Ayarlar";
+import Etiket from "./ekranlar/Etiket";
 import Gecmis from "./ekranlar/Gecmis";
 import Kurulum from "./ekranlar/Kurulum";
 import Kuyruk from "./ekranlar/Kuyruk";
@@ -17,7 +18,7 @@ import Telefon from "./ekranlar/Telefon";
 import { olaylariDinle, type BaglantiHali } from "./olaylar";
 import Zemin from "./Zemin";
 
-type Ekran = "kurulum" | "sayim" | "kuyruk" | "rapor" | "gecmis" | "ayarlar";
+type Ekran = "kurulum" | "sayim" | "kuyruk" | "rapor" | "gecmis" | "ayarlar" | "etiket";
 
 /* Telefon monitörü ayrı adreste: http://<laptop-ip>:8000/telefon
    Ekran boyutu tahminine güvenmiyoruz — adres neyse mod odur. Laptop kökten
@@ -152,6 +153,7 @@ export default function App() {
               {durum && acikMi && (
                 <Dugme cocuk="Sayıma dön" tur="ana" tikla={() => setEkran("sayim")} />
               )}
+              {durum && <Dugme cocuk="Etiket" tikla={() => setEkran("etiket")} />}
               {durum && <Dugme cocuk="Ayarlar" tikla={() => setEkran("ayarlar")} />}
               <Dugme cocuk="Geçmiş" tikla={() => setEkran("gecmis")} />
               {!acikMi && <Dugme cocuk="Yeni sayım" tikla={() => setEkran("kurulum")} />}
@@ -188,6 +190,17 @@ export default function App() {
               tik={tik}
               geri={() => setEkran("sayim")}
               yenile={() => void tazele(durum.oturum)}
+            />
+          )}
+
+          {/* Etiket basımı ofis işi: koridorda değil, sayıma çıkmadan önce
+              yapılır. Bu yüzden sayım ekranının başlığına konmadı. */}
+          {ekran === "etiket" && durum && (
+            <Etiket
+              yukleme={durum.yukleme}
+              ambar={durum.ambar}
+              tik={tik}
+              geri={() => setEkran(acikMi ? "sayim" : "gecmis")}
             />
           )}
 

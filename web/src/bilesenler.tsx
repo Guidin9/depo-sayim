@@ -128,6 +128,8 @@ const ROZET: Record<CozTipi, { ad: string; Ikon: typeof Ik.Onay; sinif: string }
   upc: { ad: "UPC barkodu", Ikon: Ik.Barkod, sinif: "bg-uyari/15 text-uyari border-uyari/40" },
   bilinmiyor: { ad: "tanınmadı", Ikon: Ik.Soru, sinif: "bg-hata/15 text-hata border-hata/40" },
   tekrar: { ad: "zaten okutuldu", Ikon: Ik.Tekrar, sinif: "bg-uyari/15 text-uyari border-uyari/40" },
+  // Bizim bastığımız, henüz hiçbir ürüne bağlanmamış seri etiketi
+  etiket_bos: { ad: "boş etiket", Ikon: Ik.Etiket, sinif: "bg-vurgu/15 text-vurgu border-vurgu/40" },
   bos: { ad: "boş", Ikon: Ik.Bos, sinif: "bg-panel2 text-solgun border-cizgi" },
 };
 

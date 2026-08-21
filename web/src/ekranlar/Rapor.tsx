@@ -1,10 +1,20 @@
-/** 4. ekran — sekme önizlemeleri ve Excel indirme. */
+/** 4. ekran — sekme önizlemeleri ve Excel indirme.
+ *
+ * SEKME dizisi sunucudaki reports.SEKME ile aynı sırada olmalı; yeni sekme
+ * eklenirken iki yer birden güncellenir. */
 import { useEffect, useState } from "react";
 import { api, type RaporOnizleme } from "../api";
 import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
 import * as Ik from "../ikonlar";
 
-const SEKME = ["Eksik", "Fazla", "Eşleşen", "Tiger Düzeltme", "Barkod Tablosu"] as const;
+const SEKME = [
+  "Eksik",
+  "Fazla",
+  "Eşleşen",
+  "Tiger Düzeltme",
+  "Barkod Tablosu",
+  "Etiketler",
+] as const;
 
 const ACIKLAMA: Record<string, string> = {
   Eksik: "Okutulmamış beklenen kayıtlar — Tiger'da sayım eksikliği fişi.",
@@ -12,6 +22,8 @@ const ACIKLAMA: Record<string, string> = {
   Eşleşen: "Başarılı okutmalar, denetim izi.",
   "Tiger Düzeltme": "Uydurma seri no → okutulan gerçek seri no. Seri düzeltme fişi.",
   "Barkod Tablosu": "Öğrenilen barkodlar — malzeme kartı > Birimler > Barkod alanına yazın.",
+  Etiketler:
+    "Kendi bastığımız etiketlerin defteri: hangi numara neye yapıştı. Malzemesi boş olanlar havuzda bekliyor.",
 };
 
 export default function Rapor({

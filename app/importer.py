@@ -278,6 +278,7 @@ def ozetle(c, yukleme_id):
     har = c.execute("SELECT COUNT(*) satir, COALESCE(SUM(miktar),0) adet FROM beklenen "
                     "WHERE yukleme=? AND haric=1", (yukleme_id,)).fetchone()
     return {
+        "etiket_cakisma": etiket_cakismasi(c, yukleme_id),
         "yukleme": yukleme_id,
         "dosya": y["dosya_adi"],
         "ts": y["ts"],
@@ -289,3 +290,26 @@ def ozetle(c, yukleme_id):
         "kirli": sum(r["kirli"] or 0 for r in izl),
         "haric": {"satir": har["satir"], "adet": har["adet"]},
     }
+
+
+def etiket_cakismasi(c, yukleme_id):
+    """Tiger verisinde bizim etiket desenimize benzeyip deftere ait olmayan kayıt.
+
+    Kendi bastığımız numaralar (DM-000123 / DS-000045) Tiger'a yazıldıktan
+    sonraki yıl normal kod/seri olarak geri gelir — beklenen ve istenen budur.
+    Ama defterde karşılığı OLMAYAN böyle bir değer varsa iki ihtimal var:
+    ya defter kayboldu (data/etiket silinmiş), ya da tesadüfen aynı desende bir
+    üretici kodu var. İkisi de sessiz kalırsa aynı numara ikinci kez basılabilir.
+    """
+    from . import etiketler
+    cak = []
+    for r in c.execute("SELECT kod, kod_n, seri, seri_n FROM beklenen WHERE yukleme=?",
+                       (yukleme_id,)):
+        for alan, ham, n in (("kod", r["kod"], r["kod_n"]),
+                             ("seri", r["seri"], r["seri_n"])):
+            if not n or not etiketler.etiket_mi(n):
+                continue
+            if c.execute("SELECT 1 FROM etiket WHERE kod=?", (n,)).fetchone():
+                continue
+            cak.append({"alan": alan, "deger": ham, "kod_n": n})
+    return cak[:50]
