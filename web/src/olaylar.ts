@@ -1,7 +1,7 @@
 /** Canlı güncelleme aboneliği.
  *
  * Sunucu "bir şey değişti" der, biz kendi verimizi tazeleriz. Böylece laptopta
- * okutulan barkod telefonda, telefonda seçilen aday laptopta anında görünür.
+ * okutulan barkod telefonda, telefonda yapılan seçim laptopta anında görünür.
  *
  * Kendi yaptığımız değişikliğin haberi geri geldiğinde yoksayıyoruz: o isteğin
  * yanıtı zaten güncel durumu taşıyordu, ikinci kez çekmeye gerek yok.

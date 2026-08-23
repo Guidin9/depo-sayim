@@ -18,8 +18,10 @@ SEKME = ("Eksik", "Fazla", "Eşleşen", "Tiger Düzeltme", "Barkod Tablosu",
 BASLIKLAR = {
     "Eksik": ["Malzeme Kodu", "Açıklama", "Beklenen Seri/Lot", "İzleme", "Miktar",
               "Birim", "Not"],
+    # Ürün Adı: Tiger'da kaydı olmayan ürünlerde açıklama JOIN'den gelemez,
+    # kullanıcı elle yazar (CLAUDE.md 5, DEMO_FEEDBACK.md 3).
     "Fazla": ["Zaman", "Raf", "Okutulan", "Malzeme Kodu", "Açıklama", "Seri",
-              "Miktar", "Not"],
+              "Miktar", "Not", "Ürün Adı"],
     "Eşleşen": ["Zaman", "Raf", "Malzeme Kodu", "Açıklama", "Seri/Lot", "Miktar",
                 "Tip", "Not"],
     "Tiger Düzeltme": ["Malzeme Kodu", "Açıklama", "MEVCUT (hatalı) Seri No",
@@ -73,8 +75,14 @@ def _yeni_seri(ham):
     return max(adaylar, key=len)
 
 
-def rapor_verisi(c, oturum_id):
-    """Sekme adı -> {basliklar, satirlar, dipnot} sözlüğü."""
+def eksik_kayitlar(c, oturum_id):
+    """Sayımda karşılığı bulunamayan beklenen satırlar.
+
+    Rapordaki Eksik sekmesi ve sayım sonu eşleştirme ekranı aynı listeyi
+    kullanır — iki yerde iki ayrı gerçek olmasın (DEMO_FEEDBACK.md 6).
+
+    (eksik, adet_fazlasi, haric_sayisi) döner; ilk ikisi sözlük listesidir.
+    """
     o = c.execute("SELECT * FROM oturum WHERE id=?", (oturum_id,)).fetchone()
     if not o:
         raise ValueError("Oturum #%s bulunamadı" % oturum_id)
@@ -92,25 +100,45 @@ def rapor_verisi(c, oturum_id):
             haric_sayisi += 1
             continue
         okunan = sayilan.get(r["id"], 0)
+        ortak = {"id": r["id"], "kod": r["kod"], "aciklama": r["aciklama"],
+                 "seri": r["seri"], "izleme": r["izleme"], "birim": r["birim"],
+                 "kirli": r["kirli"]}
         if r["izleme"] == "seri":
             if not okunan:
-                eksik.append([r["kod"], r["aciklama"], r["seri"], r["izleme"],
-                              r["miktar"], r["birim"],
-                              "KIRLI KAYIT — " + r["kirli_sebep"] if r["kirli"] else ""])
+                eksik.append(dict(ortak, miktar=r["miktar"], not_=(
+                    "KIRLI KAYIT — " + r["kirli_sebep"] if r["kirli"] else "")))
             continue
         # lot / izlemesiz: adet karşılaştırması
         fark = (r["miktar"] or 0) - okunan
         if fark > 0:
-            eksik.append([r["kod"], r["aciklama"], r["seri"], r["izleme"], fark,
-                          r["birim"], "adet farkı — sayılan %g / beklenen %g"
-                          % (okunan, r["miktar"] or 0)])
+            eksik.append(dict(ortak, miktar=fark,
+                              not_="adet farkı — sayılan %g / beklenen %g"
+                                   % (okunan, r["miktar"] or 0)))
         elif fark < 0:
-            adet_fazlasi.append(["", "", r["kod"], r["kod"], r["aciklama"], r["seri"],
-                                 -fark, "adet fazlası — sayılan %g / beklenen %g"
-                                 % (okunan, r["miktar"] or 0)])
+            adet_fazlasi.append(dict(ortak, miktar=-fark,
+                                     not_="adet fazlası — sayılan %g / beklenen %g"
+                                          % (okunan, r["miktar"] or 0)))
+    return eksik, adet_fazlasi, haric_sayisi
 
+
+def rapor_verisi(c, oturum_id):
+    """Sekme adı -> {basliklar, satirlar, dipnot} sözlüğü."""
+    o = c.execute("SELECT * FROM oturum WHERE id=?", (oturum_id,)).fetchone()
+    if not o:
+        raise ValueError("Oturum #%s bulunamadı" % oturum_id)
+    yukleme, ambar = o["yukleme"], o["ambar"]
+
+    ham_eksik, ham_adet_fazlasi, haric_sayisi = eksik_kayitlar(c, oturum_id)
+    eksik = [[e["kod"], e["aciklama"], e["seri"], e["izleme"], e["miktar"],
+              e["birim"], e["not_"]] for e in ham_eksik]
+    adet_fazlasi = [["", "", e["kod"], e["kod"], e["aciklama"], e["seri"],
+                     e["miktar"], e["not_"], ""] for e in ham_adet_fazlasi]
+
+    # Açıklama boşsa elle yazılan ad devreye girer: kodu olmayan kayıtta
+    # sütunun boş kalması raporu okunamaz yapıyordu.
     fazla = [[_kisa(r["ts"]), r["raf"] or "", r["ham"], r["kod"] or "?",
-              r["aciklama"] or "", r["seri"] or "", r["miktar"], r["not_"] or ""]
+              r["aciklama"] or r["ad"] or "", r["seri"] or "", r["miktar"],
+              r["not_"] or "", r["ad"] or ""]
              for r in c.execute("""SELECT o.*, b.aciklama FROM okutma o
                                    LEFT JOIN beklenen b ON b.kod=o.kod
                                         AND b.yukleme=? AND b.ambar=?

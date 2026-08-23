@@ -46,7 +46,7 @@ export default function Gecmis({
           }
           tikla={geri}
         />
-        <h1 className="font-serif text-4xl leading-[0.95] tracking-tight">Oturum geçmişi</h1>
+        <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">Oturum geçmişi</h1>
       </header>
 
       <Panel
@@ -59,24 +59,24 @@ export default function Gecmis({
               {liste.map((o) => (
                 <li
                   key={o.id}
-                  className="flex flex-wrap items-center gap-3 rounded-xl border border-cizgi
+                  className="flex flex-wrap items-center gap-3 rounded-sm border border-cizgi
                     bg-panel2 px-4 py-3"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="font-bold">
                       Oturum #{o.id} · Ambar {o.ambar}
                       {o.durum === "acik" && (
-                        <span className="ml-2 rounded border border-ok/40 bg-ok/15 px-1.5 text-[11px] text-ok">
+                        <span className="ml-2 rounded border border-ok bg-ok-tint px-1.5 text-mikro text-ok">
                           açık
                         </span>
                       )}
                     </div>
-                    <div className="rakam mt-1 text-[13px] text-solgun">
+                    <div className="rakam mt-1 text-kucuk text-solgun">
                       {o.basla?.slice(0, 16).replace("T", " ")}
                       {o.bitir && ` → ${o.bitir.slice(11, 16)}`} · {o.dosya_adi ?? "—"}
                     </div>
                   </div>
-                  <div className="rakam flex gap-4 text-[13px]">
+                  <div className="rakam flex gap-4 text-kucuk">
                     <span>
                       <b className="text-ok">{o.okutulan}</b> okutulan
                     </span>
@@ -108,7 +108,7 @@ export default function Gecmis({
         baslik="Komut barkodu kartı"
         cocuk={
           <div className="flex flex-col gap-3">
-            <p className="text-[14px] text-solgun">
+            <p className="text-kucuk text-solgun">
               Yazdır, kes, laminatla. Sahada klavyeye dokunmadan komut vermek için. Raf
               barkodlarını virgülle ayırın.
             </p>
@@ -116,8 +116,8 @@ export default function Gecmis({
               value={raflar}
               onChange={(e) => setRaflar(e.target.value)}
               placeholder="A1, A2, B1…"
-              className="w-full rounded-xl border border-cizgi bg-zemin px-4 py-3 font-mono
-                text-[15px] focus:border-vurgu focus:outline-none"
+              className="w-full rounded-sm border border-cizgi bg-zemin px-4 py-3 font-mono
+                text-govde focus:border-vurgu focus:outline-none"
             />
             <Dugme
               cocuk={

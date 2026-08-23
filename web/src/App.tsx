@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Durum } from "./api";
 import { Dugme, Marka, Uyari } from "./bilesenler";
 import Ayarlar from "./ekranlar/Ayarlar";
+import Esleme from "./ekranlar/Esleme";
 import Etiket from "./ekranlar/Etiket";
 import Gecmis from "./ekranlar/Gecmis";
 import Kurulum from "./ekranlar/Kurulum";
@@ -16,9 +17,16 @@ import Rapor from "./ekranlar/Rapor";
 import Sayim from "./ekranlar/Sayim";
 import Telefon from "./ekranlar/Telefon";
 import { olaylariDinle, type BaglantiHali } from "./olaylar";
-import Zemin from "./Zemin";
 
-type Ekran = "kurulum" | "sayim" | "kuyruk" | "rapor" | "gecmis" | "ayarlar" | "etiket";
+type Ekran =
+  | "kurulum"
+  | "sayim"
+  | "kuyruk"
+  | "esleme"
+  | "rapor"
+  | "gecmis"
+  | "ayarlar"
+  | "etiket";
 
 /* Telefon monitörü ayrı adreste: http://<laptop-ip>:8000/telefon
    Ekran boyutu tahminine güvenmiyoruz — adres neyse mod odur. Laptop kökten
@@ -106,50 +114,38 @@ export default function App() {
   }
 
   if (!hazir)
-    return (
-      <>
-        <Zemin />
-        <p className="relative z-10 p-10 text-center font-serif text-2xl text-solgun italic">
-          Yükleniyor…
-        </p>
-      </>
-    );
+    return <p className="p-10 text-center text-2xl text-solgun italic">Yükleniyor…</p>;
 
   /* Telefon: sade monitör. Kurulum, rapor ve oturum kapatma bilerek yok. */
   if (TELEFON_MODU)
     return (
-      <>
-        <Zemin />
-        <div className="relative z-10 min-h-full">
-          <Telefon
+      <div className="min-h-full">
+        <Telefon
             durum={durum?.durum === "acik" ? durum : null}
             canli={canli}
             tik={tik}
-            tazele={() => void tazele(oturumRef.current ?? undefined).catch(() => undefined)}
-          />
-        </div>
-      </>
+          tazele={() => void tazele(oturumRef.current ?? undefined).catch(() => undefined)}
+        />
+      </div>
     );
 
   const acikMi = durum?.durum === "acik";
 
   return (
-    <>
-      <Zemin />
-      <div className="relative z-10 flex h-full flex-col">
+    <div className="flex h-full flex-col">
         {hata && (
           <div className="p-4">
             <Uyari cocuk={`Sunucuya ulaşılamadı: ${hata}`} />
           </div>
         )}
 
-        {/* Design.md'nin yüzen hap navigasyonu. Marka serif, düğmeler tek bir
-            cam adada — üst şerit sayfayı kesen bir çizgi değil, üstünde duran
-            bir nesne. */}
+        {/* Üst gezinme. Marka solda, düğmeler sağda. Eskiden yüzen bir cam
+            "hap ada"ydı; Flat/Swiss'te ada yok — şerit sayfayı alt kenarından
+            kesen düz bir çizgiyle bitiyor ve düğmeler doğrudan zeminde duruyor. */}
         {ekran !== "sayim" && (
-          <nav className="flex flex-wrap items-center gap-3 px-5 py-3">
+          <nav className="flex flex-wrap items-center gap-3 border-b border-cizgi bg-panel px-5 py-3">
             <Marka />
-            <div className="cam ml-auto flex flex-wrap gap-1.5 rounded-full p-1.5">
+            <div className="ml-auto flex flex-wrap gap-2">
               {durum && acikMi && (
                 <Dugme cocuk="Sayıma dön" tur="ana" tikla={() => setEkran("sayim")} />
               )}
@@ -182,6 +178,19 @@ export default function App() {
               <p className="mb-4 text-solgun">Açık oturum yok.</p>
               <Dugme cocuk="Kuruluma git" tur="ana" tikla={() => setEkran("kurulum")} />
             </div>
+          )}
+
+          {/* Rapordan önceki adım: fazla ve eksik yan yana, eşleştirme elle. */}
+          {ekran === "esleme" && durum && (
+            <Esleme
+              oturum={durum.oturum}
+              tik={tik}
+              geri={() => setEkran(acikMi ? "sayim" : "gecmis")}
+              rapora={() => {
+                setRaporOturum(durum.oturum);
+                setEkran("rapor");
+              }}
+            />
           )}
 
           {ekran === "kuyruk" && durum && (
@@ -222,6 +231,7 @@ export default function App() {
               acikMi={!!acikMi && (raporOturum ?? durum?.oturum) === durum?.oturum}
               geri={() => setEkran(acikMi && durum ? "sayim" : "gecmis")}
               bitir={() => void oturumBitir()}
+              esleme={durum ? () => setEkran("esleme") : undefined}
             />
           )}
 
@@ -235,8 +245,7 @@ export default function App() {
               }}
             />
           )}
-        </main>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }

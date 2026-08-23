@@ -1,7 +1,6 @@
-/** Okutma ışıması — Design.md'nin imleç spot ışığının işlevsel karşılığı.
+/** Okutma ışıması.
  *
- * Orijinalde imleç bir videoyu ortaya çıkarıyor. Bizde video yok, telefonda
- * imleç de yok; onun yerine barkod okutulduğunda ekranın üstünden sonucun
+ * Barkod okutulduğunda ekranın üstünden sonucun
  * rengiyle kısa bir ışık geçiyor. Sesli geri bildirimin görsel eşi: telefon
  * rafta dururken ya da kulaklık takılıyken bile sonuç uzaktan fark ediliyor.
  *
@@ -25,7 +24,11 @@ export default function Isima({ renk }: { renk: IsimaRenk }) {
       aria-hidden
       className="isima pointer-events-none fixed inset-x-0 top-0 z-20 h-64"
       style={{
-        mixBlendMode: "screen",
+        /* multiply, screen DEĞİL. screen açık zemini daha da açar; beyaz
+           üzerinde sonuç beyazdır, yani ışıma tamamen görünmez olurdu — üstelik
+           sessizce: TS hatası yok, konsol çıktısı yok ve efekt okutmadan sonra
+           yalnızca 0.9 sn yaşıyor. multiply zemini koyultarak çalışır. */
+        mixBlendMode: "multiply",
         background: `radial-gradient(140% 100% at 50% 0%,
           color-mix(in srgb, ${RENK[renk]} 42%, transparent) 0%, transparent 72%)`,
       }}

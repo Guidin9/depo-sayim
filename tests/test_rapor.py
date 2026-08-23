@@ -54,9 +54,33 @@ def test_barkod_tablosu(c, ot, yaz):
 
 
 def test_fazla_sekmesi(c, ot, yaz):
-    yaz("##RAF-B1##", "210-BEJO", "YENISERI12345", SONRAKI)
+    """Fazla, ancak kullanıcı onayladıktan sonra rapora düşer."""
+    r = yaz("##RAF-B1##", "210-BEJO", "YENISERI12345", SONRAKI)
+    assert r["tip"] == "onay"
+    assert _satirlar(reports.rapor_verisi(c, ot["id"]), "Fazla") == []
+
+    matching.kuyruk_fazla(c, r["kuyruk_id"])
     f = _satirlar(reports.rapor_verisi(c, ot["id"]), "Fazla")
     assert len(f) == 1 and f[0][1] == "B1" and f[0][3] == "210-BEJO"
+
+
+def test_elle_fazlada_urun_adi(c, ot, yaz):
+    """Tiger'da kaydı olmayan ürün: kod yok, adı kullanıcı yazar.
+
+    DEMO_FEEDBACK.md 3 — isimsiz fazla kaydı sonradan işe yaramıyordu.
+    """
+    r = yaz("KAYITSIZ-URUN-9911", "##FAZLA##")
+    assert r["tip"] == "fazla_elle" and len(r["okutma"]) == 1
+    c.execute("UPDATE okutma SET ad=? WHERE id=?", ("Kırmızı HP güç kablosu",
+                                                    r["okutma"][0]))
+
+    veri = reports.rapor_verisi(c, ot["id"])
+    f = _satirlar(veri, "Fazla")
+    assert veri["Fazla"]["basliklar"][8] == "Ürün Adı"
+    assert len(f) == 1
+    assert f[0][3] == "?"                          # malzeme kodu yok
+    assert f[0][4] == "Kırmızı HP güç kablosu"     # açıklama adla doluyor
+    assert f[0][8] == "Kırmızı HP güç kablosu"
 
 
 def test_lot_adet_farki(c, ot, yaz):
@@ -140,7 +164,8 @@ def test_kuyruktan_cozulen_tek_seri_yazar(c, ot, yaz):
 
 def test_arama_sayilani_isaretler(c, ot, yaz):
     yaz("0WGP72", "W3S2000G7745", "##SONRAKI##")     # SAYIM1 slotu doldu
-    sonuc = matching.ara(c, ot["yukleme"], ot["ambar"], "0WGP72", oturum=ot["id"])
+    sonuc = matching.ara(c, ot["yukleme"], ot["ambar"], "0WGP72",
+                         oturum=ot["id"])["satirlar"]
     sayim1 = next(s for s in sonuc if s["seri"] == "0WGP72SAYIM1")
     sayim2 = next(s for s in sonuc if s["seri"] == "0WGP72SAYIM2")
     assert sayim1["sayildi"] == 1 and sayim2["sayildi"] == 0

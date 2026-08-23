@@ -1,74 +1,58 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------- fontlar
-   Design.md Inter + Instrument Serif istiyor ama Google Fonts <link> ile
-   çekiyor. Bizde bu mümkün değil: vite.config.ts'in dediği gibi depodaki
+   Tek aile: Plus Jakarta Sans (değişken, 200-800 + italik). Hiyerarşi yazı
+   tipiyle değil KALINLIKLA kurulur (başlıklar 700/800, gövde 400).
+
+   Google Fonts <link> ile çekilmiyor: vite.config.ts'in dediği gibi depodaki
    laptopta internet olmayabilir. Dosyalar src/fonts/ altında duruyor; buradan
    göreli url() ile referans verilince Vite bunları hash'leyip
    app/static/assets/ içine yazar — orası main.py'de StaticFiles ile mount'lu.
    (public/ altına konsaydı assets mount'una girmez, SPA yedek dalına düşerdi.)
 
    latin-ext şart: ğ Ğ ş Ş İ o blokta. ı (U+0131) latin bloğunda ayrıca var.
-   unicode-range'ler Google'ın verdiğiyle birebir — tarayıcı sadece gerekeni
-   indirsin. */
+   İkisi de indirilen dosyalarda doğrulandı. unicode-range'ler Google'ın
+   verdiğiyle birebir — tarayıcı sadece gerekeni indirsin.
+
+   Değişken font olduğu için tek dosya bütün kalınlıkları taşıyor: dört dosya
+   (düz/italik × latin/latin-ext) altı dosyanın yerini aldı. */
 
 @font-face {
-  font-family: "Inter";
+  font-family: "Plus Jakarta Sans";
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 200 800;
   font-display: swap;
-  src: url("./fonts/Inter-latin-ext.woff2") format("woff2");
+  src: url("./fonts/PlusJakartaSans-latin-ext.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: "Inter";
+  font-family: "Plus Jakarta Sans";
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 200 800;
   font-display: swap;
-  src: url("./fonts/Inter-latin.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: "Instrument Serif";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./fonts/InstrumentSerif-latin-ext.woff2") format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-@font-face {
-  font-family: "Instrument Serif";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("./fonts/InstrumentSerif-latin.woff2") format("woff2");
+  src: url("./fonts/PlusJakartaSans-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Instrument Serif";
+  font-family: "Plus Jakarta Sans";
   font-style: italic;
-  font-weight: 400;
+  font-weight: 200 800;
   font-display: swap;
-  src: url("./fonts/InstrumentSerif-Italic-latin-ext.woff2") format("woff2");
+  src: url("./fonts/PlusJakartaSans-Italic-latin-ext.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: "Instrument Serif";
+  font-family: "Plus Jakarta Sans";
   font-style: italic;
-  font-weight: 400;
+  font-weight: 200 800;
   font-display: swap;
-  src: url("./fonts/InstrumentSerif-Italic-latin.woff2") format("woff2");
+  src: url("./fonts/PlusJakartaSans-Italic-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
@@ -76,31 +60,115 @@
 
 /* ---------------------------------------------------------------- jetonlar
    Depo ortamı için tasarlandı: kötü aydınlatma, uzaktan bakış, eldivenli el.
-   Koyu tema varsayılan ve tek tema — sayım ekranı hep aynı görünsün.
+   AÇIK tema varsayılan ve tek tema — sayım ekranı hep aynı görünsün.
 
-   Renk isimleri bilinçli olarak korundu: bütün ekranlar bunlara bağlı ve
-   saha verisiyle doğrulanmışlar. Design.md uyarlamasında değişen yalnızca
-   zemin (bir tık daha derin ve nötr, katman hissi için) ile tipografi.
-   panel/panel2 aynı kaldı: veri satırlarının kontrastı düşmemeli. */
+   Yön: Flat Design + Minimalism & Swiss. Cam yok, gölge yok, gradyan yok,
+   hap geometrisi yok. Kaynağı ui-ux-pro-max skill'inin "Inventory & Stock
+   Management" ürün tipi satırı: "functional neutral + status traffic-light
+   + scanner accent".
+
+   Renk İSİMLERİ bilinçli olarak korundu — 12 dosyada ~518 kullanım yeri
+   bunlara bağlı; yeniden adlandırma hepsine dokunurdu. Değişen yalnızca
+   değerler. zemin/yazi rolleri koyudan açığa döndü ama adları hâlâ doğru:
+   zemin = sayfa zemini, yazi = metin rengi.
+
+   Her değer WCAG'e karşı ÖLÇÜLDÜ (bkz. tablo). Eski koyu tema renkleri açık
+   zeminde 2.06–3.30 arasıydı, yani dördü de kalıyordu. */
 @theme {
-  --color-zemin: #08090d;
-  --color-panel: #141a23;
-  --color-panel2: #1c242f;
-  --color-cizgi: #26303e;
-  --color-yazi: #e9eef6;
-  --color-solgun: #8b97a9;
-  --color-vurgu: #4c6fff;
-  --color-ok: #21c07a;
-  --color-uyari: #f0a020;
-  --color-hata: #f0544f;
-  --color-bilgi: #48a9e6;
+  /* Yüzeyler — sıra: sayfa < kart, satır kartın İÇİNDE ------------------
+     zemin yalnızca sayfa zemini değil: 18 `bg-zemin` kullanımının 18'i de
+     <input> dolgusu (girdi kuyusu). Bu yüzden panel'den ayrışması gerekiyor,
+     yoksa beyaz kartın içindeki girdi dikdörtgeni kayboluyor. */
+  --color-zemin: #f1f5f9; /* sayfa zemini + girdi kuyusu */
+  --color-panel: #ffffff; /* kart / panel yüzeyi */
+  --color-panel2: #f8fafc; /* kartın içindeki satır / zebra */
 
-  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
-  --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  /* Kenarlıklar — İKİ tane, bilerek.
+     cizgi ayraç içindir (1.42:1, metin dışı 3:1'i geçmez ama ayraç için
+     yeterli). Girdi ve form kontrolünün ÇERÇEVESİ ayrı: kutunun sınırını
+     gösteren tek şey o, 3:1 şart. cizgi-kuvvetli 4.55:1 veriyor. */
+  --color-cizgi: #cbd5e1;
+  --color-cizgi-kuvvetli: #64748b;
+
+  /* Pasif düğme ve yer tutucu metin için. `opacity-40` / `text-solgun/60`
+     kullanmayın: %40 opak koyu metin beyaz üzerinde 2.55:1 veriyor, yani
+     okunmuyor. Koyu temada işe yarıyordu çünkü siyaha doğru soluyordu. */
+  --color-solgun-hafif: #64748b; /* 4.76:1 — hâlâ AA */
+
+  /* Metin --------------------------------------------------------------- */
+  --color-yazi: #0f172a; /* 17.06:1 — ana metin */
+  --color-solgun: #475569; /* 7.24:1 — ikincil metin */
+
+  /* Eylem ve durum — traffic-light + tarayıcı vurgusu.
+     Hepsi normal metin için 4.5:1 üstü, dolu düğmede beyaz yazı 5.02–6.70. */
+  --color-vurgu: #1d4ed8; /* 6.41:1 — birincil eylem, odak halkası */
+  --color-ok: #047857; /* 5.24:1 */
+  --color-uyari: #b45309; /* 4.80:1 */
+  --color-hata: #b91c1c; /* 6.18:1 */
+  /* bilgi camgobegine kaydirildi: koyu temada vurgu (canli indigo) ile bilgi
+     (gok mavisi) kolay ayriliyordu, acik temada ikisi de koyu maviye dusuyor
+     ve "ogrenilmis" / "malzeme kodu" rozetleri ayni listede yan yana geliyor
+     (Sayim.tsx:576). Ikon + metin zaten ayirt ediyor (§10.1 madde 6), bu
+     yalnizca okumayi hizlandiriyor. */
+  --color-bilgi: #0e7490; /* 4.89:1 */
+
+  /* Durum tint zeminleri (rozet, şerit, uyarı kutusu dolgusu).
+     bg-ok/12 gibi opaklık çarpanları YERİNE bunlar kullanılır: açık zeminde
+     /15 ve üstü kontrastı düşürüyor, amber ise hiçbir opaklıkta geçmiyor
+     (4.39 → 3.53). Sabit değerlerin oranı ölçüldü ve deterministik. */
+  --color-vurgu-tint: #eff6ff; /* üzerinde vurgu yazısı 6.16:1 */
+  --color-ok-tint: #ecfdf5; /* 5.21:1 */
+  --color-uyari-tint: #fffbeb; /* 4.84:1 */
+  --color-hata-tint: #fef2f2; /* 5.91:1 */
+  --color-bilgi-tint: #ecfeff; /* 5.1:1 */
+
+  /* Yarıçap — hap geometrisi bitti. Flat "0-4px", Swiss "0px" diyor.
+
+     Yeni jeton EKLEMİYORUZ, stok ölçeği eziyoruz: Tailwind'in theme.css'inde
+     --radius-xl (0.75rem) ve --radius-2xl (1rem) tanımlı, yani temaya bağlı.
+     Bunları 2px'e çekmek kod tabanındaki 43 `rounded-xl` + 34 `rounded-2xl`
+     kullanımını TEK düzenlemede düzleştiriyor — çağrı yerlerine dokunmadan.
+
+     `rounded-full` (42 kullanım) temaya bağlı DEĞİL: Tailwind onu
+     calc(infinity * 1px) diye sabit basıyor. O yüzden düğme ve rozetler
+     Aşama 2'de bilesenler.tsx'te elle süpürülecek; Nokta'nın yuvarlak
+     bağlantı noktası ve .halka orada korunacak. */
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --radius-2xl: 2px;
+  --radius-3xl: 2px;
+
+  /* Yazı boyutu tabanı 16px (Accessible & Ethical alt sınırı). Depoda
+     uzaktan bakılıyor; 11-13px keyfi boyutlar buraya çekilecek.
+     mikro yalnızca rozet ve alan etiketi içindir. */
+  --text-mikro: 0.75rem; /* 12px — rozet, alan etiketi, üst başlık (eyebrow) */
+  --text-mikro--line-height: 1.35;
+  --text-kucuk: 0.875rem; /* 14px — tablo hücresi, barkod/seri metni */
+  --text-kucuk--line-height: 1.45;
+  --text-govde: 1rem; /* 16px — gövde, düğme, girdi */
+  --text-govde--line-height: 1.5;
+
+  /* 11px YASAK: kod tabanında üç yerde vardı (rozet altı, sayaç etiketi),
+     hepsi büyük harf "eyebrow" — beyaz üzerinde ince koyu metnin en çok
+     kaybettiği yer tam orası. Taban 12px. */
+  --tracking-etiket: 0.08em;
+
+  --font-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, Roboto,
+    sans-serif;
+  /* Uygulamada serif YOK. Bu jeton yalnızca emniyet için duruyor:
+     biri font-serif yazarsa Tailwind'in Georgia varsayılanına düşüp ekranın
+     ortasında yabancı bir yazı tipi belirmesin. Yeni kodda kullanmayın —
+     başlık istiyorsanız kalınlık verin (font-bold / font-extrabold). */
+  --font-serif: var(--font-sans);
+  /* Mono BİLEREK değişmedi: barkod ve seri numarası sabit genişlik ister.
+     0/O ve 1/l ayrımı ile alt alta hizalanan haneler, kötü depo ışığında
+     karşılaştırmayı mümkün kılan tek şey. */
   --font-mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
 
-  /* Design.md'nin easing'i — bütün geçişler bunu kullanır. */
-  --ease-kolay: cubic-bezier(0.77, 0, 0.18, 1);
+  /* Flat Design geçiş süresi 150-200ms diyor; easing sade tutuldu. */
+  --ease-kolay: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html,
@@ -114,7 +182,13 @@ body {
   background: var(--color-zemin);
   color: var(--color-yazi);
   font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
+  /* -webkit-font-smoothing: antialiased BİLEREK KALDIRILDI. Açık zemin üzerine
+     koyu metinde glifleri inceltiyor; koyu temada tam tersi işe yarıyordu
+     (halasyonu kesiyordu). Kaldırılmazsa arayüz "soluk" görünür ve sebebi
+     palette aranır. Yerine değişken fontun 450 ağırlığı: aynı nominal
+     kalınlık beyaz üzerinde daha ince okunur, 450 koyu temadaki 400'ün
+     algılanan ağırlığını geri veriyor. Ek dosya maliyeti yok. */
+  font-weight: 450;
   overscroll-behavior: none;
 }
 
@@ -123,18 +197,34 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Dokunma hedefleri en az 48px — eldivenle kullanılıyor */
+/* Dokunma hedefleri en az 48px — eldivenle kullanılıyor.
+   input BURAYA SONRADAN eklendi: kural yalnızca button/select/[role=button]
+   kapsıyordu ve py-2 / py-2.5 ile yazılmış girdiler 48px'in altında kalıyordu
+   (Esleme.tsx:198,272 · Sayim.tsx:513). Yeni bir kural değil, var olan bir
+   ihlalin kapatılması. */
 button,
 select,
+input,
 [role="button"] {
   min-height: 48px;
+}
+
+/* Onay kutusu ve radyo yerel kontrol; renklerini tarayıcı seçer ve varsayılan
+   mavi paletin vurgusuyla tutmuyor. accent-color tek satırda hizalıyor.
+   min-height kuralı bunları kapsıyor ama kutunun kendisi 13px çiziliyor —
+   dokunma hedefi etiketle birlikte sağlanıyor. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-vurgu);
+  min-height: 0;
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid var(--color-vurgu);
+  /* Accessible & Ethical: odak halkası 3-4px. vurgu zemin üzerinde 6.41:1. */
+  outline: 3px solid var(--color-vurgu);
   outline-offset: 2px;
 }
 
@@ -143,7 +233,7 @@ select:focus-visible,
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-cizgi);
+  background: var(--color-cizgi-kuvvetli);
   border-radius: 6px;
 }
 ::-webkit-scrollbar-track {
@@ -152,94 +242,41 @@ select:focus-visible,
 
 @layer components {
   /* ------------------------------------------------------------------ cam
-     Design.md'nin .liquid-glass'ının depo kalibrasyonu.
+     BU SINIFLAR ARTIK CAM DEĞİL.
 
-     Gradyan saç teli kenarlık numarası (::before + mask-composite: exclude)
-     birebir alındı. Değişen tek şey yüzey opaklığı: orijinali
-     rgba(255,255,255,0.01), yani neredeyse şeffaf — arkasında koyu bir ürün
-     fotoğrafı olduğu için okunuyor. Bizde arkada ızgara var ve depo ışığı
-     kötü; o opaklıkta nav metni okunmaz. Panel renginin %72'si hem cam
-     hissini hem kontrastı veriyor.
+     Eskiden frosted cam yüzeydi: backdrop-filter: blur(12px), ::before ile
+     gradyan saç teli kenarlık, inset beyaz gölge. Flat + Swiss yönünde bunun
+     hiçbiri yok — "no gradients, no shadows, clean lines".
 
-     Kural: cam yalnızca kabukta (nav, panel başlığı, modal, telefon başlığı).
-     Barkod girişi, sayaçlar, okutma şeridi ve liste satırları opak kalır. */
-  .cam,
-  .cam-hafif {
-    position: relative;
-    overflow: hidden;
-    border: none;
-    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
-  }
+     Sınıflar SİLİNMEDİ, yerinde yeniden tanımlandı. Sebebi göç güvenliği:
+     33 çağrı yeri var (7 dosya, yalnız Telefon.tsx'te 19). Silmek 33 yere
+     aynı anda dokunmayı ve arada bozuk bir arayüzü gerektirirdi. Böyle tek
+     düzenlemede bütün uygulama düz/açık hâle geçti ve çalışır kaldı.
 
+     Ekranlar sırayla geçirilirken çağrı yerleri `bg-panel border border-cizgi`
+     ile değiştirilecek; sınıflar boşalınca silinecek. Yeni kodda KULLANMAYIN. */
   .cam {
-    background: color-mix(in srgb, var(--color-panel) 72%, transparent);
-    /* Önek SIRASI önemli: öneksiz olan sonda durmalı. Ters yazıldığında
-       Lightning CSS öneksiz bildirimi eleyip yalnızca -webkit- olanı bırakıyor
-       ve bulanıklık hiç uygulanmıyor. */
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    backdrop-filter: blur(12px) saturate(1.2);
+    background: var(--color-panel);
+    border: 1px solid var(--color-cizgi);
   }
 
-  /* Bulanıklık yapmayan cam: aynı yüzey ve aynı gradyan kenarlık, ayrı
-     backdrop katmanı yok.
-
-     Düğmeler bunu kullanıyor. Sayım ekranında aynı anda on kadar sade düğme
-     var; her biri gerçek .cam olsaydı on ayrı backdrop-filter katmanı çıkardı.
-     Zaten bulanıklaşmış bir hap adasının içinde duran düğmenin kendi
-     bulanıklığı görünmüyor bile — bütün gün açık duran depo laptopunda bunun
-     GPU maliyeti bedava değil. */
+  /* Düğme dolgusu — zeminden bir tık ayrışsın diye panel2. */
   .cam-hafif {
-    background: color-mix(in srgb, var(--color-panel2) 82%, transparent);
+    background: var(--color-panel2);
+    border: 1px solid var(--color-cizgi);
   }
 
-  /* Yapışkan başlıklar için yoğun varyant.
-     Altından gerçek içerik kayıyor; %72'de kaydırılan satırlar camın içinden
-     okunuyor ve "Ambar 1 · oturum #3" ile yarışıyor. Depoda başlığın her an
-     net okunması, camın şeffaflığından önce gelir. */
+  /* Yapışkan başlık. Eskiden %94 opaklıkla altından kayan satırları
+     bastırıyordu; artık yüzeyler zaten opak, bu yalnızca .cam ile birlikte
+     gelen bir eş anlamlı. Telefon başlığında altındaki içerik görünmesin
+     diye açıkça opak bırakıldı. */
   .cam-yogun {
-    background: color-mix(in srgb, var(--color-panel) 94%, transparent);
-  }
-
-  .cam::before,
-  .cam-hafif::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1.4px;
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.45) 0%,
-      rgba(255, 255, 255, 0.15) 20%,
-      rgba(255, 255, 255, 0) 40%,
-      rgba(255, 255, 255, 0) 60%,
-      rgba(255, 255, 255, 0.15) 80%,
-      rgba(255, 255, 255, 0.45) 100%
-    );
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-
-  /* backdrop-filter yoksa cam yüzey saydam kalır ve arkasındaki ızgara metnin
-     içinden geçer. Böyle bir tarayıcıda arayüzün okunamaması kabul edilemez —
-     düz opak panele düşüyoruz. */
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .cam {
-      background: var(--color-panel);
-    }
+    background: var(--color-panel);
   }
 }
 
 /* ------------------------------------------------------------------ hareket
-   Design.md'nin koreografisi: 24px'ten yukarı kayarak açılma, 60ms kademe,
-   cubic-bezier(0.77, 0, 0.18, 1).
+   Flat Design geçiş süresi 150-200ms diyor; liste kademesi bunun dışında.
 
    .girdi kısa tutuldu (0.18s / 10px): okutma şeridi ve tampon satırları barkod
    okutulur okutulmaz görünmeli, sahada geri bildirim gecikmesi doğrudan hataya
@@ -269,31 +306,31 @@ select:focus-visible,
   }
 }
 .kademe {
-  animation: kademe 0.34s var(--ease-kolay) both;
+  animation: kademe 0.18s var(--ease-kolay) both;
 }
 .kademe-1 {
-  animation-delay: 100ms;
+  animation-delay: 40ms;
 }
 .kademe-2 {
-  animation-delay: 160ms;
+  animation-delay: 80ms;
 }
 .kademe-3 {
-  animation-delay: 220ms;
+  animation-delay: 120ms;
 }
 .kademe-4 {
-  animation-delay: 280ms;
+  animation-delay: 160ms;
 }
 .kademe-5 {
-  animation-delay: 340ms;
+  animation-delay: 200ms;
 }
 .kademe-6 {
-  animation-delay: 400ms;
+  animation-delay: 240ms;
 }
 .kademe-7 {
-  animation-delay: 460ms;
+  animation-delay: 280ms;
 }
 .kademe-8 {
-  animation-delay: 520ms;
+  animation-delay: 320ms;
 }
 
 @keyframes nabiz {
@@ -302,15 +339,17 @@ select:focus-visible,
     opacity: 1;
   }
   50% {
-    opacity: 0.35;
+    /* 0.35 koyu temada siyaha doğru soluyordu (kısılma gibi okunuyordu);
+       açık zeminde beyaza doğru soluyor ve titreme/arıza gibi görünüyor.
+       Sayim.tsx'teki "odak kayboldu" şeridi tam ekran genişliğinde. */
+    opacity: 0.7;
   }
 }
 .nabiz {
   animation: nabiz 1.1s ease-in-out infinite;
 }
 
-/* Canlı bağlantı noktasının halkası — Design.md'nin yeşil CTA noktasının
-   nabız kazanmış hâli. */
+/* Canlı bağlantı noktasının genişleyen halkası. */
 @keyframes halka {
   0% {
     transform: scale(1);
@@ -326,9 +365,10 @@ select:focus-visible,
   animation: halka 1.8s var(--ease-kolay) infinite;
 }
 
-/* Design.md'nin imleç spot ışığının işlevsel karşılığı: okutma sonucuna göre
-   kısa bir ambiyans ışıması. Sesli geri bildirimin görsel eşi — telefon rafta
-   dururken bile uzaktan fark ediliyor. */
+/* Okutma sonucuna göre kısa bir ambiyans ışıması. Sesli geri bildirimin
+   görsel eşi — telefon rafta dururken bile uzaktan fark ediliyor.
+   Açık temada mix-blend-mode: screen görünmez olurdu; Isima.tsx multiply
+   kullanıyor, yani ışıma AÇIK zemini koyultarak kendini gösteriyor. */
 @keyframes isima {
   from {
     opacity: 0.6;

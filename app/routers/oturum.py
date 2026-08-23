@@ -27,6 +27,16 @@ class RafAyar(BaseModel):
     zorla: bool = False
 
 
+class OkutmaGuncelle(BaseModel):
+    """Kısmi güncelleme: sadece gönderilen alan değişir."""
+    ad: str | None = None
+    not_: str | None = None
+
+
+class Coz(BaseModel):
+    beklenen_id: int
+
+
 @router.post("/oturum")
 def ac(istek: OturumAc, c=DB):
     yukleme_getir(istek.yukleme, c)
@@ -76,6 +86,49 @@ def gerial(oturum_id: int, istek: GeriAl, c=DB):
     return sonuc
 
 
+@router.patch("/okutma/{okutma_id}")
+def okutma_guncelle(okutma_id: int, istek: OkutmaGuncelle, c=DB):
+    """Fazla kaydına ürün adı / not yaz.
+
+    Tiger'da karşılığı olmayan bir ürün fazla işaretlendiğinde malzeme kodu
+    boş kalır ve rapordaki açıklama üretilemez. Adı kullanıcı yazar; yoksa
+    kayıt sonradan hiçbir işe yaramıyor (DEMO_FEEDBACK.md 3).
+    """
+    if not c.execute("SELECT 1 FROM okutma WHERE id=?", (okutma_id,)).fetchone():
+        raise HTTPException(404, "Okutma #%s bulunamadı" % okutma_id)
+    if istek.ad is not None:
+        c.execute("UPDATE okutma SET ad=? WHERE id=?", (istek.ad.strip(), okutma_id))
+    if istek.not_ is not None:
+        c.execute("UPDATE okutma SET not_=? WHERE id=?", (istek.not_.strip(), okutma_id))
+    c.commit()
+    return dict(c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone())
+
+
+@router.get("/oturum/{oturum_id}/esleme")
+def esleme(oturum_id: int, c=DB):
+    """Sayım sonu eşleştirme ekranı: solda fazlalar, sağda eksikler."""
+    return matching.esleme_verisi(c, oturum_getir(oturum_id, c))
+
+
+@router.post("/okutma/{okutma_id}/bagla")
+def okutma_bagla(okutma_id: int, istek: Coz, c=DB):
+    """Fazla kaydını eksik bir kayda bağla (sayım sonu eşleştirmesi)."""
+    sonuc = matching.fazla_bagla(c, okutma_id, istek.beklenen_id)
+    if "hata" in sonuc:
+        raise HTTPException(400, sonuc["hata"])
+    c.commit()
+    return sonuc
+
+
+@router.post("/okutma/{okutma_id}/coz-ayir")
+def okutma_coz_ayir(okutma_id: int, c=DB):
+    sonuc = matching.fazla_coz_ayir(c, okutma_id)
+    if "hata" in sonuc:
+        raise HTTPException(400, sonuc["hata"])
+    c.commit()
+    return sonuc
+
+
 @router.post("/oturum/{oturum_id}/bitir")
 def bitir(oturum_id: int, zorla: bool = False, c=DB):
     o = oturum_getir(oturum_id, c)
@@ -83,6 +136,16 @@ def bitir(oturum_id: int, zorla: bool = False, c=DB):
     if bekleyen and not zorla:
         raise HTTPException(409, {"mesaj": "Kuyrukta çözülmemiş %d ürün var."
                                            % len(bekleyen), "kuyruk": bekleyen})
+    # Adsız fazla raporda kullanılamaz: geriye seri numarası ve raf kalır.
+    adsiz = matching.adsiz_fazlalar(c, oturum_id)
+    if adsiz and not zorla:
+        raise HTTPException(409, {"mesaj": "%d fazla kaydının ne olduğu yazılmamış."
+                                           % len(adsiz), "adsiz": adsiz})
+    # Fotoğrafsız fazla, sonradan kimsenin doğrulayamayacağı bir satırdır.
+    fotosuz = matching.fotosuz_fazlalar(c, oturum_id)
+    if fotosuz and not zorla:
+        raise HTTPException(409, {"mesaj": "%d fazla kaydının fotoğrafı yok."
+                                           % len(fotosuz), "fotosuz": fotosuz})
     matching.grup_coz(c, o)          # tampondaki son grup kaybolmasın
     return dict(oturumlar.bitir(c, oturum_id))
 
@@ -108,6 +171,19 @@ def raflar(oturum_id: int, c=DB):
 
 
 @router.get("/oturum/{oturum_id}/ara")
-def ara(oturum_id: int, q: str = "", limit: int = 25, c=DB):
+def ara(oturum_id: int, q: str = "", limit: int = 0, offset: int = 0,
+        sadece_acik: bool = False, kirli: bool | None = None,
+        izleme: str | None = None, c=DB):
+    """Malzeme arama / listeleme.
+
+    "Bu olabilir" önerisinin yerini aldı (DEMO_FEEDBACK.md 4): öneri sahada
+    doğru sonuç vermiyordu. Filtreler q boşken de çalışır, böylece kullanıcı
+    listeyi gezebilir. Aktif raf sıralamayı etkiler, süzmez.
+
+    limit=0 (varsayılan) sınırsız: eşleştirme listesi eksiksiz olmalı, aksi
+    hâlde kullanıcı listede olmayan ürünü tahmin etmeye çalışır.
+    """
     o = oturum_getir(oturum_id, c)
-    return matching.ara(c, o["yukleme"], o["ambar"], q, limit=limit, oturum=o["id"])
+    return matching.ara(c, o["yukleme"], o["ambar"], q, limit=limit, offset=offset,
+                        oturum=o["id"], sadece_acik=sadece_acik, kirli=kirli,
+                        izleme=izleme, raf=o["aktif_raf"])

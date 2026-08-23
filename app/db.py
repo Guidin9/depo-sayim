@@ -39,10 +39,13 @@ CREATE TABLE IF NOT EXISTS oturum(
   id INTEGER PRIMARY KEY, yukleme INT, ambar TEXT, basla TEXT, bitir TEXT,
   aktif_raf TEXT, durum TEXT DEFAULT 'acik');
 
+-- ad: kullanıcının elle yazdığı ürün adı. Tiger'da kaydı olmayan bir ürün
+-- fazla işaretlendiğinde `kod` boş kalır ve raporda açıklama üretilemez;
+-- isimsiz fazla kaydı sonradan hiçbir işe yaramıyor (DEMO_FEEDBACK.md 3).
 CREATE TABLE IF NOT EXISTS okutma(
   id INTEGER PRIMARY KEY, oturum INT, ts TEXT, ham TEXT, kod TEXT, seri TEXT,
   miktar REAL DEFAULT 1, beklenen_id INT, tip TEXT, raf TEXT, grup INT,
-  not_ TEXT);
+  not_ TEXT, ad TEXT);
 CREATE INDEX IF NOT EXISTS ix_ok_bek  ON okutma(oturum, beklenen_id);
 CREATE INDEX IF NOT EXISTS ix_ok_kod  ON okutma(oturum, kod);
 CREATE INDEX IF NOT EXISTS ix_ok_grup ON okutma(oturum, grup);
@@ -53,15 +56,25 @@ CREATE TABLE IF NOT EXISTS eslesme(
 CREATE TABLE IF NOT EXISTS tampon(
   id INTEGER PRIMARY KEY, oturum INT, ts TEXT, ham TEXT);
 
+-- Karar bekleyen kayıtlar. İki tür var (tur sütunu):
+--   'bilinmiyor'  ne seri ne kod tanındı — "bu hangi malzeme?"
+--   'fazla_onay'  malzeme tanındı ama karşılığı bulunamadı — "gerçekten fazla mı?"
+-- Fazla, bu onaydan geçmeden oluşmaz (CLAUDE.md 4.4).
 CREATE TABLE IF NOT EXISTS kuyruk(
   id INTEGER PRIMARY KEY, oturum INT, ts TEXT, barkodlar TEXT, raf TEXT,
-  cozuldu INT DEFAULT 0, not_ TEXT, beklet INT DEFAULT 0);
+  cozuldu INT DEFAULT 0, not_ TEXT, beklet INT DEFAULT 0,
+  tur TEXT DEFAULT 'bilinmiyor', kod TEXT, ad TEXT);
 CREATE INDEX IF NOT EXISTS ix_kuy ON kuyruk(oturum, cozuldu);
 
--- Kuyruk kaydına eklenen fotoğraflar. Depodaki laptopta kamera olmayabildiği
--- için telefondan da yüklenebilir (telefon monitörü, bkz. README).
+-- Kuyruk kaydına ve/veya fazla okutmasına eklenen fotoğraflar. Depodaki
+-- laptopta kamera olmayabildiği için telefondan da yüklenebilir.
+-- okutma: fazla kaydının fotoğrafı. Fazla, sayım bittikten sonra kimsenin
+-- doğrulayamayacağı tek çıktıdır (ürün rafa geri konur, geriye bir satır
+-- kalır); fotoğraf onu denetlenebilir yapar. Tablo adı korundu — ADD COLUMN
+-- göçüyle yeniden adlandırma yapılamıyor.
 CREATE TABLE IF NOT EXISTS kuyruk_foto(
-  id INTEGER PRIMARY KEY, kuyruk INT, ts TEXT, tur TEXT, boyut INT, veri BLOB);
+  id INTEGER PRIMARY KEY, kuyruk INT, ts TEXT, tur TEXT, boyut INT, veri BLOB,
+  okutma INT);
 CREATE INDEX IF NOT EXISTS ix_foto ON kuyruk_foto(kuyruk);
 
 -- Kendi bastığımız etiketler (CLAUDE.md 12). Basım partisi ve tekil etiket
@@ -88,9 +101,27 @@ EK_SUTUNLAR = [
     # Telefondan "sonra çözerim" işareti: fotoğrafı çekildi, ürün bırakıldı,
     # çözümü PC başında toplu yapılacak. Raftan ayrılmayı engellemez.
     ("kuyruk", "beklet", "INT DEFAULT 0"),
+    # Fazla artık onaydan geçiyor: 'bilinmiyor' | 'fazla_onay'. Onay kaydı
+    # tanınan malzeme kodunu da taşır, kullanıcı neyi onayladığını görsün.
+    ("kuyruk", "tur", "TEXT DEFAULT 'bilinmiyor'"),
+    ("kuyruk", "kod", "TEXT"),
+    ("kuyruk", "ad", "TEXT"),
     ("okutma", "grup", "INT"),
     ("okutma", "raf", "TEXT"),
+    ("okutma", "ad", "TEXT"),
+    ("kuyruk_foto", "okutma", "INT"),
     ("oturum", "aktif_raf", "TEXT"),
+]
+
+# EK_SUTUNLAR'daki bir sütuna dayanan indeksler. SEMA'ya YAZILAMAZLAR.
+#
+# Sebep: baglan() önce SEMA'yı, sonra goc()'u çalıştırır. Mevcut bir
+# veritabanında CREATE TABLE IF NOT EXISTS boşa geçer — tablo eski hâliyle
+# durur — ve hemen ardındaki CREATE INDEX henüz var olmayan sütunu isteyip
+# "no such column" ile TÜM executescript'i düşürür; goc() hiç çalışamaz ve
+# uygulama açılmaz. Yeni sütuna indeks gerekiyorsa buraya yazın.
+EK_INDEKS = [
+    "CREATE INDEX IF NOT EXISTS ix_foto_ok ON kuyruk_foto(okutma)",
 ]
 
 # CLAUDE.md 3.4 — sayım dışı kalemler. Kullanıcı Kurulum ekranında açıp kapatır.
@@ -114,6 +145,7 @@ def baglan(yol=None):
     c.row_factory = sqlite3.Row
     c.executescript(SEMA)
     goc(c)
+    bolunmus_fazlalari_birlestir(c)
     kurallari_tohumla(c)
     etiketleri_geri_yukle(c)
     c.commit()
@@ -126,6 +158,64 @@ def goc(c):
         var = {r["name"] for r in c.execute("PRAGMA table_info(%s)" % tablo)}
         if sutun not in var:
             c.execute("ALTER TABLE %s ADD COLUMN %s %s" % (tablo, sutun, tur))
+    # Sütunlar tamamlandıktan SONRA — bkz. EK_INDEKS.
+    for sql in EK_INDEKS:
+        c.execute(sql)
+
+
+def bolunmus_fazlalari_birlestir(c):
+    """Hatayla barkod başına bölünmüş fazla kayıtlarını tek satıra indirir.
+
+    2026-08-23'e kadar `matching.kuyruk_fazla` ve `##FAZLA##` komutu, bir
+    gruptaki HER BARKOD için ayrı bir fazla satırı yazıyordu. Oysa grup tek
+    üründür (CLAUDE.md 4.4): kullanıcı bir ürünün üstündeki bütün barkodları
+    okutup ##SONRAKI## der. Sonuç: tek ürün raporda N fazla olarak görünüyor,
+    adı N kez soruluyor ve eşleştirme ekranı aynı ürünü N kez eşleştirmesini
+    bekliyordu.
+
+    Kod düzeldi ama oluşmuş veri duruyor. Bu göç onu toplar:
+
+    - Aynı (oturum, grup) içindeki `tip='fazla'` satırları tek satırda birleşir.
+    - `ham` " + " ile birleştirilir — denetim izi korunur, hiçbir barkod
+      kaybolmaz.
+    - `seri` yeniden seçilir (`matching._fazla_seri` kuralı: UPC değil gerçek
+      S/N, kendi etiketimiz son çare).
+    - `ad`, `kod`, `not_` ve `raf` dolu olan ilk satırdan alınır.
+    - Fotoğraflar hayatta kalan satıra taşınır.
+    - Fazla satırlar silinir.
+
+    Yalnızca `tip='fazla'` satırlarına dokunur: `eslesti` kayıtları da grup
+    numarası paylaşır ama onlar zaten satır başına bir beklenen kayda bağlı.
+
+    Idempotent: birleşecek grup kalmayınca hiçbir şey yapmaz.
+    """
+    from .matching import _fazla_seri
+    gruplar = c.execute(
+        """SELECT oturum, grup FROM okutma WHERE tip='fazla' AND grup IS NOT NULL
+           GROUP BY oturum, grup HAVING COUNT(*) > 1""").fetchall()
+    for g in gruplar:
+        satirlar = c.execute(
+            "SELECT * FROM okutma WHERE tip='fazla' AND oturum=? AND grup=? ORDER BY id",
+            (g["oturum"], g["grup"])).fetchall()
+        kalan, gidenler = satirlar[0], satirlar[1:]
+
+        hamlar, gorulen = [], set()
+        for r in satirlar:                       # tekrarlı barkodu iki kez yazma
+            for h in str(r["ham"] or "").split(" + "):
+                h = h.strip()
+                if h and h not in gorulen:
+                    gorulen.add(h)
+                    hamlar.append(h)
+        ilk = lambda alan: next((r[alan] for r in satirlar if r[alan]), None)
+        kod = ilk("kod")
+        c.execute("UPDATE okutma SET ham=?, kod=?, seri=?, ad=?, raf=?, miktar=1 "
+                  "WHERE id=?",
+                  (" + ".join(hamlar), kod, _fazla_seri(hamlar, kod), ilk("ad"),
+                   ilk("raf"), kalan["id"]))
+        for r in gidenler:
+            c.execute("UPDATE kuyruk_foto SET okutma=? WHERE okutma=?",
+                      (kalan["id"], r["id"]))
+            c.execute("DELETE FROM okutma WHERE id=?", (r["id"],))
 
 
 def etiketleri_geri_yukle(c):

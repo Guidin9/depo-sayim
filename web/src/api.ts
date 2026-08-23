@@ -109,11 +109,23 @@ export type OkutmaSonucu = {
   kapsam?: string;
   durum?: Durum;
   kuyruk_id?: number;
-  adaylar?: Aday[];
+  /** Elle fazlada oluşan okutma satırlarının id'leri — arayüz ad sorabilsin. */
+  okutma?: number[];
   eski_raf?: string | null;
   yeni_raf?: string;
   kuyruk?: KuyrukSatiri[];
+  /** Fotoğrafsız fazla kayıtları — bitirme kapısı (DEMO_FEEDBACK.md 6). */
+  fotosuz?: { id: number; ham: string; kod: string | null; raf: string | null }[];
+  /** Ne olduğu yazılmamış fazla kayıtları — bitirme kapısı. */
+  adsiz?: { id: number; ham: string; raf: string | null; seri: string | null }[];
 };
+
+/** Karar bekleyen kaydın türü.
+ *
+ * bilinmiyor: ne seri ne kod tanındı — "bu hangi malzeme?"
+ * fazla_onay: malzeme tanındı, karşılığı bulunamadı — "gerçekten fazla mı?"
+ */
+export type KuyrukTuru = "bilinmiyor" | "fazla_onay";
 
 export type KuyrukSatiri = {
   id: number;
@@ -125,18 +137,11 @@ export type KuyrukSatiri = {
   /** Telefonda "sonra çözerim" işaretlendi: fotoğrafı var, çözümü PC'de. */
   beklet: boolean;
   fotolar: number[];
-};
-
-export type Aday = {
-  id: number;
-  kod: string;
+  tur: KuyrukTuru;
+  /** fazla_onay'da tanınan malzeme kodu; bilinmiyor'da null. */
+  kod: string | null;
+  ad: string | null;
   aciklama: string;
-  izleme: string;
-  birim: string;
-  acik_kirli: number;
-  acik_satir: number;
-  acik_adet: number;
-  ayni_raf: number;
 };
 
 export type AramaSonucu = {
@@ -149,7 +154,50 @@ export type AramaSonucu = {
   miktar: number;
   birim: string;
   sayildi: number;
+  /** Bu rafta aynı koddan kaç satır sayıldı — raf komşuluğu en güçlü ipucu. */
+  ayni_raf: number;
 };
+
+/** Arama / listeleme filtreleri. Hepsi isteğe bağlı; q boşken de çalışır. */
+export type AramaFiltre = {
+  q?: string;
+  limit?: number;
+  offset?: number;
+  /** Bu oturumda sayılmamış satırlar (lot'ta sayılan < beklenen). */
+  sadece_acik?: boolean;
+  /** Yalnızca uydurma kayıtlı (ya da yalnızca temiz) satırlar. */
+  kirli?: boolean;
+  izleme?: "seri" | "lot" | "yok";
+};
+
+export type AramaYaniti = { satirlar: AramaSonucu[]; toplam: number };
+
+/** Sayım sonu eşleştirme ekranı (DEMO_FEEDBACK.md 6). */
+export type FazlaKaydi = {
+  id: number;
+  ts: string;
+  ham: string;
+  kod: string | null;
+  seri: string | null;
+  ad: string | null;
+  raf: string | null;
+  not_: string;
+  fotolar: number[];
+};
+
+export type EksikKaydi = {
+  id: number;
+  kod: string;
+  aciklama: string;
+  seri: string;
+  izleme: string;
+  birim: string;
+  kirli: number;
+  miktar: number;
+  not_: string;
+};
+
+export type EslemeVerisi = { fazla: FazlaKaydi[]; eksik: EksikKaydi[] };
 
 export type Sekme = {
   basliklar: string[];
@@ -238,7 +286,13 @@ async function istek<T>(yol: string, secenek?: RequestInit): Promise<T> {
     let mesaj = `${y.status} ${y.statusText}`;
     try {
       const g = await y.json();
-      if (g?.detail) mesaj = typeof g.detail === "string" ? g.detail : JSON.stringify(g.detail);
+      // Kapı yanıtlarında detail bir sözlük ve içinde okunabilir `mesaj` var
+      // (kuyruk / fotoğraf kapıları). Kullanıcıya JSON göstermeyelim.
+      if (g?.detail)
+        mesaj =
+          typeof g.detail === "string"
+            ? g.detail
+            : (g.detail.mesaj ?? JSON.stringify(g.detail));
     } catch {
       /* gövde JSON değilse durum metni kalsın */
     }
@@ -279,20 +333,53 @@ export const api = {
   durum: (id: number) => istek<Durum>(`/api/oturum/${id}/durum`),
   okut: (id: number, ham: string, zorla = false) =>
     gonder<OkutmaSonucu>(`/api/oturum/${id}/okut`, { ham, zorla }),
-  adaylar: (id: number, limit = 5) =>
-    istek<Aday[]>(`/api/oturum/${id}/adaylar?limit=${limit}`),
   gerial: (id: number, kapsam: "okutma" | "grup") =>
     gonder<OkutmaSonucu>(`/api/oturum/${id}/gerial`, { kapsam }),
   bitir: (id: number, zorla = false) =>
     gonder<{ id: number; durum: string }>(`/api/oturum/${id}/bitir?zorla=${zorla}`, {}),
   oturumlar: () => istek<OturumOzeti[]>("/api/oturumlar"),
-  ara: (id: number, q: string) =>
-    istek<AramaSonucu[]>(`/api/oturum/${id}/ara?q=${encodeURIComponent(q)}`),
+  ara: (id: number, f: AramaFiltre = {}) => {
+    const p = new URLSearchParams();
+    if (f.q) p.set("q", f.q);
+    if (f.limit != null) p.set("limit", String(f.limit));
+    if (f.offset) p.set("offset", String(f.offset));
+    if (f.sadece_acik) p.set("sadece_acik", "true");
+    if (f.kirli != null) p.set("kirli", String(f.kirli));
+    if (f.izleme) p.set("izleme", f.izleme);
+    return istek<AramaYaniti>(`/api/oturum/${id}/ara?${p}`);
+  },
+
+  /** Fazla kaydına elle ürün adı (Tiger'da karşılığı olmayan ürünler için). */
+  okutmaAd: (okutmaId: number, ad: string) =>
+    gonder<{ id: number; ad: string }>(`/api/okutma/${okutmaId}`, { ad }, "PATCH"),
+
+  esleme: (id: number) => istek<EslemeVerisi>(`/api/oturum/${id}/esleme`),
+  fazlaBagla: (okutmaId: number, beklenen_id: number) =>
+    gonder<{ tip: string; kod: string }>(`/api/okutma/${okutmaId}/bagla`, { beklenen_id }),
+  fazlaCozAyir: (okutmaId: number) =>
+    istek<{ tip: string }>(`/api/okutma/${okutmaId}/coz-ayir`, { method: "POST" }),
+  okutmaFotosu: (okutmaId: number, dosya: Blob, ad = "foto.jpg") => {
+    const veri = new FormData();
+    veri.append("dosya", dosya, ad);
+    return istek<{ id: number; boyut: number }>(`/api/okutma/${okutmaId}/foto`, {
+      method: "POST",
+      body: veri,
+    });
+  },
 
   kuyruk: (id: number) => istek<KuyrukSatiri[]>(`/api/oturum/${id}/kuyruk`),
   kuyrukCoz: (kid: number, beklenen_id: number) =>
     gonder<OkutmaSonucu>(`/api/kuyruk/${kid}/coz`, { beklenen_id }),
-  kuyrukFazla: (kid: number) => istek<{ tip: string }>(`/api/kuyruk/${kid}`, { method: "DELETE" }),
+  /** Kuyruk kaydını fazla olarak kapatır.
+   *  Malzeme kodu bilinmiyorsa `ad` ZORUNLU — sunucu adsız kaydı reddeder. */
+  kuyrukFazla: (kid: number, ad?: string) =>
+    istek<{ tip: string; okutma: number[] }>(`/api/kuyruk/${kid}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ad: ad ?? null }),
+    }),
+  kuyrukAd: (kid: number, ad: string) =>
+    gonder<KuyrukSatiri>(`/api/kuyruk/${kid}`, { ad }, "PATCH"),
   kuyrukNot: (kid: number, not_: string) =>
     gonder<KuyrukSatiri>(`/api/kuyruk/${kid}`, { not_ }, "PATCH"),
   kuyrukBeklet: (kid: number, beklet: boolean) =>
@@ -339,7 +426,13 @@ export const api = {
       let mesaj = `${y.status} ${y.statusText}`;
       try {
         const g = await y.json();
-        if (g?.detail) mesaj = typeof g.detail === "string" ? g.detail : JSON.stringify(g.detail);
+        // Kapı yanıtlarında detail bir sözlük ve içinde okunabilir `mesaj` var
+      // (kuyruk / fotoğraf kapıları). Kullanıcıya JSON göstermeyelim.
+      if (g?.detail)
+        mesaj =
+          typeof g.detail === "string"
+            ? g.detail
+            : (g.detail.mesaj ?? JSON.stringify(g.detail));
       } catch {
         /* gövde JSON değilse durum metni kalsın */
       }

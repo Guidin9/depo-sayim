@@ -113,7 +113,7 @@ export default function Etiket({
           }
           tikla={geri}
         />
-        <h1 className="font-serif text-4xl leading-[0.95] tracking-tight">Etiket basımı</h1>
+        <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">Etiket basımı</h1>
       </header>
 
       {hata && <Uyari cocuk={hata} />}
@@ -156,7 +156,7 @@ export default function Etiket({
                 />
               </div>
               <p
-                className="rounded-xl border border-uyari/40 bg-uyari/10 p-4 text-[13px]
+                className="rounded-sm border border-uyari bg-uyari-tint p-4 text-kucuk
                   leading-snug"
               >
                 <b>Bu sayılar hedef değil, tavan.</b> Depodaki ürünlerin birçoğunun
@@ -207,8 +207,8 @@ export default function Etiket({
                       max={5000}
                       value={mAdet}
                       onChange={(e) => setMAdet(Math.max(1, Number(e.target.value) || 1))}
-                      className="w-32 rounded-xl border border-cizgi bg-zemin px-4 py-3
-                        font-mono text-[15px] focus:border-vurgu focus:outline-none"
+                      className="w-32 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                        font-mono text-govde focus:border-vurgu focus:outline-none"
                     />
                     <Dugme cocuk="1 sayfa (24)" tikla={() => setMAdet(A4_HUCRE)} />
                     <Dugme cocuk="4 sayfa (96)" tikla={() => setMAdet(A4_HUCRE * 4)} />
@@ -233,15 +233,15 @@ export default function Etiket({
                       max={20}
                       value={kopya}
                       onChange={(e) => setKopya(Math.max(1, Number(e.target.value) || 1))}
-                      className="w-24 rounded-xl border border-cizgi bg-zemin px-4 py-3
-                        font-mono text-[15px] focus:border-vurgu focus:outline-none"
+                      className="w-24 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                        font-mono text-govde focus:border-vurgu focus:outline-none"
                     />
-                    <span className="text-[13px] text-solgun">
+                    <span className="text-kucuk text-solgun">
                       Aynı malzeme birden çok rafta duruyorsa. Kopya yeni numara üretmez —
                       hepsi aynı kodu taşır.
                     </span>
                     {ihtiyac && (
-                      <span className="text-[13px] text-solgun">
+                      <span className="text-kucuk text-solgun">
                         Toplam <b className="rakam">{malzemeToplam}</b> etiket
                         {duzen === "a4" &&
                           ` · ${Math.ceil((malzemeToplam + atla) / A4_HUCRE)} sayfa`}
@@ -261,8 +261,8 @@ export default function Etiket({
                     max={5000}
                     value={adet}
                     onChange={(e) => setAdet(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-32 rounded-xl border border-cizgi bg-zemin px-4 py-3
-                      font-mono text-[15px] focus:border-vurgu focus:outline-none"
+                    className="w-32 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                      font-mono text-govde focus:border-vurgu focus:outline-none"
                   />
                   <Dugme cocuk="1 sayfa (24)" tikla={() => setAdet(A4_HUCRE)} />
                   <Dugme cocuk="4 sayfa (96)" tikla={() => setAdet(A4_HUCRE * 4)} />
@@ -275,7 +275,7 @@ export default function Etiket({
                     />
                   )}
                   {duzen === "a4" && (
-                    <span className="text-[13px] text-solgun">
+                    <span className="text-kucuk text-solgun">
                       {Math.ceil((adet + atla) / A4_HUCRE)} sayfa
                     </span>
                   )}
@@ -305,10 +305,10 @@ export default function Etiket({
                     onChange={(e) =>
                       setAtla(Math.min(A4_HUCRE - 1, Math.max(0, Number(e.target.value) || 0)))
                     }
-                    className="w-24 rounded-xl border border-cizgi bg-zemin px-4 py-3
-                      font-mono text-[15px] focus:border-vurgu focus:outline-none"
+                    className="w-24 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                      font-mono text-govde focus:border-vurgu focus:outline-none"
                   />
-                  <span className="text-[13px] text-solgun">
+                  <span className="text-kucuk text-solgun">
                     Yarım kalmış etiket sayfasını israf etmemek için: ilk {atla} hücre boş
                     basılır.
                   </span>
@@ -325,7 +325,7 @@ export default function Etiket({
               tur="ana"
               tikla={() => void yazdir()}
             />
-            <p className="text-[13px] text-solgun">
+            <p className="text-kucuk text-solgun">
               Sahadaki sıra: önce malzeme etiketini okut, sonra havuzdan bir seri etiketi
               al, ÖNCE OKUT sonra ürüne yapıştır, ardından SIRADAKİ ÜRÜN. Kutusunda üretici
               parça numarası ya da seri numarası yazıyorsa onu okut — etiket hiç gerekmez.
@@ -339,7 +339,7 @@ export default function Etiket({
       <Panel
         baslik="Etiket defteri"
         sag={
-          <span className="rakam text-[13px] text-solgun">
+          <span className="rakam text-kucuk text-solgun">
             {bagli} bağlı / {defter.length} kayıt
           </span>
         }
@@ -349,16 +349,16 @@ export default function Etiket({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Etiket kodu veya malzeme kodu ara…"
-              className="w-full rounded-xl border border-cizgi bg-zemin px-4 py-3
-                text-[15px] focus:border-vurgu focus:outline-none"
+              className="w-full rounded-sm border border-cizgi bg-zemin px-4 py-3
+                text-govde focus:border-vurgu focus:outline-none"
             />
             {defter.length === 0 ? (
               <Bos cocuk="Henüz etiket basılmadı." />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-[14px]">
+                <table className="w-full min-w-[640px] text-left text-kucuk">
                   <thead>
-                    <tr className="text-[12px] font-bold tracking-wider text-solgun uppercase">
+                    <tr className="text-mikro font-bold tracking-wider text-solgun uppercase">
                       <th className="py-2 pr-3">Etiket</th>
                       <th className="py-2 pr-3">Tür</th>
                       <th className="py-2 pr-3">Malzeme</th>
@@ -407,8 +407,8 @@ export default function Etiket({
               {basimlar.map((b) => (
                 <li
                   key={b.id}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl
-                    bg-panel2 px-4 py-3 text-[14px]"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm
+                    bg-panel2 px-4 py-3 text-kucuk"
                 >
                   <span className="font-bold">
                     {b.tur === "malzeme" ? "Malzeme" : "Seri"}
@@ -417,7 +417,7 @@ export default function Etiket({
                   <span className="font-mono text-solgun">
                     {b.ilk} → {b.son}
                   </span>
-                  <span className="ml-auto text-[13px] text-solgun">
+                  <span className="ml-auto text-kucuk text-solgun">
                     {b.duzen === "a4" ? "A4" : "Rulo"} · {(b.ts ?? "").slice(0, 16).replace("T", " ")}
                   </span>
                 </li>
@@ -444,16 +444,16 @@ function Kutu({
   aciklama: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl bg-panel2 p-4">
-      <div className="flex items-center gap-2 text-[13px] font-bold tracking-wider
+    <div className="flex flex-col gap-2 rounded-sm bg-panel2 p-4">
+      <div className="flex items-center gap-2 text-kucuk font-bold tracking-wider
         text-solgun uppercase">
         <Ikon boy={16} /> {baslik}
       </div>
       <div className="flex items-baseline gap-2">
         <span className="rakam text-5xl font-bold">{deger}</span>
-        <span className="text-[14px] text-solgun">{birim}</span>
+        <span className="text-kucuk text-solgun">{birim}</span>
       </div>
-      <p className="text-[13px] leading-snug text-solgun">{aciklama}</p>
+      <p className="text-kucuk leading-snug text-solgun">{aciklama}</p>
     </div>
   );
 }
@@ -461,7 +461,7 @@ function Kutu({
 function Alan({ etiket, children }: { etiket: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-2">
-      <span className="text-[12px] font-bold tracking-wider text-solgun uppercase">
+      <span className="text-mikro font-bold tracking-wider text-solgun uppercase">
         {etiket}
       </span>
       {children}
@@ -487,10 +487,10 @@ function Secim({
           key={v}
           type="button"
           onClick={() => degistir(v)}
-          className={`rounded-full border px-4 py-2 text-[14px] ${
+          className={`rounded-sm border px-4 py-2 text-kucuk ${
             v === deger
-              ? "border-vurgu/60 bg-vurgu/20 font-bold text-vurgu"
-              : "cam-hafif border-cizgi text-solgun"
+              ? "border-vurgu bg-vurgu-tint font-bold text-vurgu"
+              : "border border-cizgi-kuvvetli bg-panel border-cizgi text-solgun"
           }`}
         >
           {ad}

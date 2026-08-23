@@ -26,25 +26,24 @@ export default function TelefonKutu({ kapat }: { kapat: () => void }) {
   const adres = adresler[secili] ?? "";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4
-      backdrop-blur-md">
-      <div className="cam w-full max-w-md rounded-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-yazi/45 p-4">
+      <div className="border border-cizgi bg-panel w-full max-w-md rounded-sm">
         <header className="border-b border-cizgi px-5 py-4">
-          <h2 className="flex items-center gap-3 font-serif text-3xl leading-tight">
+          <h2 className="flex items-center gap-3 text-3xl leading-tight font-bold">
             <Ik.Telefon boy={26} />
             Telefonu bağla
           </h2>
-          <p className="mt-1 text-[13px] text-solgun">
+          <p className="mt-1 text-kucuk text-solgun">
             Telefon kamerasıyla kodu okut — canlı izleme ekranı açılır. Telefon aynı Wi-Fi'da
             olmalı ve sunucu <code className="font-mono">baslat.bat</code> ile açılmış olmalı.
           </p>
         </header>
 
         <div className="flex flex-col items-center gap-4 p-5">
-          {hata && <p className="text-[14px] font-semibold text-hata">{hata}</p>}
+          {hata && <p className="text-kucuk font-semibold text-hata">{hata}</p>}
 
           {!hata && adresler.length === 0 && (
-            <p className="text-[14px] text-solgun">Ağ adresi bulunamadı.</p>
+            <p className="text-kucuk text-solgun">Ağ adresi bulunamadı.</p>
           )}
 
           {adres && !qrYok && (
@@ -52,12 +51,12 @@ export default function TelefonKutu({ kapat }: { kapat: () => void }) {
               src={`/api/telefon-qr.svg?adres=${encodeURIComponent(adres)}`}
               alt="Telefon adresi QR kodu"
               onError={() => setQrYok(true)}
-              className="h-56 w-56 rounded-2xl bg-white p-2"
+              className="h-56 w-56 rounded-sm bg-white p-2"
             />
           )}
 
           {adres && qrYok && (
-            <p className="text-center text-[13px] text-uyari">
+            <p className="text-center text-kucuk text-uyari">
               QR üretilemedi (segno kurulu değil). Adresi telefona elle yaz:
             </p>
           )}
@@ -68,7 +67,7 @@ export default function TelefonKutu({ kapat }: { kapat: () => void }) {
 
           {adresler.length > 1 && (
             <div className="w-full">
-              <p className="mb-2 text-[12px] text-solgun">
+              <p className="mb-2 text-mikro text-solgun">
                 Telefon açamıyorsa başka bir ağ adresini dene:
               </p>
               <div className="flex flex-wrap gap-2">
@@ -80,9 +79,9 @@ export default function TelefonKutu({ kapat }: { kapat: () => void }) {
                       setSecili(i);
                       setQrYok(false);
                     }}
-                    className={`rounded-full border px-3 py-2 font-mono text-[12px] ${
+                    className={`rounded-sm border px-3 py-2 font-mono text-mikro ${
                       i === secili
-                        ? "border-vurgu bg-vurgu/15 text-vurgu"
+                        ? "border-vurgu bg-vurgu-tint text-vurgu"
                         : "border-cizgi bg-panel2 text-solgun"
                     }`}
                   >

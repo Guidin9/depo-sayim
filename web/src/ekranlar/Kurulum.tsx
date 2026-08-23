@@ -106,15 +106,15 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
             role="button"
             tabIndex={0}
             onKeyDown={(e) => e.key === "Enter" && dosyaRef.current?.click()}
-            className={`ease-kolay flex cursor-pointer flex-col items-center gap-2 rounded-2xl
+            className={`ease-kolay flex cursor-pointer flex-col items-center gap-2 rounded-sm
               border-2 border-dashed p-12 text-center transition duration-200
-              ${suruklu ? "border-vurgu bg-vurgu/10" : "border-cizgi bg-panel/60 hover:border-solgun"}`}
+              ${suruklu ? "border-vurgu bg-vurgu-tint" : "border-cizgi bg-panel/60 hover:border-solgun"}`}
           >
             <Ik.Yukle boy={40} className="text-solgun" />
-            <div className="font-serif text-3xl leading-tight">
+            <div className="text-3xl leading-tight font-bold">
               {yukleniyor ? "Okunuyor…" : "Rapor dosyasını buraya bırakın"}
             </div>
-            <div className="text-[14px] text-solgun">.xlsx veya .json — ya da tıklayıp seçin</div>
+            <div className="text-kucuk text-solgun">.xlsx veya .json — ya da tıklayıp seçin</div>
             <input
               ref={dosyaRef}
               type="file"
@@ -139,11 +139,11 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                         type="button"
                         onClick={() => void mevcuduSec(y.id)}
                         className="ease-kolay flex w-full items-center justify-between gap-3
-                          rounded-xl border border-cizgi bg-panel2 px-4 py-3 text-left
+                          rounded-sm border border-cizgi bg-panel2 px-4 py-3 text-left
                           transition duration-200 hover:bg-cizgi"
                       >
                         <span className="font-semibold">{y.dosya_adi}</span>
-                        <span className="rakam text-[13px] text-solgun">
+                        <span className="rakam text-kucuk text-solgun">
                           {y.satir} satır · {y.ts.slice(0, 16).replace("T", " ")}
                         </span>
                       </button>
@@ -161,7 +161,7 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
           <Panel
             baslik="Yükleme özeti"
             sag={
-              <span className="text-[13px] text-solgun">
+              <span className="text-kucuk text-solgun">
                 {ozet.dosya} · yükleme #{ozet.yukleme}
               </span>
             }
@@ -181,13 +181,13 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                 </div>
 
                 {ozet.kirli > 0 && (
-                  <div className="rounded-xl border border-uyari/40 bg-uyari/10 p-4">
-                    <p className="text-[14px] font-semibold text-uyari">
+                  <div className="rounded-sm border border-uyari bg-uyari-tint p-4">
+                    <p className="text-kucuk font-semibold text-uyari">
                       {ozet.kirli} seri numarası gerçek görünmüyor — sayım farkını kapatmak için
                       açılmış kayıtlar. Doğru barkodu okuttuğunuzda bunlar{" "}
                       <b>Tiger Düzeltme</b> sekmesine düşecek.
                     </p>
-                    <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-solgun">
+                    <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-kucuk text-solgun">
                       {ozet.kirli_sebep.map((s) => (
                         <li key={s.sebep}>
                           <span className="rakam font-bold text-yazi">{s.satir}</span> {s.sebep}
@@ -228,13 +228,13 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
           <Panel
             baslik="Sayım dışı kalemler"
             sag={
-              <span className="text-[13px] text-solgun">
+              <span className="text-kucuk text-solgun">
                 <span className="rakam font-bold text-yazi">{haricToplam}</span> satır çıkarılacak
               </span>
             }
             cocuk={
               <div className="flex flex-col gap-3">
-                <p className="text-[14px] text-solgun">
+                <p className="text-kucuk text-solgun">
                   Lisans, hizmet, nakliye gibi kalemler fiziksel nesne değildir; sayılmazsa
                   hepsi "eksik" görünür. <b>Kuralı kapatmadan önce etkilediği satır sayısına
                   bakın</b> — desen beklenmedik bir malzemeyi de yakalayabilir.
@@ -243,8 +243,8 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                   {kurallar.map((k) => (
                     <li
                       key={k.id}
-                      className={`flex items-center gap-3 rounded-xl border px-3 py-2
-                        ${k.satir ? "border-cizgi bg-panel2" : "border-cizgi/50 opacity-55"}`}
+                      className={`flex items-center gap-3 rounded-sm border px-3 py-2
+                        ${k.satir ? "border-cizgi bg-panel2" : "border-cizgi text-solgun-hafif"}`}
                     >
                       <input
                         id={`kural-${k.id}`}
@@ -255,11 +255,11 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                       />
                       <label htmlFor={`kural-${k.id}`} className="flex-1 cursor-pointer">
                         <Kod cocuk={k.desen} />
-                        <span className="ml-2 text-[12px] text-solgun">
+                        <span className="ml-2 text-mikro text-solgun">
                           {k.tip === "tur" ? "malzeme türünde" : "açıklamada"} geçenler
                         </span>
                       </label>
-                      <span className="rakam text-[13px] text-solgun">
+                      <span className="rakam text-kucuk text-solgun">
                         {k.satir ? `${k.satir} satır · ${k.adet} adet` : "eşleşme yok"}
                       </span>
                     </li>
@@ -281,24 +281,24 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                       key={a.ambar}
                       type="button"
                       onClick={() => void ambarSec(a.ambar)}
-                      className="ease-kolay rounded-2xl border border-cizgi bg-panel2 p-4
-                        text-left transition duration-200 hover:border-vurgu hover:bg-vurgu/10"
+                      className="ease-kolay rounded-sm border border-cizgi bg-panel2 p-4
+                        text-left transition duration-200 hover:border-vurgu hover:bg-vurgu-tint"
                     >
-                      <div className="font-serif text-3xl leading-tight">
+                      <div className="text-3xl leading-tight font-bold">
                         Ambar {a.ambar}
                         {a.ambar === "?" && (
-                          <span className="ml-2 text-[12px] font-normal text-uyari">
+                          <span className="ml-2 text-mikro font-normal text-uyari">
                             ambar bilgisi boş
                           </span>
                         )}
                       </div>
-                      <div className="rakam mt-2 text-[13px] text-solgun">
+                      <div className="rakam mt-2 text-kucuk text-solgun">
                         {a.satir} satır · {a.malzeme} malzeme · {a.adet} adet
                       </div>
-                      <div className="rakam mt-1 text-[13px] text-solgun">
+                      <div className="rakam mt-1 text-kucuk text-solgun">
                         {a.kirli} kirli kayıt · {a.haric} sayım dışı
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-[14px] font-bold
+                      <div className="mt-3 flex items-center gap-2 text-kucuk font-bold
                         text-vurgu">
                         Sayımı başlat <Ik.OkSag boy={16} />
                       </div>

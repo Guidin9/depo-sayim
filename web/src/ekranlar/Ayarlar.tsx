@@ -72,7 +72,7 @@ export default function Ayarlar({
           }
           tikla={geri}
         />
-        <h1 className="font-serif text-4xl leading-[0.95] tracking-tight">Ayarlar</h1>
+        <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">Ayarlar</h1>
       </header>
 
       {hata && <Uyari cocuk={hata} />}
@@ -81,7 +81,7 @@ export default function Ayarlar({
         baslik="Bu cihaz"
         cocuk={
           <div className="flex flex-col gap-3">
-            <p className="text-[14px] text-solgun">
+            <p className="text-kucuk text-solgun">
               {uzaktan
                 ? "Uzaktan ekran: barkod giriş alanı odaklanmaz, telefon klavyesi kendiliğinden açılmaz. Sayımı laptop yapar, buradan izler ve seçim yaparsın."
                 : "Okuyucu cihazı: barkod giriş alanı sürekli odakta kalır."}
@@ -126,13 +126,13 @@ export default function Ayarlar({
       <Panel
         baslik="Aktif raf"
         sag={
-          <span className="text-[13px] text-solgun">
+          <span className="text-kucuk text-solgun">
             {durum.aktif_raf ? `şu an raf ${durum.aktif_raf}` : "seçilmedi"}
           </span>
         }
         cocuk={
           <div className="flex flex-col gap-3">
-            <p className="text-[14px] text-solgun">
+            <p className="text-kucuk text-solgun">
               Raf barkodunu okutmadan da değiştirebilirsin. Çözülmemiş kuyruk varsa
               burada da uyarır.
             </p>
@@ -143,11 +143,11 @@ export default function Ayarlar({
                     key={r}
                     type="button"
                     onClick={() => void rafAyarla(r)}
-                    className={`ease-kolay rounded-full border px-5 py-2 text-[15px]
+                    className={`ease-kolay rounded-sm border px-5 py-2 text-govde
                       font-bold transition duration-200
                       ${
                         r === durum.aktif_raf
-                          ? "border-uyari bg-uyari/15 text-uyari"
+                          ? "border-uyari bg-uyari-tint text-uyari"
                           : "border-cizgi bg-panel2 hover:border-vurgu"
                       }`}
                   >
@@ -164,8 +164,8 @@ export default function Ayarlar({
                 onChange={(e) => setYeniRaf(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void rafAyarla(yeniRaf)}
                 placeholder="yeni raf adı (A1, B2…)"
-                className="min-w-0 flex-1 rounded-xl border border-cizgi bg-zemin px-4 py-3
-                  font-mono text-[16px] uppercase focus:border-vurgu focus:outline-none"
+                className="min-w-0 flex-1 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                  font-mono text-govde uppercase focus:border-vurgu focus:outline-none"
               />
               <Dugme cocuk="Rafa geç" tur="ana" tikla={() => void rafAyarla(yeniRaf)} />
             </div>
@@ -180,8 +180,8 @@ export default function Ayarlar({
             {kurallar.map((k) => (
               <li
                 key={k.id}
-                className={`flex items-center gap-3 rounded-xl border px-3 py-2
-                  ${k.satir ? "border-cizgi bg-panel2" : "border-cizgi/50 opacity-55"}`}
+                className={`flex items-center gap-3 rounded-sm border px-3 py-2
+                  ${k.satir ? "border-cizgi bg-panel2" : "border-cizgi text-solgun-hafif"}`}
               >
                 <input
                   id={`ayar-kural-${k.id}`}
@@ -192,11 +192,11 @@ export default function Ayarlar({
                 />
                 <label htmlFor={`ayar-kural-${k.id}`} className="flex-1 cursor-pointer">
                   <Kod cocuk={k.desen} />
-                  <span className="ml-2 text-[12px] text-solgun">
+                  <span className="ml-2 text-mikro text-solgun">
                     {k.tip === "tur" ? "türde" : "açıklamada"}
                   </span>
                 </label>
-                <span className="rakam text-[13px] text-solgun">
+                <span className="rakam text-kucuk text-solgun">
                   {k.satir ? `${k.satir} satır` : "—"}
                 </span>
               </li>

@@ -139,10 +139,11 @@ def test_kuyruk_cozme(kurulu):
     kuyruk = ist.get("/api/oturum/%s/kuyruk" % oid).json()
     assert len(kuyruk) == 1 and kuyruk[0]["barkodlar"][0] == "198701689928"
 
-    aday = ist.get("/api/oturum/%s/ara" % oid, params={"q": "0WGP72"}).json()
-    assert aday[0]["kirli"] == 1          # kirli kayıtlar üstte
+    bulunan = ist.get("/api/oturum/%s/ara" % oid,
+                      params={"q": "0WGP72"}).json()["satirlar"]
+    assert bulunan[0]["kirli"] == 1       # kirli kayıtlar üstte
     r = ist.post("/api/kuyruk/%s/coz" % kuyruk[0]["id"],
-                 json={"beklenen_id": aday[0]["id"]})
+                 json={"beklenen_id": bulunan[0]["id"]})
     assert r.status_code == 200 and r.json()["kod"] == "0WGP72"
     assert ist.get("/api/oturum/%s/kuyruk" % oid).json() == []
 
@@ -150,13 +151,150 @@ def test_kuyruk_cozme(kurulu):
     assert okut(ist, oid, "198701689928")["coz"] == "ogrenilmis"
 
 
-def test_kuyruk_fazla_isaretleme(kurulu):
+def test_fazla_kaydina_ad_yazma(kurulu):
+    """Elle fazla → PATCH /api/okutma/{id} ile ürün adı."""
+    ist, _, o = kurulu
+    r = okut(ist, o["id"], "KAYITSIZ-URUN-9911", "##FAZLA##")
+    oid = r["okutma"][0]
+
+    p = ist.patch("/api/okutma/%s" % oid, json={"ad": "Kırmızı HP güç kablosu"})
+    assert p.status_code == 200 and p.json()["ad"] == "Kırmızı HP güç kablosu"
+
+    # kısmi güncelleme: not yazmak adı silmemeli
+    p = ist.patch("/api/okutma/%s" % oid, json={"not_": "üst raf"})
+    assert p.json()["ad"] == "Kırmızı HP güç kablosu" and p.json()["not_"] == "üst raf"
+
+    assert ist.patch("/api/okutma/999999", json={"ad": "x"}).status_code == 404
+
+
+def test_onay_kuyrugu_okutma_aninda_fazla_yazmaz(kurulu):
+    """DEMO_FEEDBACK 5: karşılığı bulunamayan ürün sorulmadan fazla olmaz."""
+    ist, _, o = kurulu
+    r = okut(ist, o["id"], "210-BEJO", "YENISERI12345", SONRAKI)
+    assert r["tip"] == "onay"
+    assert r["durum"]["sayac"]["fazla"] == 0
+
+    k = ist.get("/api/oturum/%s/kuyruk" % o["id"]).json()[0]
+    assert k["tur"] == "fazla_onay" and k["kod"] == "210-BEJO" and k["aciklama"]
+
+    # kullanıcı "evet gerçekten fazla" der -> tek satır yazılır
+    assert ist.delete("/api/kuyruk/%s" % k["id"]).json()["tip"] == "fazla"
+    d = ist.get("/api/oturum/%s/durum" % o["id"]).json()
+    assert d["sayac"]["fazla"] == 1 and d["sayac"]["kuyruk"] == 0
+
+
+def test_sayim_sonu_esleme_uclari(kurulu):
+    """Fazla + eksik yan yana, bağla, geri al, foto kapısı."""
+    ist, _, o = kurulu
+    oid = o["id"]
+    r = okut(ist, oid, "210-BEJO", "YENISERI12345", SONRAKI)
+    kid = r["kuyruk_id"]
+    fid = ist.delete("/api/kuyruk/%s" % kid).json()["okutma"][0]
+
+    e = ist.get("/api/oturum/%s/esleme" % oid).json()
+    assert [f["id"] for f in e["fazla"]] == [fid]
+    hedef = next(x for x in e["eksik"] if x["kod"] == "210-BEJO")
+
+    # kodu bilinen fazla fotoğraf istemez (210-BEJO onaydan geldi)
+    assert ist.get("/api/oturum/%s/esleme" % oid).json()["fazla"][0]["kod"] == "210-BEJO"
+
+    b = ist.post("/api/okutma/%s/bagla" % fid, json={"beklenen_id": hedef["id"]})
+    assert b.status_code == 200 and b.json()["kod"] == "210-BEJO"
+    assert ist.get("/api/oturum/%s/esleme" % oid).json()["fazla"] == []
+
+    assert ist.post("/api/okutma/%s/coz-ayir" % fid).json()["tip"] == "fazla"
+    assert ist.post("/api/okutma/%s/coz-ayir" % fid).status_code == 400
+
+
+def test_fazla_kaydina_fotograf(kurulu):
+    ist, _, o = kurulu
+    r = okut(ist, o["id"], "KAYITSIZ-URUN-9911", "##FAZLA##")
+    fid = r["okutma"][0]
+
+    y = ist.post("/api/okutma/%s/foto" % fid,
+                 files={"dosya": ("f.jpg", io.BytesIO(b"jpeg"), "image/jpeg")})
+    assert y.status_code == 200
+    assert ist.get("/api/foto/%s" % y.json()["id"]).content == b"jpeg"
+
+    # adı yazılmamış fazla bitirmeyi engeller
+    y = ist.post("/api/oturum/%s/bitir" % o["id"])
+    assert y.status_code == 409 and "adsiz" in y.json()["detail"]
+
+    # adı ve fotoğrafı olan fazla engellemez
+    ist.patch("/api/okutma/%s" % fid, json={"ad": "Kırmızı HP güç kablosu"})
+    assert ist.post("/api/oturum/%s/bitir" % o["id"]).status_code == 200
+    assert ist.post("/api/okutma/999999/foto",
+                    files={"dosya": ("f.jpg", io.BytesIO(b"x"), "image/jpeg")}
+                    ).status_code == 404
+
+
+def test_kuyruk_fazla_isaretleme_ad_ister(kurulu):
+    """Tanınmayan ürün adsız fazla yazılamaz.
+
+    Kodu olmayan kaydın raporda açıklaması üretilemez; geriye seri numarası ve
+    raf kalır ve gün sonunda o satırın hangi ürün olduğu bulunamaz. Sisteme
+    ilk kez giren ürün (kendi bastığımız etiket dahil) tam bu yoldan geçer.
+    """
     ist, _, o = kurulu
     okut(ist, o["id"], "198701689928", "EDBP0153231475674", SONRAKI)
     kid = ist.get("/api/oturum/%s/kuyruk" % o["id"]).json()[0]["id"]
-    assert ist.delete("/api/kuyruk/%s" % kid).json()["tip"] == "fazla"
+
+    y = ist.request("DELETE", "/api/kuyruk/%s" % kid)
+    assert y.status_code == 400 and y.json()["detail"]["hata"] == "ad_gerekli"
+    # reddedildiyse kayıt hâlâ kuyrukta, fazla oluşmadı
     d = ist.get("/api/oturum/%s/durum" % o["id"]).json()
-    assert d["sayac"]["fazla"] == 2 and d["sayac"]["kuyruk"] == 0
+    assert d["sayac"]["fazla"] == 0 and d["sayac"]["kuyruk"] == 1
+
+    y = ist.request("DELETE", "/api/kuyruk/%s" % kid,
+                    json={"ad": "Siyah 2m güç kablosu"})
+    assert y.status_code == 200 and y.json()["tip"] == "fazla"
+
+    # TEK GRUP = TEK ÜRÜN: iki barkod okutuldu ama tek fazla kaydı oluşmalı.
+    # Bu test eskiden fazla == 2 bekliyordu, yani hatayı kodluyordu: tek
+    # üründen okutulan her barkod ayrı bir fazla satırı üretiyor, kullanıcıya
+    # adı barkod sayısı kadar soruluyor ve eşleştirme ekranı aynı ürünü N kez
+    # eşleştirmesini bekliyordu (saha bildirimi 2026-08-23).
+    assert len(y.json()["okutma"]) == 1
+    d = ist.get("/api/oturum/%s/durum" % o["id"]).json()
+    assert d["sayac"]["fazla"] == 1 and d["sayac"]["kuyruk"] == 0
+
+    from app import db as dbm
+    c = dbm.baglan()
+    try:
+        r = c.execute("SELECT ham, ad, seri, miktar FROM okutma "
+                      "WHERE oturum=? AND tip='fazla'", (o["id"],)).fetchall()
+        assert len(r) == 1
+        assert r[0]["ad"] == "Siyah 2m güç kablosu"
+        assert r[0]["miktar"] == 1
+        # Denetim izi: iki barkod da kayıtta duruyor
+        assert r[0]["ham"] == "198701689928 + EDBP0153231475674"
+        # Tiger'a yazılacak tek seri: UPC değil, gerçek S/N
+        assert r[0]["seri"] == "EDBP0153231475674"
+    finally:
+        c.close()
+
+
+def test_kuyrukta_yazilan_ad_fazlaya_tasinir(kurulu):
+    """Ad ürün eldeyken (telefondan) yazılabilir; kapatırken tekrar sorulmaz."""
+    ist, _, o = kurulu
+    okut(ist, o["id"], "198701689928", "EDBP0153231475674", SONRAKI)
+    kid = ist.get("/api/oturum/%s/kuyruk" % o["id"]).json()[0]["id"]
+
+    p = ist.patch("/api/kuyruk/%s" % kid, json={"ad": "Mavi SFP modül"})
+    assert p.status_code == 200 and p.json()["ad"] == "Mavi SFP modül"
+    # not yazmak adı silmemeli
+    assert ist.patch("/api/kuyruk/%s" % kid,
+                     json={"not_": "üst raf"}).json()["ad"] == "Mavi SFP modül"
+
+    assert ist.request("DELETE", "/api/kuyruk/%s" % kid).status_code == 200
+
+
+def test_onay_kaydi_ad_istemez(kurulu):
+    """Malzeme kodu biliniyorsa açıklama rapora zaten JOIN ile geliyor."""
+    ist, _, o = kurulu
+    okut(ist, o["id"], "210-BEJO", "YENISERI12345", SONRAKI)
+    kid = ist.get("/api/oturum/%s/kuyruk" % o["id"]).json()[0]["id"]
+    assert ist.request("DELETE", "/api/kuyruk/%s" % kid).status_code == 200
 
 
 # ---------------------------------------------------------------- rapor
@@ -238,12 +376,40 @@ def test_bitir_ucu_kuyrukta_409(kurulu):
     assert ist.post("/api/oturum/%s/bitir?zorla=true" % o["id"]).json()["durum"] == "bitti"
 
 
-def test_aday_listesi_ucu(kurulu):
+def test_aday_onerisi_kaldirildi(kurulu):
+    """DEMO_FEEDBACK 4: "bu olabilir" tamamen kaldırıldı."""
     ist, _, o = kurulu
+    from app import matching
     r = okut(ist, o["id"], "198701689928", "EDBP0153231475674", SONRAKI)
-    assert len(r["adaylar"]) == 5
-    ayrica = ist.get("/api/oturum/%s/adaylar?limit=3" % o["id"]).json()
-    assert len(ayrica) == 3
+    assert r["tip"] == "kuyruk" and "adaylar" not in r
+    assert not hasattr(matching, "adaylar")
+    # /adaylar ucu kalkınca SPA fallback'e düşer; JSON aday listesi dönmez
+    y = ist.get("/api/oturum/%s/adaylar" % o["id"])
+    assert "application/json" not in y.headers.get("content-type", "")
+
+
+def test_arama_filtreleri_ve_sayfalama(kurulu):
+    ist, _, o = kurulu
+    oid = o["id"]
+
+    r = ist.get("/api/oturum/%s/ara" % oid, params={"limit": 5}).json()
+    assert len(r["satirlar"]) == 5 and r["toplam"] > 5
+
+    ikinci = ist.get("/api/oturum/%s/ara" % oid,
+                     params={"limit": 5, "offset": 5}).json()
+    assert {s["id"] for s in r["satirlar"]} & {s["id"] for s in ikinci["satirlar"]} == set()
+
+    kirli = ist.get("/api/oturum/%s/ara" % oid,
+                    params={"limit": 20, "kirli": True}).json()
+    assert kirli["satirlar"] and all(s["kirli"] == 1 for s in kirli["satirlar"])
+
+    lot = ist.get("/api/oturum/%s/ara" % oid,
+                  params={"limit": 20, "izleme": "lot"}).json()
+    assert lot["satirlar"] and all(s["izleme"] == "lot" for s in lot["satirlar"])
+
+    acik = ist.get("/api/oturum/%s/ara" % oid,
+                   params={"limit": 20, "sadece_acik": True}).json()
+    assert acik["satirlar"] and all(not s["sayildi"] for s in acik["satirlar"])
 
 
 def test_kuyruk_notu(kurulu):

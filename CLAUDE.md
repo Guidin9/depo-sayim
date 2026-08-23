@@ -206,7 +206,7 @@ eğer gruptan biri SERİ olarak eşleşti:
 değilse eğer gruptan biri KOD/ÖĞRENİLMİŞ olarak eşleşti:
     malzeme izleme='seri' ise:
         o malzemede açık KİRLİ slot varsa -> slot doldurulur (Tiger düzeltmesi)
-        yoksa                             -> FAZLA
+        yoksa                             -> ONAY KUYRUĞU (fazla_onay)
     izleme='lot' veya 'yok' ise:
         -> adet +1 (veya kullanıcıdan adet iste)
     her durumda tanınmayan barkodlar öğrenilir
@@ -217,6 +217,30 @@ hiçbiri eşleşmedi:
 
 Öğrenme döngüsü budur: bir ürünün P/N'i ve UPC'si aynı grupta okutulduğunda,
 tanınmayan UPC tanınan P/N'in malzemesine bağlanır ve kalıcı kaydedilir.
+
+**Fazla, onaydan geçmeden oluşmaz.** Kirli slot bulunamayan dal eskiden sessizce
+"fazla" yazıyordu; demo sayımında bunun yanlış olduğu görüldü
+(`DEMO_FEEDBACK.md` §5). O dala düşmek "stokta yok" demek değil, **"Tiger'daki
+seri numaralarıyla eşleşmedi"** demektir — malzemenin sayılmamış *temiz*
+satırları dururken de oraya düşülür. Artık kayıt `kuyruk` tablosuna
+`tur='fazla_onay'` ile yazılır ve kullanıcı üç cevaptan birini verir: doğru
+kaydı seç · gerçekten fazla · sonra çöz. Fazla kaydı yalnızca bu onaydan ve
+`##FAZLA##` komutundan doğar.
+
+**Bir grup bir fazla kaydı üretir — barkod sayısı kadar değil.** Grubun tanımı
+zaten budur: kullanıcı bir ürünün üstündeki bütün barkodları (P/N, S/N, UPC,
+lot, kendi etiketimiz) okutup `##SONRAKI##` der. Fazla yazılırken barkodlar
+`ham` içinde `" + "` ile birleşir (denetim izi), Tiger'a yazılacak tek seri
+numarasını `_fazla_seri` seçer, `miktar` 1 kalır.
+
+2026-08-23'e kadar bu kural yalnızca `fazla_onay` dalında uygulanıyordu;
+`kuyruk_fazla`'nın normal dalı ve `##FAZLA##` komutu **barkod başına bir satır**
+yazıyordu. Sonuç: tek üründen okutulan iki barkod raporda iki ayrı fazla
+oluyor, kullanıcıya adı iki kez soruluyor ve eşleştirme ekranı aynı ürünü iki
+kez eşleştirmesini bekliyordu. `db.bolunmus_fazlalari_birlestir()` göçü bu
+hatayla oluşmuş kayıtları açılışta tek satıra indirir.
+
+Bu, `depo_sayim.py` prototipinden **bilinçli** bir sapmadır (§7).
 
 ### 4.5 Komut barkodları
 
@@ -236,15 +260,58 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 
 ## 5. Rapor çıktısı
 
-5 sekmeli Excel:
+6 sekmeli Excel:
 
 | Sekme | İçerik | Kullanım |
 |---|---|---|
 | Eksik | Okutulmamış beklenen kayıtlar | Tiger sayım eksikliği fişi |
-| Fazla | Karşılığı bulunamayan okutmalar | Tiger sayım fazlası fişi |
+| Fazla | Karşılığı bulunamayan okutmalar (+ **Ürün Adı**) | Tiger sayım fazlası fişi |
 | Eşleşen | Başarılı okutmalar (denetim izi) | Kontrol |
 | Tiger Düzeltme | `eski (uydurma) S/N -> yeni (gerçek) S/N` | Seri no düzeltme fişi |
 | Barkod Tablosu | `öğrenilen barkod -> malzeme kodu` | Tiger malzeme kartı Barkod alanına yazılır |
+| Etiketler | Kendi bastığımız etiketlerin defteri (§12) | Fiziksel etiketi bulmak |
+
+**Rapordan önce eşleştirme adımı var.** Fazla çıkan ürün çoğu zaman eksik
+görünen kaydın ta kendisidir, sadece seri numarası tutmamıştır. Eşleştirme
+ekranı ikisini yan yana koyar, kararı kullanıcı verir; sistem tahmin yürütmez.
+Bağlanan kayıt Eşleşen'e ve — kirli bir slota bağlandıysa — Tiger Düzeltme'ye
+düşer.
+
+**Fazla kaydı adsız oluşmaz.** Malzeme kodu bilinmeyen bir ürün fazla
+işaretlenirken sistem **ne olduğunu yazdırır** — sunucu adsız kaydı reddeder
+(`ad_gerekli`), oturum da adsız fazla varken kapanmaz (`ad_engel`). Sebebi
+sahada görüldü: kodu olmayan kaydın açıklaması `beklenen` tablosundan
+üretilemiyor, raporda geriye yalnızca seri numarası ve raf kalıyor ve gün
+sonunda o satırın hangi ürün olduğu bulunamıyor. **Sisteme ilk kez giren ürün —
+kendi bastığımız `DS-` etiketiyle girenler dahil — tam olarak bu yoldan
+geçiyor.** Malzeme kodu biliniyorsa (onay kaydı) ad isteğe bağlıdır; açıklama
+zaten Tiger'dan geliyor.
+
+**Fazla kaydı KİMLİKSİZ kapanmaz — fotoğrafsız kapanır.** Fazla, sayım
+bittikten sonra kimsenin doğrulayamayacağı tek çıktıdır: ürün rafa geri konur,
+geriye yalnızca bir satır kalır. O satırı denetlenebilir yapan şey kimliktir:
+**`kod` ya da `ad`.** İkisinden biri varsa fotoğraf istenmez.
+
+2026-08-23'e kadar kural "her fazla kaydı fotoğraf ister" şeklindeydi ve
+yanlıştı: kullanıcı ürünün ne olduğunu yazdığı hâlde fotoğraf sorulup oturum
+kapatılamıyordu. Fotoğraf hâlâ en iyi denetim izidir ve arayüz onu önerir, ama
+**engellemez**. Kuyrukta çekilen fotoğraf onay sırasında fazla kaydına taşınır
+— aynı fotoğraf iki kez istenmez.
+
+**Elle eşleştirme listesi eksiksiz ve yalnızca AÇIK kayıtları taşır.** İki
+kural, ikisi de sahada bozulmuştu (bildirim 2026-08-23):
+
+- *Eksiksiz*: `ara()` sınırsız döner (`limit=0` varsayılan). Eskiden varsayılan
+  25'ti, arayüzler 40/50 istiyordu ve **sayfalama yoktu** — 870 satırlık bir
+  kümenin ilk sayfası dışına çıkmanın yolu yoktu, kullanıcı listede olmayan
+  ürünü tahmin etmeye çalışıyordu. Veri tek seferde gelir, süzme ve kademeli
+  çizim istemcide yapılır (`web/src/liste.ts`).
+- *Yalnızca açık*: bu oturumda sayılmış/eşleşmiş kayıt listede **görünmez.**
+  Filtre değil kural — yoksa iki ayrı fiziksel ürün tek kayda bağlanır.
+  Ölçüt `matching.kapasite_kaldi()`: seri takiplide "hiç okutulmamış",
+  lot/izlemesizde "sayılan < beklenen" (77 adetlik lotun bir kez okutulmuş
+  olması bittiği anlamına gelmez). Sunucu da aynı kuralı uygular —
+  `kuyruk_coz()` ve `fazla_bagla()` dolu kayda bağlamayı reddeder.
 
 ---
 
@@ -268,12 +335,24 @@ Excel çıktısı üretiyoruz.
 ## 7. Mevcut durum
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 136 test geçiyor. Arayüzün tasarım
-dili §10'da, dağıtım ve kurulum tuzakları §11'de.
+altında React + Vite + Tailwind arayüz, 193 test geçiyor. **Arayüz yeniden
+tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
+kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
+
+**Kod haritası bu dosyada değil, `MIMARI.md`'dedir**: modül listesi, veritabanı
+şeması ve göç mekanizması, API uç tablosu, motorun dallanması, arayüz yapısı,
+test paketi. Bu dosya alan bilgisidir (Tiger, kirli seri, etiket mantığı),
+`MIMARI.md` koddur. **Mimari değişiklikte `MIMARI.md` aynı commit'te
+güncellenir** — yeni bir API ucu, tablo, sütun ya da ekran oraya da işlenir.
+Sayım dışı kalem gibi *alan* kuralları burada kalır.
 
 `depo_sayim.py` ilk prototiptir (stdlib + openpyxl, tek dosya) ve **eşleştirme
 mantığının referansı olarak durur** — `app/matching.py` ile davranışı aynı
-olmalıdır.
+olmalıdır. Bilinçli sapmalar burada listelenir, sessizce ayrılmaz:
+
+| Sapma | Neden |
+|---|---|
+| Kirli slot bulunamayınca fazla değil **onay kuyruğu** (§4.4) | Prototip sessizce fazla yazıyordu; demo sayımında yanlış olduğu görüldü (`DEMO_FEEDBACK.md` §5) |
 
 `komut_karti.py` Code128 komut barkodu kartı üretir (python-barcode gerektirir).
 
@@ -347,11 +426,18 @@ Telefon artık laptopla aynı arayüzü açmıyor. Ayrı adres: `/telefon`.
 
 Telefonda bilerek yok: Excel yükleme, ambar seçimi, rapor, oturumu bitirme.
 
+**2026-08-22 eki — telefon artık kumanda.** Demo sayımında komut barkodu kartına
+uzanmanın sayımı yavaşlattığı görüldü (`DEMO_FEEDBACK.md` §1-2). Telefona sabit
+alt çubuk geldi: **Sıradaki ürün** (`##SONRAKI##`) ve **Geri al** (`##GERIAL##`);
+sayaçların altına Raf · İptal · Atla · Fazla. Mimari değişmedi — okuyucu
+laptopta, komutlar zaten `POST /okut` gövdesinden geçiyor. `##BITIR##` telefonda
+hâlâ yok.
+
 ### Nerede doğrulandı, nerede doğrulanmadı
 
 | Ortam | Sonuç |
 |---|---|
-| pytest (134 test) | ÇALIŞIYOR |
+| pytest (193 test) | ÇALIŞIYOR |
 | `npm run build` (tsc dahil) | ÇALIŞIYOR |
 | `curl /telefon` → `Cache-Control: no-store` | ÇALIŞIYOR |
 | `curl /api/telefon-qr.svg` → SVG | ÇALIŞIYOR |
@@ -378,68 +464,101 @@ Windows güvenlik duvarı 8000'i kapatıyor mu).
 Bu adımlar geçilmeden README'deki telefon bölümü doğrulanmış sayılmaz.
 ---
 
-## 10. Arayüz tasarım dili
+## 10. Arayüz — logo ve tasarımdan bağımsız kısıtlar
 
-**Durum: 2026-08-20'de yazıldı. Laptop tarayıcısında gerçek veriyle doğrulandı,
-gerçek telefonda test edilmedi (bkz. §9).**
+**Eski tasarım dili 2026-08-23'te bırakıldı.** Frosted cam kabuk, katmanlı koyu
+zemin, hap geometrisi ve `Design.md`'den damıtılan her şey gitti; `Design.md`
+depodan silindi.
 
-`Design.md` başka bir ürünün ("Measured") tanıtım sayfası promptudur — bizim
-projeyle işlevsel ilgisi yoktur, yalnızca **görsel dili** alınmıştır. Damıtılmış
-hâli: katmanlı koyu zemin, frosted cam kabuk, hap geometrisi, serif başlık /
-sans gövde ayrımı, `cubic-bezier(0.77, 0, 0.18, 1)` ile kademeli giriş.
+**Yeni yön: Flat Design + Minimalism & Swiss, açık tema.** Zevkten değil
+veriden türetildi — `ui-ux-pro-max` skill'inin `products.csv` dosyasındaki
+**"Inventory & Stock Management"** satırı bu ürün tipi için birebir şunu
+söylüyor: birincil stil *Flat + Swiss*, ikincil *Accessible & Ethical*,
+pano stili *Real-Time Monitoring + Data-Dense*, palet odağı *"functional
+neutral + status traffic-light + scanner accent"*.
 
-### 10.1 Değiştirilmeyen kurallar
+Pratikte: gölge yok, gradyan yok, cam yok, hap yok. Yarıçap her yerde 2px.
+Yüzeyler kenarlıkla ayrılır, yükseklikle değil. Palet §10.2'de.
 
-Design.md'nin bazı kararları depo koşullarıyla çelişir (§ kötü aydınlatma,
-uzaktan bakış, eldiven). Aşağıdakiler **bilerek** uyarlanmıştır:
+Aşağıdakiler zevk kararı değil, **depo ve dil koşullarının dayattığı
+kısıtlardır.** Hangi görsel yön seçilirse seçilsin geçerlidirler; ihlal
+edildiklerinde ortaya çıkan şey çirkin arayüz değil, **bozuk metin, yanlış
+okunan seri numarası ve sahada kaybolan zamandır.**
 
-| Design.md | Bizde neden farklı |
+### 10.1 Kısıtlar
+
+| Kısıt | Neden |
 |---|---|
-| `.liquid-glass` yüzeyi `rgba(255,255,255,0.01)` | Arkasında koyu ürün fotoğrafı olduğu için okunuyor. Bizde arkada ızgara var; o opaklıkta nav metni depoda okunmaz. Panel renginin %72'si kullanıldı. |
-| Cam her yerde | Cam **yalnızca kabukta**: nav, panel başlığı, modal, telefon başlığı. Barkod girişi, sayaçlar, okutma şeridi ve liste satırları **opak** kalır. |
-| Google Fonts `<link>` | CDN yok (`vite.config.ts`). Fontlar `web/src/fonts/` altında self-host. **latin-ext şart** — `ğ Ğ ş Ş İ` o blokta, `ı` (U+0131) latin bloğunda. |
-| İmleç takipli spot ışık + video | Video yok, telefonda imleç yok. Yerine okutma sonucunun rengiyle kısa ambiyans ışıması (`Isima.tsx`) — sesli geri bildirimin görsel eşi. |
+| Font **latin-ext subset'i şart** | `ğ Ğ ş Ş İ` latin-ext blokta, `ı` (U+0131) latin blokta. Yalnız latin subset'iyle gelen bir font Türkçe metni bozar — ve bu ancak sahada fark edilir. |
+| **CDN yok** | Depo laptopu çevrimdışı çalışabilmeli. Fontlar `web/src/fonts/` altında self-host (`vite.config.ts`). Google Fonts `<link>` kullanılmaz. |
+| Sayaçlarda **`tabular-nums`** | Orantılı rakamda sayaç her okutmada zıplar. `.rakam` sınıfı bunun için var. |
+| Barkod ve seri numarası **mono** | `0/O` ve `1/l` ayrımı, alt alta hizalanan haneler. Kötü depo ışığında iki seri numarasını karşılaştırmayı mümkün kılan tek şey. |
+| **Emoji yok** | Her işletim sisteminde başka çizilir, kendi rengini dayatır, yazı tipi ölçeğine uymaz, uzaktan bakınca renk lekesine döner. Yerine `web/src/ikonlar.tsx` — inline SVG çizgi ikonlar. |
+| **Renk tek başına bilgi taşımaz** | Depo aydınlatması kötü. Durum gösteren her yerde ikon + metin birlikte bulunur. |
+| **Dokunma hedefi en az 48 px** | Telefon sahada eldivenle kullanılıyor. `stil.css`'teki kural `button, select, input, [role=button]` kapsar — `input` 2026-08-23'te eklendi, o güne kadar `py-2` ile yazılmış girdiler eşiğin altındaydı. |
+| **`prefers-reduced-motion` desteklenir** | Hareket ve ışıma efektleri o modda kapanır. |
 
-### 10.2 CSS sınıfları (`web/src/stil.css`)
+### 10.2 Palet ve jetonlar
 
-| Sınıf | Nerede | Not |
-|---|---|---|
-| `.cam` | nav, panel kabuğu, modal, bölüm kartı | Gerçek `backdrop-filter`. **Önek sırası kritik**: `-webkit-backdrop-filter` önce, öneksiz sonra — ters yazılırsa Lightning CSS öneksizi eler ve bulanıklık hiç uygulanmaz. |
-| `.cam-hafif` | düğmeler | Aynı yüzey ve gradyan kenarlık, `backdrop-filter` YOK. Sayım ekranında ~10 sade düğme var; her biri gerçek cam olsa 10 ayrı backdrop katmanı çıkardı. |
-| `.cam-yogun` | telefonun yapışkan başlığı | %94 opak. %72'de altından kayan satırlar camın içinden okunup başlıkla yarışıyordu. |
-| `.girdi` | okutma şeridi, tampon satırı | 0.18s / 10px — kısa tutuldu, sahada geri bildirim gecikmesi hataya dönüşüyor. |
-| `.kademe` + `.kademe-1..8` | kuyruk kartları | Design.md'nin 100ms + n×60ms kademesi. 8'den sonrası sabit. |
-| `.isima` | okutma sonucu | 900ms'de sönen radyal ışık, `mix-blend-mode: screen`. |
+Tek kaynak: `web/src/stil.css` içindeki Tailwind v4 `@theme` bloğu.
+`tailwind.config` yok.
 
-`prefers-reduced-motion` altında hepsi kapanır; `.isima` hiç çizilmez.
+**Jeton adları korunur.** 12 dosyada ~518 kullanım yeri bunlara bağlı; yeniden
+adlandırma hepsine dokunur. Koyu temadan açığa geçerken yalnızca değerler
+değişti.
 
-### 10.3 Emoji kullanma
+| Jeton | Değer | Rol | Kontrast |
+|---|---|---|---|
+| `zemin` | `#f1f5f9` | sayfa zemini **ve girdi kuyusu** | — |
+| `panel` | `#ffffff` | kart yüzeyi | — |
+| `panel2` | `#f8fafc` | kartın içindeki satır / zebra | — |
+| `cizgi` | `#cbd5e1` | ayraç, tablo kuralı | 1.42 |
+| `cizgi-kuvvetli` | `#64748b` | **girdi ve form kontrolü çerçevesi** | 4.55 |
+| `yazi` | `#0f172a` | ana metin | 17.06 |
+| `solgun` | `#475569` | ikincil metin | 7.24 |
+| `solgun-hafif` | `#64748b` | pasif düğme, yer tutucu | 4.76 |
+| `vurgu` | `#1d4ed8` | birincil eylem, odak halkası | 6.41 |
+| `ok` | `#047857` | başarılı | 5.24 |
+| `uyari` | `#b45309` | uyarı | 4.80 |
+| `hata` | `#b91c1c` | hata | 6.18 |
+| `bilgi` | `#0e7490` | bilgi | 4.89 |
 
-Arayüzde **emoji yoktur**. Emoji her işletim sisteminde başka çizilir, kendi
-rengini dayatır, yazı tipi ölçeğine uymaz ve depo aydınlatmasında uzaktan
-bakınca renk lekesine döner. Bunun yerine `web/src/ikonlar.tsx` — 28 çizgi
-ikon, 24'lük ızgara, 1.75 kalınlık, `currentColor`. Yeni bir ikon gerekiyorsa
-oraya ekleyin; `📷` yazmayın.
+Ayrıca beş tint jetonu: `ok-tint #ecfdf5` · `uyari-tint #fffbeb` ·
+`hata-tint #fef2f2` · `bilgi-tint #ecfeff` · `vurgu-tint #eff6ff`.
 
-`▣ ✓ ⚠ ⛔` gibi geometrik glifler de ikona çevrildi. Metin içindeki `→` okları
-kaldı — onlar emoji değil, cümlenin parçası.
+**Bilinmesi gereken dört karar:**
 
-**Ama ikon+metin çifti korunur**: `Rozet` ve durum şeritleri hem ikon hem yazı
-gösterir. Renk tek başına bilgi taşımaz (§ kötü aydınlatma).
+1. **`zemin` hem sayfa zemini hem girdi dolgusu.** 18 `bg-zemin` kullanımının
+   18'i de `<input>`. Beyaz kartın içinde 1.10:1 kalıyor — kutunun sınırını
+   gösteren tek şey kenarlık, o yüzden girdilerde `cizgi` değil
+   **`cizgi-kuvvetli`** kullanılır (metin dışı 3:1 eşiğini geçen tek değer).
+2. **Opaklık çarpanı kullanılmaz** (`bg-ok/15`, `border-hata/40`). Açık zeminde
+   `/15` ve üstü kontrastı 4.5:1'in altına düşürüyor; amber hiçbir opaklıkta
+   geçmiyor (%10'da bile 4.39). Durum dolgusu için tint jetonu, kenarlık için
+   düz renk kullanılır — `border-hata/40` beyaz üzerinde 2.08, yani görünmez.
+3. **`bilgi` camgöbeği**, mavi değil. Koyu temada `vurgu` (canlı indigo) ile
+   `bilgi` (gök mavisi) kolay ayrılıyordu; açık temada ikisi de koyu maviye
+   düşüyor ve "öğrenilmiş" / "malzeme kodu" rozetleri aynı listede yan yana
+   geliyor.
+4. **`-webkit-font-smoothing: antialiased` kullanılmaz**, `body` ağırlığı
+   **450**. Antialiasing açık zemin üzerine koyu metinde glifleri inceltiyor
+   (koyu temada tam tersi işe yarıyordu); kaldırılmazsa arayüz "soluk" görünür
+   ve sebebi palette aranır.
 
-### 10.4 Tipografi
+Yazı ölçeği jetonla verilir — `text-mikro` (12px, rozet/etiket) ·
+`text-kucuk` (14px, tablo/kod) · `text-govde` (16px, gövde/düğme/girdi).
+**11px yasak.** Yarıçap için stok Tailwind ölçeği (`--radius-sm..3xl`) 2px'e
+ezildi; `rounded-full` yalnızca `Nokta`'nın bağlantı noktasında kalır.
 
-- Başlıklar ve boş durumlar: `font-serif` (Instrument Serif). Boş durumlar italik.
-- Gövde: Inter.
-- **Sayaçlar serif DEĞİL** — Instrument Serif'te sabit genişlikli rakam
-  garantisi yok, sayaçlar her okutmada zıplardı. Inter + `.rakam`
-  (`tabular-nums`) kalır; "dev tipografi" karakteri boyutla verilir.
+### 10.3 Şirket logosu
 
-### 10.5 Şirket logosu
+`app.ico` (kaynak) ve `web/public/logo.png` (256 px, ico'dan çıkarıldı).
+Sekmede favicon, telefonda ana ekran kısayolu, PC'de sol üstte isimle, Sayım
+ekranı ve telefon başlığında yalnız işaret olarak kullanılır.
 
-`app.ico` (kaynak) ve `web/public/logo.png` (256px, ico'dan çıkarıldı).
-Sekmede favicon, telefonda ana ekran kısayolu, PC'de sol üstte isimle,
-Sayım ekranı ve telefon başlığında yalnız işaret olarak kullanılır.
+**Logo yeni tasarımda da korunur ve bu dört yerde de kullanılmaya devam eder.**
+Şirket kimliğidir, tasarım tercihi değil — yeniden renklendirilmez, yeniden
+çizilmez, yerine tipografik bir marka konmaz.
 
 ---
 

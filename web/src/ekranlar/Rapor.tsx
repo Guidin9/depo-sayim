@@ -31,12 +31,14 @@ export default function Rapor({
   tik,
   geri,
   bitir,
+  esleme,
   acikMi,
 }: {
   oturum: number;
   tik: number;
   geri: () => void;
   bitir: () => void;
+  esleme?: () => void;
   acikMi: boolean;
 }) {
   const [veri, setVeri] = useState<RaporOnizleme | null>(null);
@@ -66,8 +68,11 @@ export default function Rapor({
           }
           tikla={geri}
         />
-        <h1 className="font-serif text-4xl leading-[0.95] tracking-tight">Rapor — oturum #{oturum}</h1>
+        <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">Rapor — oturum #{oturum}</h1>
         <div className="ml-auto flex gap-2">
+          {/* Bitirmeden önceki adım: fazla çıkanların çoğu aslında eksik
+              görünen kaydın kendisidir (DEMO_FEEDBACK.md 6). */}
+          {acikMi && esleme && <Dugme cocuk="Önce eşleştir" tikla={esleme} />}
           {acikMi && <Dugme cocuk="Sayımı bitir" tur="tehlike" tikla={bitir} />}
           <a href={api.raporUrl(oturum)} download>
             <Dugme
@@ -88,36 +93,36 @@ export default function Rapor({
             key={ad}
             type="button"
             onClick={() => setAktif(ad)}
-            className={`ease-kolay rounded-full border px-5 text-[15px] font-semibold
+            className={`ease-kolay rounded-sm border px-5 text-govde font-semibold
               transition duration-200
               ${
                 aktif === ad
-                  ? "border-vurgu bg-vurgu/15 text-vurgu"
+                  ? "border-vurgu bg-vurgu-tint text-vurgu"
                   : "border-cizgi bg-panel text-solgun hover:text-yazi"
               }`}
           >
             {ad}
-            <span className="rakam ml-2 text-[13px] opacity-70">{veri[ad]?.toplam ?? 0}</span>
+            <span className="rakam ml-2 text-kucuk">{veri[ad]?.toplam ?? 0}</span>
           </button>
         ))}
       </div>
 
       <Panel
         baslik={aktif}
-        sag={<span className="text-[13px] text-solgun">{ACIKLAMA[aktif]}</span>}
+        sag={<span className="text-kucuk text-solgun">{ACIKLAMA[aktif]}</span>}
         cocuk={
           !s || s.satirlar.length === 0 ? (
             <Bos cocuk="Bu sekmede satır yok." />
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[14px]">
+                <table className="w-full border-collapse text-kucuk">
                   <thead>
                     <tr>
                       {s.basliklar.map((b) => (
                         <th
                           key={b}
-                          className="border-b border-cizgi px-3 py-2 text-left text-[12px]
+                          className="border-b border-cizgi px-3 py-2 text-left text-mikro
                             font-bold tracking-wider text-solgun uppercase whitespace-nowrap"
                         >
                           {b}
@@ -127,9 +132,9 @@ export default function Rapor({
                   </thead>
                   <tbody>
                     {s.satirlar.map((satir, i) => (
-                      <tr key={i} className={i % 2 ? "bg-panel2/40" : ""}>
+                      <tr key={i} className={i % 2 ? "bg-panel2" : ""}>
                         {satir.map((h, j) => (
-                          <td key={j} className="border-b border-cizgi/50 px-3 py-2 align-top">
+                          <td key={j} className="border-b border-cizgi px-3 py-2 align-top">
                             {j === 0 || typeof h === "number" ? (
                               <span className="rakam font-mono">{h}</span>
                             ) : (
@@ -143,13 +148,13 @@ export default function Rapor({
                 </table>
               </div>
               {s.toplam > s.satirlar.length && (
-                <p className="mt-3 text-[13px] text-solgun">
+                <p className="mt-3 text-kucuk text-solgun">
                   İlk {s.satirlar.length} satır gösteriliyor, toplam{" "}
                   <b className="text-yazi">{s.toplam}</b>. Tamamı Excel dosyasında.
                 </p>
               )}
               {s.dipnot.map((d) => (
-                <p key={d} className="mt-2 text-[13px] text-solgun italic">
+                <p key={d} className="mt-2 text-kucuk text-solgun italic">
                   {d}
                 </p>
               ))}

@@ -3,8 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#08090d" />
+    <!-- color-scheme AÇIK: bu satır kalırsa yerel <select> açılır listeleri,
+         otomatik doldurma zeminleri ve bazı kaydırma çubukları açık sayfanın
+         üstünde KOYU çizilmeye devam eder. React ve Tailwind buraya dokunmaz. -->
+    <meta name="color-scheme" content="light" />
+    <!-- --color-zemin ile elle eşleşir; hiçbir şey ikisini bağlamıyor. -->
+    <meta name="theme-color" content="#f1f5f9" />
     <!-- Şirket logosu: sekmede, telefonun ana ekrana eklediği kısayolda ve
          arayüzün sol üstünde aynı bukalemun. Dosyalar public/ altında durup
          kökten servis ediliyor (app/main.py bilinen dosyaları doğrudan verir). -->

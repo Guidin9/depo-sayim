@@ -192,11 +192,57 @@ def test_fazla_elle(c, ot, yaz):
                      (ot["id"],)).fetchone()["n"] == 1
 
 
-def test_seri_takipli_karsiligi_yok_fazla(c, ot, yaz):
-    """Temiz seri takipli malzemede açık kirli slot yoksa sonuç FAZLA olur."""
+def test_seri_takipli_karsiligi_yok_onaya_dusler(c, ot, yaz):
+    """Açık kirli slot yoksa sonuç FAZLA DEĞİL, onay kuyruğudur.
+
+    DEMO_FEEDBACK.md 5: eski davranış sessizce fazla yazıyordu. Bu dala düşmek
+    "stokta yok" demek değil, "Tiger'daki seri numaralarıyla eşleşmedi"
+    demektir — kararı kullanıcı verir.
+    """
     r = yaz("210-BEJO", "YENISERI12345", SONRAKI)
-    assert r["tip"] == "fazla"
+    assert r["tip"] == "onay"
     assert r["kod"] == "210-BEJO"
+    # onaylanmadan hiçbir fazla kaydı oluşmaz
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='fazla'",
+                     (ot["id"],)).fetchone()["n"] == 0
+    q = c.execute("SELECT * FROM kuyruk WHERE id=?", (r["kuyruk_id"],)).fetchone()
+    assert q["tur"] == "fazla_onay" and q["kod"] == "210-BEJO"
+
+
+def test_onay_kaydi_sayilmamis_temiz_satira_baglanabilir(c, ot, yaz):
+    """Asıl kazanç: malzemenin sayılmamış TEMİZ satırı dururken fazla yazılmıyor.
+
+    Kullanıcı onay kartından o satırı seçince kayıt eşleşmiş sayılır.
+    """
+    r = yaz("210-BEJO", "YENISERI12345", SONRAKI)
+    acik = c.execute("""SELECT b.id FROM beklenen b WHERE b.kod='210-BEJO'
+                        AND b.kirli=0 AND NOT EXISTS(SELECT 1 FROM okutma o
+                        WHERE o.oturum=? AND o.beklenen_id=b.id)
+                        ORDER BY b.id LIMIT 1""", (ot["id"],)).fetchone()
+    assert acik, "temiz ve sayılmamış satır bulunmalı — senaryonun ön koşulu"
+    s = matching.kuyruk_coz(c, r["kuyruk_id"], acik["id"])
+    assert s["tip"] == "eslesti" and s["kod"] == "210-BEJO"
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='fazla'",
+                     (ot["id"],)).fetchone()["n"] == 0
+
+
+def test_onay_gercekten_fazlaysa_tek_satir_yazar(c, ot, yaz):
+    """Onay kaydı iki barkod taşısa da tek üründür: raporda tek fazla satırı."""
+    r = yaz("210-BEJO", "YENISERI12345", SONRAKI)
+    s = matching.kuyruk_fazla(c, r["kuyruk_id"])
+    assert s["tip"] == "fazla" and len(s["okutma"]) == 1
+    satir = c.execute("SELECT * FROM okutma WHERE oturum=? AND tip='fazla'",
+                      (ot["id"],)).fetchone()
+    assert satir["kod"] == "210-BEJO"          # malzeme kodu kaybolmuyor
+    assert satir["seri"] == "YENISERI12345"    # kodun kendisi değil, S/N yazılır
+
+
+def test_onay_kaydi_bitir_kapisini_tetikler(c, ot, yaz):
+    """Onaylanmamış fazla dururken oturum kapanmamalı."""
+    yaz("210-BEJO", "YENISERI12345", SONRAKI)
+    r = yaz("##BITIR##")
+    assert r["tip"] == "bitir_engel"
+    assert r["kuyruk"][0]["tur"] == "fazla_onay"
 
 
 def test_sayaclar(c, ot, yaz):
