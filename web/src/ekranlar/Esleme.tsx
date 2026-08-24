@@ -50,6 +50,14 @@ export default function Esleme({
     void tazele();
   }, [tazele, tik]);
 
+  /* Fazla seçilince eksik aramasını o kodun serilerine daralt (Kuyruk ekranıyla
+     aynı davranış): fazla çıkan ürün çoğu zaman aynı koddaki eksik kaydın ta
+     kendisidir, yalnızca serisi tutmamıştır. Böylece liste tek gruba iner,
+     seriler açık gelir ve kullanıcı doğrudan seçer. Seçim kalkınca temizlenir. */
+  useEffect(() => {
+    setQ(secili?.kod ?? "");
+  }, [secili]);
+
   async function bagla(e: EksikKaydi) {
     if (!secili) return;
     try {
@@ -287,6 +295,7 @@ export default function Esleme({
                       anahtar={q}
                       onSec={(e) => void bagla(e)}
                       pasif={!secili}
+                      hepsiAcik={!!secili}
                     />
                   </ul>
                 )}
