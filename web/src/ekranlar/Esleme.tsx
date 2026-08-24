@@ -58,6 +58,14 @@ export default function Esleme({
     setQ(secili?.kod ?? "");
   }, [secili]);
 
+  /* Tek fazla varsa kendiliğinden seç — kullanıcı "önce soldan fazla seç"
+     adımını atlayıp doğrudan sağdan seriye basıyor ve hiçbir şey olmuyordu
+     (seri satırları fazla seçili değilken pasif). Yalnızca seçim boşken seçer
+     (`s ?? ...`), böylece kullanıcı isterse tıklayıp bırakabilir. */
+  useEffect(() => {
+    if (veri.fazla.length === 1) setSecili((s) => s ?? veri.fazla[0]);
+  }, [veri.fazla]);
+
   async function bagla(e: EksikKaydi) {
     if (!secili) return;
     try {
@@ -295,7 +303,6 @@ export default function Esleme({
                       anahtar={q}
                       onSec={(e) => void bagla(e)}
                       pasif={!secili}
-                      hepsiAcik={!!secili}
                     />
                   </ul>
                 )}

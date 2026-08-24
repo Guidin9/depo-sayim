@@ -172,7 +172,6 @@ export function GrupluListe<T extends ListeSatiri>({
   anahtar,
   onSec,
   pasif = false,
-  hepsiAcik = false,
 }: {
   /** Süzülmüş leaf satırlar (arama + filtre çağıran ekranda uygulanır). */
   satirlar: T[];
@@ -181,10 +180,6 @@ export function GrupluListe<T extends ListeSatiri>({
   onSec: (r: T) => void;
   /** Seçimi kapat (Eşleme ekranında fazla seçilmeden). */
   pasif?: boolean;
-  /** Tüm grupları açık başlat: seçim aktifken (Eşleme'de fazla seçiliyken)
-      kullanıcı ürüne basınca grup açılmasını beklemez, serileri hemen görüp
-      seçer — eski düz liste davranışı, görsel olarak gruplu. */
-  hepsiAcik?: boolean;
 }) {
   const gruplar = useMemo(() => grupla(satirlar), [satirlar]);
   const [acikSet, setAcikSet] = useState<Set<string>>(new Set());
@@ -214,7 +209,7 @@ export function GrupluListe<T extends ListeSatiri>({
           <li key={g.anahtar}>
             <GrupSatiri
               g={g}
-              acik={hepsiAcik || acikSet.has(g.anahtar) || g.anahtar === tekGrup}
+              acik={acikSet.has(g.anahtar) || g.anahtar === tekGrup}
               ac={() => ac(g.anahtar)}
               onSec={onSec}
               pasif={pasif}
