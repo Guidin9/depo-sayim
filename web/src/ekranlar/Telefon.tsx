@@ -18,7 +18,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AramaSonucu, type Durum, type KuyrukSatiri } from "../api";
 import { Nokta } from "../bilesenler";
 import { kucult } from "../foto";
-import { kademeli, suz } from "../liste";
+import { suz } from "../liste";
+import { GrupluListe } from "../GrupluListe";
 import * as Ik from "../ikonlar";
 import Isima, { type IsimaRenk } from "../Isima";
 import type { BaglantiHali } from "../olaylar";
@@ -162,7 +163,6 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
       ]),
     [havuz, q, sadeceKirli],
   );
-  const pencere = kademeli(sonuc, q + (sadeceKirli ? "K" : ""));
 
   async function coz(kuyrukId: number, beklenenId: number) {
     try {
@@ -554,51 +554,14 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
                   </span>
                 </div>
                 <ul className="mt-2 flex max-h-72 flex-col gap-2 overflow-y-auto">
-                  {pencere.gorunur.map((b) => (
-                    <li key={b.id}>
-                      <button
-                        type="button"
-                        onClick={() => void coz(k.id, b.id)}
-                        className="w-full rounded-sm border border-cizgi bg-panel px-3 py-3
-                          text-left"
-                      >
-                        <span className="block font-mono text-kucuk font-bold text-vurgu">
-                          {b.kod}
-                        </span>
-                        <span className="block truncate text-mikro text-solgun">
-                          {b.aciklama}
-                        </span>
-                        <span className="mt-1 block text-mikro text-solgun">
-                          {b.seri && <span className="font-mono">{b.seri} </span>}
-                          {b.kirli ? (
-                            <span className="inline-flex items-center gap-1 text-uyari">
-                              <Ik.Uyari boy={11} /> uydurma kayıt
-                            </span>
-                          ) : null}
-                          {b.ayni_raf > 0 ? (
-                            <span className="inline-flex items-center gap-1 text-uyari">
-                              {" "}
-                              <Ik.Raf boy={11} /> bu rafta
-                            </span>
-                          ) : null}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                  {/* Gözcü: görünür olunca pencere büyür. Kesme değil —
-                      tüm satırlara erişilebilir, yalnızca çizim ertelenir. */}
-                  {pencere.kalan > 0 && (
-                    <li ref={pencere.bitis}>
-                      <button
-                        type="button"
-                        onClick={pencere.daha}
-                        className="w-full rounded-sm border border-cizgi bg-panel2 px-3 py-3
-                          text-mikro font-semibold text-solgun"
-                      >
-                        {pencere.kalan} kayıt daha
-                      </button>
-                    </li>
-                  )}
+                  {/* Aynı malzemenin farklı seri satırları tek grupta toplanır;
+                      başlıkta kaç açık kayıt kaldığı yazar, açınca seriler
+                      gelir — PC'deki Kuyruk listesiyle aynı davranış. */}
+                  <GrupluListe
+                    satirlar={sonuc}
+                    anahtar={q + (sadeceKirli ? "K" : "")}
+                    onSec={(b) => void coz(k.id, b.id)}
+                  />
                   {sonuc.length === 0 && (
                     <li className="py-6 text-center text-govde text-solgun italic">
                       eşleşen kayıt yok

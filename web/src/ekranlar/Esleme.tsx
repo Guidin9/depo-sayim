@@ -10,9 +10,10 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { api, type EksikKaydi, type EslemeVerisi, type FazlaKaydi } from "../api";
-import { Bos, Dugme, Kod, Panel, Uyari } from "../bilesenler";
+import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
 import { kucult } from "../foto";
-import { kademeli, suz } from "../liste";
+import { suz } from "../liste";
+import { GrupluListe } from "../GrupluListe";
 import * as Ik from "../ikonlar";
 import { bip } from "../ses";
 
@@ -90,7 +91,6 @@ export default function Esleme({
      Süzme çok terimli: "dell ssd" hem "DELL 1.92TB SSD" hem "SSD Dell Gen14"
      satırını bulur — tek parça arama bunu yapamıyordu. */
   const eksikler = suz(veri.eksik, q.trim(), ["kod", "aciklama", "seri"]);
-  const pencere = kademeli(eksikler, q, 80);
 
   /* Fotoğrafsız fazla artık oturumu ENGELLEMİYOR: kodu ya da adı olan kayıt
      zaten denetlenebilir (matching.fotosuz_fazlalar). Sayı yine gösteriliyor,
@@ -278,51 +278,16 @@ export default function Esleme({
                 {eksikler.length === 0 ? (
                   <Bos cocuk="Eşleşen eksik kayıt yok." />
                 ) : (
+                  /* Aynı malzemenin farklı seri satırları tek grupta toplanır;
+                     başlıkta kaç eksik kayıt kaldığı yazar, açınca seriler
+                     gelir. Fazla seçili değilken seçim pasif. */
                   <ul className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
-                    {pencere.gorunur.map((e) => (
-                      <li key={e.id}>
-                        <button
-                          type="button"
-                          disabled={!secili}
-                          onClick={() => void bagla(e)}
-                          className="w-full rounded-sm border border-cizgi bg-panel2 px-3 py-2.5
-                            text-left transition enabled:hover:border-vurgu
-                            enabled:hover:bg-vurgu-tint disabled:bg-panel2 disabled:text-solgun-hafif"
-                        >
-                          <div className="flex flex-wrap items-baseline gap-2">
-                            <b className="font-mono text-vurgu">{e.kod}</b>
-                            <span className="text-kucuk">{e.aciklama}</span>
-                            {e.kirli === 1 && (
-                              <span className="rounded border border-uyari bg-uyari-tint
-                                px-1.5 text-mikro font-bold text-uyari">
-                                <span className="inline-flex items-center gap-1">
-                                  <Ik.Uyari boy={11} /> uydurma kayıt
-                                </span>
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-1 text-mikro text-solgun">
-                            <Kod cocuk={e.seri || "—"} /> · {e.izleme} · {e.miktar} {e.birim}
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                    {/* Eskiden burada "N kayıt daha — aramayla daralt" yazıyordu
-                        ve o kayıtlara ulaşmanın YOLU YOKTU: liste 100'de
-                        kesiliyordu. Artık gözcü görünür olunca pencere büyür,
-                        yani tüm eksikler kaydırarak gezilebilir. */}
-                    {pencere.kalan > 0 && (
-                      <li ref={pencere.bitis}>
-                        <button
-                          type="button"
-                          onClick={pencere.daha}
-                          className="w-full rounded-sm border border-cizgi bg-panel2 px-3 py-2
-                            text-mikro font-semibold text-solgun"
-                        >
-                          {pencere.kalan} kayıt daha
-                        </button>
-                      </li>
-                    )}
+                    <GrupluListe
+                      satirlar={eksikler}
+                      anahtar={q}
+                      onSec={(e) => void bagla(e)}
+                      pasif={!secili}
+                    />
                   </ul>
                 )}
               </>

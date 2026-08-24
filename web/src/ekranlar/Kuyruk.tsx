@@ -6,10 +6,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type AramaSonucu, type KuyrukSatiri } from "../api";
-import { Bos, Dugme, Kod, Panel, Uyari } from "../bilesenler";
+import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
 import * as Ik from "../ikonlar";
 import { kucult } from "../foto";
-import { kademeli, suz } from "../liste";
+import { suz } from "../liste";
+import { GrupluListe } from "../GrupluListe";
 import { bip } from "../ses";
 
 export default function Kuyruk({
@@ -98,7 +99,6 @@ export default function Kuyruk({
       ]),
     [havuz, q, sadeceKirli],
   );
-  const pencere = kademeli(sonuc, q + (sadeceKirli ? "K" : ""), 80);
 
   async function bagla(b: AramaSonucu) {
     if (!secili) return;
@@ -467,57 +467,18 @@ export default function Kuyruk({
                 </span>
               </div>
             </div>
-            <ul className="flex-1 overflow-y-auto px-4 pb-4">
+            <ul className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-4">
               {araniyor && <li className="py-3 text-center text-kucuk text-solgun">aranıyor…</li>}
               {!araniyor && sonuc.length === 0 && (
                 <li className="py-3 text-center text-kucuk text-solgun">Sonuç yok.</li>
               )}
-              {pencere.gorunur.map((b) => (
-                <li key={b.id}>
-                  <button
-                    type="button"
-                    onClick={() => void bagla(b)}
-                    className="mb-2 w-full rounded-sm border border-cizgi bg-panel2 px-3 py-3
-                      text-left transition hover:border-vurgu hover:bg-vurgu-tint"
-                  >
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <b className="font-mono text-vurgu">{b.kod}</b>
-                      <span className="text-kucuk">{b.aciklama}</span>
-                      {b.kirli === 1 && (
-                        <span className="rounded border border-uyari bg-uyari-tint px-1.5 text-mikro font-bold text-uyari">
-                          <span className="inline-flex items-center gap-1">
-                            <Ik.Uyari boy={11} /> uydurma kayıt
-                          </span>
-                        </span>
-                      )}
-                      {b.sayildi === 1 && (
-                        <span className="rounded border border-ok bg-ok-tint px-1.5 text-mikro font-bold text-ok">
-                          <span className="inline-flex items-center gap-1">
-                            <Ik.Onay boy={11} /> bu oturumda sayıldı
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-mikro text-solgun">
-                      <Kod cocuk={b.seri || "—"} /> · {b.izleme} · {b.miktar} {b.birim}
-                    </div>
-                  </button>
-                </li>
-              ))}
-              {/* Gözcü: görünür olunca pencere büyür. Kesme değil — tüm
-                  satırlara erişilebilir, yalnızca çizim ertelenir. */}
-              {pencere.kalan > 0 && (
-                <li ref={pencere.bitis}>
-                  <button
-                    type="button"
-                    onClick={pencere.daha}
-                    className="w-full rounded-sm border border-cizgi bg-panel2 px-3 py-2
-                      text-mikro font-semibold text-solgun"
-                  >
-                    {pencere.kalan} kayıt daha
-                  </button>
-                </li>
-              )}
+              {/* Aynı malzemenin farklı seri satırları tek grupta toplanır;
+                  başlıkta kaç açık kayıt kaldığı yazar, açınca seriler gelir. */}
+              <GrupluListe
+                satirlar={sonuc}
+                anahtar={q + (sadeceKirli ? "K" : "")}
+                onSec={(b) => void bagla(b)}
+              />
             </ul>
             <footer className="border-t border-cizgi p-4">
               <Dugme cocuk="Vazgeç (Esc)" tikla={() => setSecili(null)} genis />

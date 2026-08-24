@@ -41,8 +41,10 @@ web/src/
                  Foto · FotoBuyut · Bos · Kod   (DURUM_STILI tek renk tablosu)
   ikonlar.tsx    Inline SVG çizgi ikonlar (emoji YASAK — CLAUDE.md §10.1)
   foto.ts        kucult() — 1280 px / JPEG 0.72
-  liste.ts       suz() + kademeli() — eşleştirme listesi: veri eksiksiz gelir,
-                 süzme ve kademeli çizim istemcide (Telefon · Kuyruk · Eşleme)
+  liste.ts       suz() + kademeli() + grupla() — eşleştirme listesi: veri
+                 eksiksiz gelir, süzme/gruplama/kademeli çizim istemcide
+  GrupluListe.tsx  Malzemeye (kod+açıklama) göre gruplanmış açılır seçim listesi
+                 + sayaç kutusu; Kuyruk · Eşleme · Telefon ortak kullanır
   ses.ts         bip() ve ses tercihi
   Isima.tsx · TelefonKutu.tsx · stil.css   (Zemin.tsx 2026-08-23'te silindi)
   ekranlar/      Kurulum · Sayim · Kuyruk · Esleme · Rapor · Gecmis · Ayarlar · Etiket · Telefon
@@ -283,6 +285,11 @@ Komut barkodu mu diye bakar; değilse `tampon`'a yazıp anlık çözümlemeyi d�
   de değiller). Sıralama: aynı rafta sayılmış → sayılmamış → kirli → id.
   **"Bu olabilir" aday önerisi (`adaylar`, `_adayli`, `/adaylar` ucu) tamamen
   kaldırıldı** — sahada doğru sonuç vermiyordu (`DEMO_FEEDBACK.md` §4).
+  **Gruplama istemcide** (`web/src/GrupluListe.tsx` + `liste.grupla`): aynı
+  kodun 21 seri satırı listede tek malzeme satırına iner, yanında kaç açık
+  kayıt kaldığını gösteren sayaç durur, satıra basınca seriler açılır. Sunucu
+  yine düz satır döner; `sadece_acik` sayesinde sayılan/eşleşen kayıt hiç
+  gelmez, kayıt çözülünce liste tazelenir ve sayaç düşer.
 * `fazla_bagla(c, okutma_id, beklenen_id)` — sayım sonu eşleştirmesi: fazla
   satırını `eslesti` yapar, barkodları öğretir. Zaten sayılmış kayda bağlamayı
   reddeder (çift sayım olurdu). `fazla_coz_ayir()` geri alır.
