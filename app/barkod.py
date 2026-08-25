@@ -107,9 +107,33 @@ def _kisalt(s, n=34):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def raf_satirlari(raflar, kopya=1):
+    """Raf konum barkodlarını (##RAF-A1##) etiket_html satırlarına çevirir.
+
+    Raf etiketi defter kalemi DEĞİL: DS/DM numarası tüketmez, `etiket`
+    tablosuna yazılmaz, `eslesme`'ye dokunmaz — tıpkı komut kartındaki gibi
+    yalnızca bir konum işaretidir (CLAUDE.md 12.1). Aynı raf birden çok yüze
+    yapıştırılacaksa `kopya` ile çoğaltılır.
+    """
+    raflar = [str(r).strip().upper() for r in (raflar or []) if str(r).strip()]
+    kopya = max(1, int(kopya or 1))
+    satirlar = []
+    for r in raflar:
+        satirlar += [{"gosterim": "##RAF-%s##" % r, "tur": "raf", "ad": r}] * kopya
+    return satirlar
+
+
 def _etiket(s):
     """Tek etiket hücresi. Malzeme etiketinde kod ve açıklama da basılır."""
     g = s["gosterim"]
+    if s.get("tur") == "raf":
+        # Raf etiketinde önemli olan uzaktan okunan konum adı: onu büyük ve
+        # üste alıyoruz, barkod altında kalıyor.
+        return ('<div class="k rafk"><div class=raf>%s</div>'
+                '<img src="data:image/svg+xml;base64,%s">'
+                '<div class=kod>%s</div></div>'
+                % (html.escape(str(s.get("ad") or "")), _etiket_svg(g),
+                   html.escape(g)))
     alt = ""
     if s.get("tur") == "malzeme":
         alt = ("<div class=m>%s</div><div class=a>%s</div>"
@@ -162,6 +186,7 @@ body{font:11px/1.25 Arial,sans-serif;margin:0;color:#000;background:#fff}
      letter-spacing:.5px;margin-top:.6mm}
 .m{font-weight:700;font-size:10px;margin-top:.6mm}
 .a{font-size:8px;color:#444}
+.raf{font-weight:800;font-size:18px;letter-spacing:1px;margin-bottom:.8mm}
 @media screen{body{padding:10px;background:#eee}
   .k{outline:1px dashed #bbb;background:#fff}}
 </style><div class=grid>%s</div></html>""" % (sayfa, yerlesim, "".join(hucreler))

@@ -1,5 +1,5 @@
 """Rapor ekranı: sekme önizlemesi, Excel indirme, komut kartı."""
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -11,6 +11,13 @@ router = APIRouter(prefix="/api", tags=["rapor"])
 
 class KartIstek(BaseModel):
     raflar: list[str] = []
+
+
+class RafEtiketIstek(BaseModel):
+    raflar: list[str] = []
+    kopya: int = 1
+    atla: int = 0
+    duzen: str = "a4"
 
 
 @router.get("/oturum/{oturum_id}/rapor/onizleme")
@@ -38,3 +45,21 @@ def indir(oturum_id: int, c=DB):
 @router.post("/komut-karti", response_class=HTMLResponse)
 def komut_karti(istek: KartIstek):
     return HTMLResponse(barkod.kart_html(istek.raflar))
+
+
+@router.post("/raf-etiketi", response_class=HTMLResponse)
+def raf_etiketi(istek: RafEtiketIstek):
+    """Raf konum barkodlarını yapışkanlı 24'lük etiket sayfasına dizer.
+
+    Komut kartından farkı: bunlar rafa doğrudan yapıştırılan yapışkanlı
+    etiketler, laminatlanacak düz kâğıt kart değil. Defter kalemi değildir.
+    """
+    satirlar = barkod.raf_satirlari(istek.raflar, istek.kopya)
+    if not satirlar:
+        raise HTTPException(400, "Raf adı girilmedi.")
+    try:
+        return HTMLResponse(barkod.etiket_html(satirlar, istek.duzen, istek.atla))
+    except ImportError as h:
+        raise HTTPException(
+            501, "Barkod üretimi için python-barcode gerekli: pip install "
+                 "python-barcode") from h

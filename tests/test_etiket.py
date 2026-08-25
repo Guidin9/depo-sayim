@@ -357,6 +357,25 @@ def test_malzeme_etiketinde_kod_da_basilir(c):
     assert kod in h
 
 
+def test_raf_etiketi_yapiskan_sayfaya_dizilir():
+    pytest.importorskip("barcode")
+    from app import barkod
+    s = barkod.raf_satirlari(["A1", "b2"], kopya=2)
+    # normalize (upper) + kopya çoğaltması
+    assert [x["ad"] for x in s] == ["A1", "A1", "B2", "B2"]
+    assert all(x["tur"] == "raf" for x in s)
+    h = barkod.etiket_html(s, "a4")
+    assert h.count("data:image/svg+xml;base64,") == 4
+    assert "##RAF-A1##" in h and "##RAF-B2##" in h
+    assert "size:A4" in h  # yapışkan 24'lük sayfa, komut kartı değil
+
+
+def test_raf_satirlari_bos_girdiyi_atlar():
+    from app import barkod
+    assert barkod.raf_satirlari(["", "  "]) == []
+    assert barkod.raf_satirlari([]) == []
+
+
 # ----------------------------------------------------- sıfırlamaya dayanma
 def test_defter_csvden_geri_yuklenir(sablon, tmp_path):
     """sifirla.bat veritabanını taşır; basılı etiket numarası kaybolmamalı.

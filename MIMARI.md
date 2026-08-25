@@ -198,7 +198,8 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 |---|---|
 | `GET /oturum/{id}/rapor/onizleme` | `reports.rapor_verisi()` — arayüz sekme önizlemesi |
 | `GET /oturum/{id}/rapor.xlsx` | Excel indir |
-| `POST /komut-karti` | Code128 komut kartı (HTML) |
+| `POST /komut-karti` | Code128 komut kartı (HTML, laminat) |
+| `POST /raf-etiketi` | Raf konum barkodları — yapışkanlı 24'lük A4 sayfa (HTML). Defter kalemi değil, `barkod.raf_satirlari()` → `etiket_html()` |
 | `GET /etiket/ihtiyac` | Etiket ihtiyacı **üst sınırı** (hedef değil) |
 | `POST /etiket/basim` | Parti bas, HTML sayfa + defter + CSV |
 | `GET /etiket` · `GET /etiket/basimlar` | Defter ve partiler |

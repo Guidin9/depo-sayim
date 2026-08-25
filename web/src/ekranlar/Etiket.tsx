@@ -286,7 +286,7 @@ export default function Etiket({
             <Alan etiket="Düzen">
               <Secim
                 secenekler={[
-                  ["a4", "A4 lazer etiket sayfası (3 × 8, 70 × 37 mm)"],
+                  ["a4", "A4 lazer etiket sayfası (3 × 8, 70 × 37,125 mm)"],
                   ["rulo", "Termal rulo (50 × 25 mm, etiket başına bir sayfa)"],
                 ]}
                 deger={duzen}

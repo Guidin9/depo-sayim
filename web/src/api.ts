@@ -450,4 +450,25 @@ export const api = {
     if (!y.ok) throw new ApiHatasi("Komut kartı üretilemedi");
     return y.text();
   },
+
+  // Raf barkodları yapışkanlı 24'lük etiket sayfası olarak (komut kartından
+  // farklı: rafa doğrudan yapıştırılır, laminatlanmaz).
+  rafEtiketi: async (raflar: string[], kopya: number, atla: number) => {
+    const y = await fetch("/api/raf-etiketi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raflar, kopya, atla }),
+    });
+    if (!y.ok) {
+      let mesaj = "Raf etiketi üretilemedi";
+      try {
+        const g = await y.json();
+        if (g?.detail) mesaj = typeof g.detail === "string" ? g.detail : mesaj;
+      } catch {
+        /* gövde JSON değilse varsayılan mesaj kalsın */
+      }
+      throw new ApiHatasi(mesaj);
+    }
+    return y.text();
+  },
 };
