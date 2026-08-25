@@ -74,9 +74,14 @@ olduğunu anlar, tanımadıklarını tanıdıklarına bağlayarak öğrenir.</p>
 
 
 # ---------------------------------------------------------------- etiketler
-# A4 lazer etiket sayfası: 3 sütun x 8 satır, 70x37 mm (piyasadaki en yaygın
-# kesim). Termal rulo: etiket başına bir sayfa.
-A4 = {"sutun": 3, "satir": 8, "en": 70.0, "boy": 37.0, "kenar": 8.0}
+# A4 lazer etiket sayfası: 3 sütun x 8 satır = 24 etiket, 70x37,125 mm (piyasadaki
+# en yaygın 24'lük kesim). Bu format TAM SAYFA doldurur: 3x70=210 mm (A4 eni) ve
+# 8x37,125=297 mm (A4 boyu) — kenar boşluğu ve etiketler arası boşluk YOKTUR.
+# Bu yüzden `kenar` 0'dır: sıfırdan farklı bir kenar, ızgarayı fiziksel kesim
+# konumlarından kaydırır ve alt satır kendi etiketinin dışına taşar. Hücre içi
+# 1.5 mm dolgu barkodu kenardan uzak tutar; yazıcının basamadığı ince kenar
+# barkoda değmez. Termal rulo: etiket başına bir sayfa.
+A4 = {"sutun": 3, "satir": 8, "en": 70.0, "boy": 37.125, "kenar": 0.0}
 RULO = {"en": 50.0, "boy": 25.0, "kenar": 1.0}
 
 # Çubuk genişliği etiketin okunabilirliğini belirleyen tek şey: depo aydınlatması
