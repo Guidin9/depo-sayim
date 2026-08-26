@@ -239,6 +239,33 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                   hepsi "eksik" görünür. <b>Kuralı kapatmadan önce etkilediği satır sayısına
                   bakın</b> — desen beklenmedik bir malzemeyi de yakalayabilir.
                 </p>
+                {/* Tür kuralları bu raporda hiç tutmuyorsa sebebi neredeyse her
+                    zaman şudur: Malzeme Türü sütunu `TM` / `TK` gibi KISA KOD
+                    döndürüyor, varsayılan desenler ise metin adı arıyor. Türleri
+                    yazmadan kullanıcı bunu göremiyordu. */}
+                {ozet.turler?.length > 0 &&
+                  kurallar.some((k) => k.tip === "tur") &&
+                  kurallar.filter((k) => k.tip === "tur").every((k) => !k.satir) && (
+                    <div className="border-uyari bg-uyari-tint text-yazi rounded-sm border px-3 py-2 text-kucuk">
+                      <div className="text-uyari mb-1 flex items-center gap-2 font-bold">
+                        <Ik.Uyari boy={16} />
+                        Tür kurallarının hiçbiri bu raporda tutmuyor
+                      </div>
+                      Bu rapordaki malzeme türleri:{" "}
+                      {ozet.turler.map((t) => (
+                        <span key={t.tur} className="mr-2 inline-block">
+                          <Kod cocuk={t.tur} />
+                          <span className="rakam text-solgun"> ×{t.satir}</span>
+                        </span>
+                      ))}
+                      <div className="text-solgun mt-1">
+                        Varsayılan desenler (<Kod cocuk="YAZILIM" />, <Kod cocuk="HİZMET" />
+                        …) metin adı arıyor. Tiger bu sütunda kısa kod döndürüyorsa
+                        yukarıdakilerden birini kural olarak ekleyin ya da{" "}
+                        <b>açıklamaya göre</b> filtreleyin.
+                      </div>
+                    </div>
+                  )}
                 <ul className="flex flex-col gap-2">
                   {kurallar.map((k) => (
                     <li

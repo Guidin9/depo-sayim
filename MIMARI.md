@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-26 · 285 test geçiyor.
+Son güncelleme: 2026-08-26 · 300 test geçiyor.
 
 ---
 
@@ -77,8 +77,9 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 ### Bilinmesi gerekenler
 
 * **`fazla` diye tablo yoktur.** Fazla, `okutma.tip` değeridir.
-  `okutma.tip` degerleri: `eslesti`, `kod`, `fazla`. (`bilinmiyor` raporlarda
-  filtreleniyor ama hiçbir yerde yazılmıyor — ölü değer.)
+  `okutma.tip` yalnızca üç değer alır: `eslesti`, `kod`, `fazla`.
+  (`bilinmiyor` üç ayrı sorguda filtreleniyordu ama prototip dahil hiçbir
+  sürüm onu yazmamıştı — 2026-08-26'da kaldırıldı.)
 * **`kuyruk.tur` iki değer alır:** `bilinmiyor` (ne seri ne kod tanındı — "bu
   hangi malzeme?") ve `fazla_onay` (malzeme tanındı, karşılığı bulunamadı —
   "gerçekten fazla mı?"). Fazla kaydı yalnızca `kuyruk_fazla()` ve `##FAZLA##`
@@ -91,12 +92,14 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
   DIŞINDA ne yarattığını JSON olarak tutar:
   `{"ogrenilen": ["198701689928"], "etiket": "DS-000045"}`. Geri alma bunu
   okuyup `eslesme` kaydını siler ve etiket bağlamasını çözer
-  (`etiketler.coz_bagla`, numara TÜKETİLMEZ — defter kaydı durur).
+  (`etiketler.coz_bagla`, numara TÜKETİLMEZ — defter kaydı durur), kuyruk
+  kaydını yeniden açar (`cozuldu=0`) ve silinen okutmaya bağlı fotoğrafın
+  `okutma` alanını NULL'lar (kuyruk bağlantısı durur).
   **`eslesme` ya da `etiket` yazan yeni bir yol eklerseniz `geri`'yi de
   doldurun**, yoksa geri alma yarım kalır ve öğrenilen yanlış barkod Barkod
   Tablosu üzerinden Tiger'a taşınır.
-  *Bilinen sınır:* `kuyruk_coz` ile çözülmüş bir kaydı geri almak
-  `kuyruk.cozuldu` bayrağını geri döndürmez.
+  `kuyruk_coz` ve `kuyruk_fazla` da `geri`'ye kendi kuyruk id'lerini yazar,
+  bu yüzden onlardan doğan okutmalar geri alınınca kayıt kuyruğa döner.
 * **`sayim` diye tablo yoktur.** Sayaçlar `okutma` + `beklenen` üzerinden
   anlık hesaplanır (`matching.sayaclar()`).
 * `beklenen.kod_n` / `seri_n` / `seri_n0` yükleme anında yazılır; motor

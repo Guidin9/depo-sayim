@@ -39,7 +39,7 @@ def gecmis(c):
                       (SELECT COUNT(DISTINCT beklenen_id) FROM okutma
                        WHERE oturum=o.id AND beklenen_id IS NOT NULL) okutulan,
                       (SELECT COUNT(*) FROM okutma
-                       WHERE oturum=o.id AND tip IN ('fazla','bilinmiyor')) fazla,
+                       WHERE oturum=o.id AND tip='fazla') fazla,
                       (SELECT COUNT(*) FROM kuyruk WHERE oturum=o.id AND cozuldu=0) kuyruk
                       FROM oturum o LEFT JOIN yukleme y ON y.id=o.yukleme
                       ORDER BY o.id DESC""").fetchall()

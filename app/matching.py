@@ -55,7 +55,7 @@ def kapasite_kaldi(c, oturum, b):
     return sayilan < (b["miktar"] or 0)
 
 
-def _geri_json(ogrenilen=None, etiket=None):
+def _geri_json(ogrenilen=None, etiket=None, kuyruk=None):
     """`okutma.geri` gövdesi: bu okutmanın KENDİ SATIRI DIŞINDA ne yarattığı.
 
     `##GERIAL##` bunu okuyup temizler. Olmadan geri alma yarım kalıyordu:
@@ -69,6 +69,8 @@ def _geri_json(ogrenilen=None, etiket=None):
         d["ogrenilen"] = list(ogrenilen)
     if etiket:
         d["etiket"] = etiket
+    if kuyruk:
+        d["kuyruk"] = kuyruk
     return json.dumps(d, ensure_ascii=False) if d else None
 
 
@@ -82,7 +84,32 @@ def _yan_etkileri_geri_al(c, satir):
         c.execute("DELETE FROM eslesme WHERE barkod=?", (norm(h),))
     if d.get("etiket"):
         etiketler.coz_bagla(c, d["etiket"])
+    if d.get("kuyruk"):
+        # Kuyruktan çözülmüş / fazla yazılmış kayıt yeniden açılır. Yoksa
+        # okutma siliniyor ama kuyruk kaydı "çözüldü" kalıyor ve ürün hem
+        # sayımdan hem kuyruktan düşüyordu.
+        c.execute("UPDATE kuyruk SET cozuldu=0 WHERE id=?", (d["kuyruk"],))
+    # Silinecek okutmaya bağlı fotoğraf sarkmasın: kuyruk bağlantısı duruyor.
+    c.execute("UPDATE kuyruk_foto SET okutma=NULL WHERE okutma=?", (satir["id"],))
     return d
+
+
+LIKE_KACIS = "!"
+
+
+def _like_kacir(q):
+    """LIKE deseninde joker karakterleri sıradan harfe çevirir.
+
+    Sorgu doğrudan `%...%` içine gömülüyor; `%` ve `_` yazan kullanıcı farkında
+    olmadan joker kullanmış oluyordu — `%` tek başına tüm tabloyu çekiyordu.
+
+    Kaçış karakteri `!`, ters bölü DEĞİL: `ESCAPE '\\'` yazmak hem Python
+    kaynağında hem SQL metninde ayrı ayrı kaçış istiyor ve sessizce boş dizeye
+    dönüşüp "ESCAPE expression must be a single character" veriyor. `!` malzeme
+    kodlarında ve seri numaralarında geçmiyor, geçse de kendisi kaçırılıyor.
+    """
+    s = str(q).replace(LIKE_KACIS, LIKE_KACIS * 2)
+    return s.replace("%", LIKE_KACIS + "%").replace("_", LIKE_KACIS + "_")
 
 
 def _adet_dagit(c, oturum, yukleme, ambar, kod, adet):
@@ -652,8 +679,8 @@ def sayaclar(c, ot):
     ok = c.execute("""SELECT COUNT(DISTINCT o.beklenen_id) n FROM okutma o
                       JOIN beklenen b ON b.id=o.beklenen_id
                       WHERE o.oturum=? AND b.haric=0""", (oturum,)).fetchone()["n"]
-    fz = c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip IN "
-                   "('fazla','bilinmiyor')", (oturum,)).fetchone()["n"]
+    fz = c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='fazla'",
+                   (oturum,)).fetchone()["n"]
     ky = c.execute("SELECT COUNT(*) n FROM kuyruk WHERE oturum=? AND cozuldu=0",
                    (oturum,)).fetchone()["n"]
     return {"okutulan": ok, "kalan": top - ok, "fazla": fz, "kuyruk": ky, "toplam": top}
@@ -707,8 +734,11 @@ def ara(c, yukleme, ambar, q="", limit=0, offset=0, oturum=None,
     kosul = ["b.yukleme=?", "b.ambar=?", "b.haric=0"]
     par = [yukleme, ambar]
     if q:
-        kosul.append("(b.kod LIKE ? OR b.aciklama LIKE ? OR b.seri LIKE ?)")
-        like = "%" + q + "%"
+        # LIKE kaçışı: kullanıcının yazdığı `%` ve `_` joker davranıyordu.
+        # `210-ACXU` aramak isteyen biri `%` yazınca tüm tabloyu çekiyordu.
+        kosul.append("(b.kod LIKE ? ESCAPE '!' OR b.aciklama LIKE ? ESCAPE '!' "
+                     "OR b.seri LIKE ? ESCAPE '!')")
+        like = "%" + _like_kacir(q) + "%"
         par += [like, like, like]
     if kirli is not None:
         kosul.append("b.kirli=?")
@@ -913,10 +943,11 @@ def kuyruk_fazla(c, kuyruk_id, ad=None):
     not_ = ("onaylandı: karşılığı yok" if q["tur"] == "fazla_onay"
             else "kuyruktan fazla işaretlendi")
     idler = [c.execute(
-        """INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,tip,raf,grup,not_,ad)
-           VALUES(?,?,?,?,?,1,'fazla',?,?,?,?)""",
+        """INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,tip,raf,grup,not_,ad,geri)
+           VALUES(?,?,?,?,?,1,'fazla',?,?,?,?,?)""",
         (q["oturum"], ts, " + ".join(hs), q["kod"], _fazla_seri(hs, q["kod"]),
-         q["raf"], grup, not_, ad or None)).lastrowid]
+         q["raf"], grup, not_, ad or None,
+         _geri_json(kuyruk=kuyruk_id))).lastrowid]
 
     # Kuyruktayken çekilen fotoğraf fazla kaydına da bağlanır: bitirme kapısı
     # fotoğrafı `okutma` üzerinden arıyor, kullanıcıdan aynı fotoğrafı ikinci
@@ -963,7 +994,8 @@ def kuyruk_coz(c, kuyruk_id, beklenen_id):
                  VALUES(?,?,?,?,?,1,?,'eslesti',?,?,'kuyruktan çözüldü',?)""",
               (q["oturum"], ts, " + ".join(hs), b["kod"], b["seri"], b["id"],
                q["raf"], grup,
-               _geri_json(ogrenilecek, bos_etiket[0] if bos_etiket else None)))
+               _geri_json(ogrenilecek, bos_etiket[0] if bos_etiket else None,
+                          kuyruk=kuyruk_id)))
     c.execute("UPDATE kuyruk SET cozuldu=1 WHERE id=?", (kuyruk_id,))
     return {"tip": "eslesti", "kod": b["kod"], "aciklama": b["aciklama"],
             "seri": b["seri"], "ogrenilen": ogrenilecek,

@@ -37,7 +37,10 @@ DIPNOT = {
                        "gerektirir.", "Ambar Sayımı ekranından fiş oluştururken "
                        "kullanın."],
     "Barkod Tablosu": ["Bu barkodları Tiger'da malzeme kartı > Birimler > Barkod "
-                       "alanına yazın.", "Yazdıktan sonra bu ürünler sorusuz eşleşir."],
+                       "alanına yazın.", "Yazdıktan sonra bu ürünler sorusuz eşleşir.",
+                       "Liste bu raporun ambarındaki malzemelerle sınırlıdır; "
+                       "önceki oturumlarda öğrenilenler de burada — Tiger'a "
+                       "girilmemiş olabilirler."],
     "Etiketler": ["Kendi bastığımız etiketlerin defteri: hangi numara neye yapıştı.",
                   "Tiger'a yazılacak değerler Tiger Düzeltme ve Barkod Tablosu "
                   "sekmelerinde; bu sayfa fiziksel etiketi bulmak içindir.",
@@ -142,7 +145,7 @@ def rapor_verisi(c, oturum_id):
              for r in c.execute("""SELECT o.*, b.aciklama FROM okutma o
                                    LEFT JOIN beklenen b ON b.kod=o.kod
                                         AND b.yukleme=? AND b.ambar=?
-                                   WHERE o.oturum=? AND o.tip IN ('fazla','bilinmiyor')
+                                   WHERE o.oturum=? AND o.tip='fazla' 
                                    GROUP BY o.id ORDER BY o.id""",
                                 (yukleme, ambar, oturum_id))]
     for satir in adet_fazlasi:
@@ -164,10 +167,22 @@ def rapor_verisi(c, oturum_id):
                                       WHERE o.oturum=? AND b.kirli=1 AND o.ham<>''
                                       ORDER BY o.id""", (oturum_id,))]
 
+    # Yalnızca BU raporun ambarındaki malzemelere ait barkodlar.
+    #
+    # Eskiden `eslesme` tablosunun tamamı dökülüyordu: başka ambarların
+    # malzemeleri, önceki sayımlardan öğrenilen her şey ve basılmış her `DM-`
+    # etiketi her raporda yeniden çıkıyor, liste sonsuza kadar büyüyordu.
+    # Sekmenin işi "Tiger'da HANGİ malzeme kartına ne yazacağım" — o kart bu
+    # ambarın dışındaysa bu raporun işi değil.
     barkodlar = [[r["barkod"], r["kod"], r["aciklama"] or "", _kisa(r["ts"])]
-                 for r in c.execute("""SELECT e.*, (SELECT aciklama FROM beklenen
-                                       WHERE kod=e.kod ORDER BY yukleme DESC LIMIT 1)
-                                       aciklama FROM eslesme e ORDER BY e.kod""")]
+                 for r in c.execute("""SELECT e.barkod, e.kod, e.ts,
+                        (SELECT aciklama FROM beklenen WHERE kod=e.kod
+                         AND yukleme=? AND ambar=? LIMIT 1) aciklama
+                        FROM eslesme e
+                        WHERE EXISTS(SELECT 1 FROM beklenen b WHERE b.kod=e.kod
+                                     AND b.yukleme=? AND b.ambar=? AND b.haric=0)
+                        ORDER BY e.kod, e.barkod""",
+                                    (yukleme, ambar, yukleme, ambar))]
 
     etiket_satir = [[r["gosterim"], "Malzeme" if r["tur"] == "malzeme" else "Seri",
                      r["malzeme"] or "", r["aciklama"] or "", r["slot"] or "",

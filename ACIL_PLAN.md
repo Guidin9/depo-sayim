@@ -2,7 +2,7 @@
 
 **Oluşturuldu:** 2026-08-26
 **Kaynak:** dış göz kod incelemesi (`app/`, `web/`, gerçek `deneme.XLSX` verisiyle davranış sınaması)
-**Durum:** tespit tamamlandı · **A ve B grupları BİTTİ** · kalan yalnızca **C**
+**Durum:** **A, B ve C grupları BİTTİ** · 300 test geçiyor · kalan tek iş §7b (Tiger'da araştırma)
 
 Bu dosya bir çalışma listesidir. Her madde tek başına doğrulanmış bir hatadır;
 hiçbiri tahmin değildir, hepsinin altında çalıştırılmış çıktı vardır.
@@ -536,21 +536,32 @@ etiketi, etiket basımı) — boş sayfa ve stack trace yerine.
 
 ---
 
-## Küçükler — depodan sonra
+## Küçükler — hepsi kapandı (2026-08-26)
 
-- [ ] **`Escape` küresel `##IPTAL##`** (`web/src/ekranlar/Sayim.tsx:24`) —
-      `window` seviyesinde dinleniyor. Ürün adı yazarken Escape'e basmak
-      (evrensel "bu kutuyu kapat" refleksi) o anki grubu sessizce siliyor.
-      → Girdi odaktayken kısayollar susmalı.
-- [ ] **Barkod Tablosu tüm `eslesme` tablosunu döküyor** (`app/reports.py`) —
-      oturum/yükleme filtresi yok. Önceki sayımlardan öğrenilen her şey ve
-      basılmış her `DM-` etiketi her raporda tekrar çıkıyor; liste sonsuza
-      kadar büyüyor.
-- [ ] **`ara()` LIKE kaçışı yok** (`app/matching.py`) — kullanıcı `%` veya `_`
-      yazarsa joker karakter olarak davranıyor.
-- [ ] **`tip='bilinmiyor'` ölü kod** — `sayaclar()`, `reports.py` ve
-      `oturumlar.gecmis()` bu tipi sayıyor ama `okutma`'ya hiçbir yerde
-      yazılmıyor.
+- [x] **`Escape` küresel `##IPTAL##`** (`web/src/ekranlar/Sayim.tsx`) —
+      başka bir yazı alanında yazarken kısayollar artık susuyor. Okuyucu
+      kutusu istisna: barkod okuyucu oraya yazıyor ve komut barkodları da
+      oradan geçiyor, F2/F3/F4 orada çalışmaya devam etmeli.
+- [x] **Barkod Tablosu tüm `eslesme` tablosunu döküyordu** (`app/reports.py`) —
+      artık yalnızca BU raporun ambarındaki (ve hariç olmayan) malzemelere ait
+      barkodlar. Sekmenin işi "Tiger'da HANGİ malzeme kartına ne yazacağım";
+      o kart bu ambarın dışındaysa bu raporun işi değil. Dipnot kapsamı
+      söylüyor.
+- [x] **`ara()` LIKE kaçışı** (`app/matching.py`) — `%` tek başına tüm tabloyu
+      çekiyordu. Kaçış karakteri `!`, ters bölü DEĞİL: `ESCAPE ''` yazmak
+      hem Python kaynağında hem SQL metninde ayrı ayrı kaçış istiyor ve
+      sessizce boş dizeye dönüşüp *"ESCAPE expression must be a single
+      character"* veriyor (denendi, düştü).
+      Not: `_` bu veride gerçekten geçiyor (`R730_2X`) — artık joker değil,
+      harf olarak aranıyor.
+- [x] **`tip='bilinmiyor'` ölü kod** — `sayaclar()`, `reports.py` ve
+      `oturumlar.gecmis()` bu tipi sayıyordu. **Prototip dahil hiçbir sürüm
+      onu yazmamış** (`depo_sayim.py` de kontrol edildi); üç sorgudan da
+      kaldırıldı.
+- [x] **`##GERIAL##` kuyruk sınırı** — A5'in bilinen sınırıydı, kapandı.
+      `kuyruk_coz` ve `kuyruk_fazla` artık `geri`'ye kendi kuyruk id'lerini
+      yazıyor; geri alınca kayıt kuyruğa dönüyor. Silinen okutmaya bağlı
+      fotoğrafın `okutma` alanı da NULL'lanıyor — sarkan referans kalmıyor.
 
 ---
 
@@ -597,16 +608,36 @@ değil). A6'da slot doldurma kararı ürün eldeyken verilebilir; gün sonunda
 
 ### C · Depodan sonra
 
-| Madde | Neden bekleyebilir |
+| Madde | Durum |
 |---|---|
-| §7b Tür kuralları ölü | Tiger'da `TM`/`TK` kodlarının karşılığına bakmak gerekiyor — araştırma işi. Bu kurallar zaten hiç ateşlemiyor, yani **yanlış bir şey yapmıyorlar**, sadece işe yaramıyorlar |
-| Küçükler (Escape, Barkod Tablosu, LIKE kaçışı, ölü kod) | Hiçbiri sayım verisini bozmuyor |
-| `##GERIAL##` `kuyruk.cozuldu` bayrağını geri döndürmüyor | A5'in bilinen sınırı. Kuyruktan çözülmüş bir kaydı geri almak okutmayı ve öğrenmeyi siliyor ama kuyruk kaydı "çözüldü" kalıyor |
+| ~~Küçükler (Escape, Barkod Tablosu, LIKE kaçışı, ölü kod)~~ | **BİTTİ** (2026-08-26) |
+| ~~`##GERIAL##` `kuyruk.cozuldu` sınırı~~ | **BİTTİ** (2026-08-26) |
+| **§7b Tür kuralları ölü** | **SENDE.** Kod tarafında yapılabilecek her şey yapıldı — aşağıya bakın |
 
-**A ve B grupları BİTTİ** (2026-08-26) — **285 test** geçiyor.
+### §7b — kalan tek iş, ve o kod işi değil
 
-İncelemede bulunan 8 hatanın 8'i de kapandı. Sayımı bozan, kaybeden ya da
-bitirtmeyen bilinen bir hata kalmadı; depoya gidilebilir.
+Beş `tur` kuralı (`DESTEK-HP`, `YAZILIM`, `MİCROSOFT OPEN`, `HİZMET`,
+`FİKTİF`) örnek Ambar 1 raporunda **hiç ateşlemiyor**, çünkü `Malzeme Türü`
+sütunu metin adı değil `TM` (860 satır) ve `TK` (10 satır) kısa kodlarını
+döndürüyor.
 
-Kalan C grubu sayım verisini bozmuyor: biri Tiger'da araştırma istiyor (§7b),
-ötekiler arayüz ve temizlik işleri.
+Doğru deseni ancak Tiger'da bu kodların karşılığına bakan biri yazabilir. Kod
+tarafında yapılabilecek şey **sorunu görünür kılmaktı** ve yapıldı:
+
+- `importer.ozetle()` artık raporda gerçekten geçen malzeme türlerini sayıyor
+  (`turler` alanı).
+- Kurulum ekranı, tür kurallarının hiçbiri tutmuyorsa sarı bir uyarı gösteriyor
+  ve **bu rapordaki türleri sayılarıyla listeliyor**, ardından ne yapılacağını
+  söylüyor: ya bu kodlardan birini kural olarak ekle, ya açıklamaya göre
+  filtrele.
+
+Kurallar yanlış bir şey yapmıyor (hiçbir satırı yanlışlıkla dışarıda
+bırakmıyorlar), sadece işe yaramıyorlar — bu yüzden depoya gitmeye engel
+değil.
+
+**A, B ve C grupları BİTTİ** (2026-08-26) — **300 test** geçiyor
+(başlangıçta 203).
+
+İncelemede bulunan 8 hatanın ve 4 küçük bulgunun hepsi kapandı. Geriye tek iş
+kaldı ve o kod işi değil: **§7b, Tiger'da `TM`/`TK` kodlarının karşılığına
+bakmak.** Kurulum ekranı artık bu sorunu kendi gösteriyor.

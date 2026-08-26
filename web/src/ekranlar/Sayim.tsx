@@ -292,6 +292,19 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
   // Klavye kısayolları — komut kartı elde değilse
   useEffect(() => {
     function tus(e: KeyboardEvent) {
+      // BAŞKA bir yazı alanında yazarken kısayollar susar. Escape küresel
+      // ##IPTAL## olduğu için, ürün adını yazarken "bu kutuyu kapat" refleksiyle
+      // Escape'e basmak o anki grubu sessizce siliyordu.
+      //
+      // Okuyucu kutusu istisna: barkod okuyucu oraya yazıyor ve komut kartındaki
+      // barkodlar da oradan geçiyor — F2/F3/F4 orada çalışmaya devam etmeli.
+      const hedef = e.target as HTMLElement | null;
+      const yaziAlani =
+        hedef instanceof HTMLInputElement ||
+        hedef instanceof HTMLTextAreaElement ||
+        hedef?.isContentEditable === true;
+      if (yaziAlani && hedef !== girisRef.current) return;
+
       if (e.ctrlKey && e.key.toLowerCase() === "z") {
         e.preventDefault();
         void gonder("##GERIAL##");

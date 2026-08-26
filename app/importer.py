@@ -277,6 +277,14 @@ def ozetle(c, yukleme_id):
                          ORDER BY 2 DESC""", (yukleme_id,)).fetchall()
     har = c.execute("SELECT COUNT(*) satir, COALESCE(SUM(miktar),0) adet FROM beklenen "
                     "WHERE yukleme=? AND haric=1", (yukleme_id,)).fetchone()
+    # Raporda GERÇEKTEN geçen malzeme türleri. Sayım dışı kurallarının yarısı
+    # `tur` üzerinden çalışıyor ama örnek Ambar 1 çıktısında bu sütun `TM`/`TK`
+    # kısa kodlarını döndürüyor — varsayılan desenlerin (`YAZILIM`, `HİZMET`…)
+    # hiçbiri tutmuyor ve kullanıcı NEDEN tutmadığını göremiyordu.
+    tur = c.execute("""SELECT COALESCE(NULLIF(TRIM(tur),''),'(boş)') tur,
+                       COUNT(*) satir FROM beklenen WHERE yukleme=?
+                       GROUP BY 1 ORDER BY 2 DESC LIMIT 20""",
+                    (yukleme_id,)).fetchall()
     return {
         "etiket_cakisma": etiket_cakismasi(c, yukleme_id),
         "yukleme": yukleme_id,
@@ -289,6 +297,7 @@ def ozetle(c, yukleme_id):
         "kirli_sebep": [dict(r) for r in sebep],
         "kirli": sum(r["kirli"] or 0 for r in izl),
         "haric": {"satir": har["satir"], "adet": har["adet"]},
+        "turler": [dict(r) for r in tur],
     }
 
 

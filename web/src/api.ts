@@ -22,6 +22,8 @@ export type Ozet = {
   kirli_sebep: { sebep: string; satir: number }[];
   kirli: number;
   haric: { satir: number; adet: number };
+  /** Raporda gerçekten geçen malzeme türleri — `tur` kuralları yazmak için. */
+  turler: { tur: string; satir: number }[];
   kurallar?: Kural[];
   eklenen?: number;
   atlanan?: number;
