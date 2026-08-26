@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-26 · 245 test geçiyor.
+Son güncelleme: 2026-08-26 · 285 test geçiyor.
 
 ---
 
@@ -191,7 +191,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `POST /okutma/{id}/bagla` | `{beklenen_id}` | Fazlayı eksik kayda bağla |
 | `POST /okutma/{id}/coz-ayir` | — | Eşleştirmeyi geri al |
 | `POST /oturum/{id}/bitir` | `?zorla=` | Çözülmemiş kuyruk, **adsız fazla** veya fotoğrafsız fazla varsa 409 |
-| `POST /oturum/{id}/raf` | `{raf, zorla}` | İçeride `##RAF-X##` üretip `okut()`'a verir |
+| `POST /oturum/{id}/raf` | `{raf, zorla}` | Adı `norm.raf_adi()` ile temizler, `##RAF-X##` üretip `okut()`'a verir. Temizlikten sonra boş kalırsa **400** |
 | `POST /oturum/{id}/adet` | `{adet}` | İçeride `##ADET-N##` üretip `okut()`'a verir. 0 sıfırlar, öteki değerler EKLENİR. Telefondaki Adet paneli buraya gider |
 | `GET /oturum/{id}/raflar` | — | Bu oturumda kullanılmış raflar |
 | `GET /oturum/{id}/ara` | `?q=&limit=&offset=&sadece_acik=&kirli=&izleme=` | Malzeme arama / listeleme → `{satirlar, toplam}` |
@@ -200,6 +200,11 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 > `##IPTAL##`, `##GERIAL##`, `##FAZLA##`, `##ATLA##`, `##BITIR##`, `##RAF-X##`,
 > `##ADET-N##`
 > hepsi `POST /oturum/{id}/okut` gövdesindeki `ham` alanından geçer ve
+> Raf adı `norm.raf_adi()`den geçer (`ÜST-1` -> `UST-1`): Code128 ASCII dışını
+> taşımıyor ve **basılan değerle elle yazılan değer aynı olmalı**, yoksa iki
+> ayrı raf oluşur. Barkod üretimi (`barkod.kart_html`, `barkod.raf_satirlari`)
+> da aynı işlevi kullanır — normalizasyon tek kaynaktan.
+>
 > `matching.okut()` içinde `norm.komut_coz()` ile ayrıştırılır. Yeni bir komut
 > eklemek = `norm.py` `KOMUT` sözlüğüne bir satır + `matching.okut()`'ta bir dal.
 
@@ -236,7 +241,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `GET /api/ag` | Bu makinenin ağ adresleri (telefon için) |
 | `GET /api/telefon-qr.svg` | QR (segno yoksa 501 — arayüz adresi yazıyla gösterir) |
 | `GET /api/saglik` | Sağlık ve sayılar |
-| `GET /{yol}` | SPA fallback; `index.html` **`Cache-Control: no-store`** |
+| `GET /{yol}` | SPA fallback; `index.html` **`Cache-Control: no-store`**. Yol `realpath` ile `app/static` altında kalmaya zorlanır — bkz. aşağıdaki uyarı |
 
 ---
 
@@ -295,6 +300,16 @@ satıra yazmak o lotu şişirip ötekileri eksik bırakıyordu.
 Miktar `oturum.bekleyen_adet`'ten gelir (`##ADET-N##` / telefon Adet paneli),
 verilmemişse 1. Grup kapanınca tüketilir. Seri takipli kalemde uygulanmaz ama
 sessizce yutulmaz — yanıtta `adet_yersiz` döner.
+
+> **UYARI — statik servis kök dışına çıkmamalı.** `os.path.join(STATIK, yol)` +
+> `isfile` yeterli DEĞİLDİ: `..` normalize edilmiyordu. Tarayıcı düz `../`
+> yolunu düzeltiyor ama yüzde-kodlanmışını düzeltmiyor, sunucu da hiç
+> düzeltmiyordu — `GET /..%2f..%2fdata%2fsayim.db` canlı sayım veritabanını,
+> `/..%2f..%2fdeneme.XLSX` stok ve tutarları döndürüyordu. Sunucu
+> `--host 0.0.0.0` ile açık ve kimlik doğrulaması yok (`baslat.bat`), yani depo
+> Wi-Fi'sındaki herkes indirebiliyordu. Artık `realpath` ile hem `..` hem
+> sembolik bağlantı çözülüp kökün altında kalıp kalmadığına bakılıyor.
+> Regresyonu `tests/test_servis.py`'de.
 
 (*) Slot dolduruluyorsa `okutma.ham` alanına Tiger'a önerilecek YENİ seri
 numarası yazılır. Aday yoksa (ne üretici S/N ne DS- etiketi okutuldu) alan

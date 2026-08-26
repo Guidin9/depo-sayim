@@ -312,10 +312,37 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
   }
 
   async function rafDegistir() {
-    if (!oturum) return;
+    if (!oturum || mesgul) return;
     const yeni = prompt("Raf adı (örn. A1):", durum?.aktif_raf ?? "")?.trim();
     if (!yeni) return;
-    await komut(`##RAF-${yeni.toUpperCase()}##`);
+    // `##RAF-...##` metnini /okut'a vermek YETMİYOR: sunucu adı temizledikten
+    // sonra hiçbir şey kalmazsa (`ÇÇ` gibi) bunu raf komutu saymıyor ve metin
+    // BARKOD olarak tampona düşüyordu. Raf ucu aynı temizliği yapıyor ama boş
+    // kalan adı 400 ile reddediyor (ACIL_PLAN B1).
+    setMesgul(true);
+    try {
+      let r = await api.rafAyarla(oturum, yeni);
+      if (r.tip === "raf_engel") {
+        const kalan = r.kuyruk?.length ?? 0;
+        if (
+          !confirm(
+            `${r.eski_raf} rafında ${kalan} ürün çözülmedi.\n\n` +
+              "Ürünler hâlâ önündeyken çözmek çok daha kolay. Yine de rafı değiştireyim mi?",
+          )
+        ) {
+          return;
+        }
+        r = await api.rafAyarla(oturum, yeni, true);
+      }
+      navigator.vibrate?.(60);
+      setHata(null);
+      await kuyrukTazele();
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
   }
 
   async function fotoYukle(dosya: File) {

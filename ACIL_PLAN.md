@@ -2,7 +2,7 @@
 
 **Oluşturuldu:** 2026-08-26
 **Kaynak:** dış göz kod incelemesi (`app/`, `web/`, gerçek `deneme.XLSX` verisiyle davranış sınaması)
-**Durum:** tespit tamamlandı · **A grubu BİTTİ (A1-A6)** · sırada **B1**
+**Durum:** tespit tamamlandı · **A ve B grupları BİTTİ** · kalan yalnızca **C**
 
 Bu dosya bir çalışma listesidir. Her madde tek başına doğrulanmış bir hatadır;
 hiçbiri tahmin değildir, hepsinin altında çalıştırılmış çıktı vardır.
@@ -300,11 +300,12 @@ Yanlışlıkla F3'e basmak yetiyor.
 
 ---
 
-## 5. Dizin geçişi — tüm proje klasörü Wi-Fi'dan indirilebiliyor
+## 5. Dizin geçişi — tüm proje klasörü Wi-Fi'dan indirilebiliyor · öncelik **B2**
 
-- [ ] **Düzeltildi**
-- [ ] Regresyon testi yazıldı
-- [ ] Doğrulandı: _(tarih / nasıl)_
+- [x] **Düzeltildi** (2026-08-26) — `app/main.py`, `realpath` kök kontrolü
+- [x] Regresyon testi yazıldı — `tests/test_servis.py`, 8 kaçış yolu + 2 regresyon
+- [x] **Doğrulandı** (2026-08-26): 5 kaçış yolu eski kodda düşüyor
+      (`/../` biçimi zaten istemcide normalize oluyordu, kodlanmışlar değil).
 
 **Yer:** `app/main.py:159-166` (SPA yakalayıcısı) · sunucu `--host 0.0.0.0` (`baslat.bat:84`) · kimlik doğrulama yok
 
@@ -336,15 +337,18 @@ if tam_yol and (aday == kok or aday.startswith(kok + os.sep)) and os.path.isfile
     return FileResponse(aday)
 ```
 
-**Test edilecek senaryo**
+### Doğrulama çıktısı
 
 ```
-/..%2f..%2fCLAUDE.md      -> index.html dönmeli (404 değil, SPA davranışı korunsun)
-/assets/<gerçek dosya>    -> hâlâ çalışmalı
-/telefon                  -> hâlâ index.html
+/..%2f..%2fdata%2fsayim.db      -> index.html (eskiden 380.928 bayt SQLite)
+/..%2f..%2fdeneme.XLSX           -> index.html (eskiden 83.387 bayt xlsx)
+/..%2fmain.py                    -> index.html
+/%2e%2e%2f%2e%2e%2fCLAUDE.md     -> index.html
+/ · /telefon · /logo.png · /assets/*.js · /olmayan-sayfa  -> hepsi çalışıyor
 ```
 
-> Sayım doğruluğunu etkilemiyor, o yüzden 1-4'ten sonra. Ama aynı gün.
+404 değil index.html: bilinmeyen yollar SPA'ya düşmeye devam ediyor, davranış
+korundu. Önemli olan gövdenin dosya İÇERİĞİ olmaması.
 
 ---
 
@@ -480,11 +484,18 @@ ekranından kuralı kapat). Kural kapatılınca kalem normal sayılıyor — tes
 
 ---
 
-## 8. Türkçe karakterli raf adı 500 veriyor
+## 8. Türkçe karakterli raf adı 500 veriyor · öncelik **B1**
 
-- [ ] **Düzeltildi**
-- [ ] Regresyon testi yazıldı
-- [ ] Doğrulandı: _(tarih / nasıl)_
+- [x] **Düzeltildi** (2026-08-26) — yeni `norm.raf_adi()`, tek normalizasyon kaynağı
+- [x] Regresyon testi yazıldı — `tests/test_servis.py` + `tests/test_norm.py`
+- [x] **Doğrulandı** (2026-08-26): 7 test eski kodda düşüyor.
+
+> **İnceleme bu maddeyi eksik anlatmış.** 500 hatası belirtiydi; asıl sorun
+> raf adının ÜÇ AYRI YERDE üç farklı şekilde normalize edilmesiydi
+> (`komut_coz`, `kart_html`, `raf_satirlari` — üçü de `strip().upper()`).
+> Kart `UST-1` basıp telefondaki kutuya `ÜST-1` yazılırsa uygulama bunları
+> **iki ayrı raf** sayardı ve sayımın raf bilgisi sessizce bölünürdü. Bu,
+> 500'den daha sinsi bir hataydı ve yalnızca 500'ü düzeltmek onu KAPATMAZDI.
 
 **Yer:** `app/barkod.py:46` `kart_html` · `app/routers/rapor.py` `komut_karti` ve `raf_etiketi`
 
@@ -499,14 +510,29 @@ Router yalnızca `ImportError` yakalıyor → 500, boş sayfa, stack trace.
 
 Türkçe bir depoda `ÜST`, `ÖN`, `ÇIKIŞ` raf adı yazmak en doğal şey.
 
-**Yapılacak**
+### Yapılan (2026-08-26)
 
-- `raf_satirlari` / `kart_html` raf adını `norm.TR` ile katlasın (`ÜST-1` → `UST-1`)
-  **ve kullanıcıya ne bastığını göstersin** — okutulan değerle bastığı değer
-  aynı olmalı, yoksa `komut_coz` tanımaz.
-- Router `ValueError` / `IllegalCharacterError` yakalayıp 400 + anlaşılır mesaj dönsün.
-- `_kart()` raf adını HTML-kaçışsız basıyor; `_etiket()` kaçışıyor. Tutarsız,
-  `html.escape` eklensin.
+**Yeni `norm.raf_adi()` — normalizasyon TEK yerde.** Türkçe harfler katlanır
+(`ÜST-1` → `UST-1`), sonra yalnızca `A-Z 0-9 boşluk . _ -` bırakılır. Beyaz
+liste kara listeden güvenli: `#` komut sınırlayıcısını, Code128'in basamadığı
+her şeyi ve HTML'e sızabilecek karakterleri tek kuralla eler.
+
+`komut_coz()` bu işlevi kullanıyor — yani okutulan barkod, elle yazılan ad ve
+basılan etiket **aynı kaynaktan** geçiyor. `barkod.kart_html` ve
+`barkod.raf_satirlari` de aynı işlevi çağırıyor.
+
+**Temizlikten sonra boş kalan ad reddediliyor.** `komut_coz` onu raf komutu
+saymıyor, `POST /oturum/{id}/raf` 400 dönüyor.
+
+**Telefondaki raf kutusu `/okut` yerine raf ucuna geçti.** `##RAF-...##`
+metnini `/okut`'a vermek yetmiyordu: ad temizlikten sonra boş kalırsa metin
+**barkod sanılıp tampona düşüyordu**. Raf ucu aynı temizliği yapıyor ama boş
+adı 400 ile reddediyor. (`Ayarlar.tsx` zaten raf ucunu kullanıyordu.)
+
+**Üç uç da barkod hatasında 400 + anlaşılır mesaj dönüyor** (komut kartı, raf
+etiketi, etiket basımı) — boş sayfa ve stack trace yerine.
+
+**`_kart()` artık HTML kaçışı yapıyor** — `_etiket()` kaçıyordu, tutarsızdı.
 
 ---
 
@@ -566,8 +592,8 @@ değil). A6'da slot doldurma kararı ürün eldeyken verilebilir; gün sonunda
 
 | Öncelik | Madde | Neden yine de önce |
 |---|---|---|
-| **B1** | §8 Türkçe raf adı → 500 | Komut kartı depoya gitmeden basılıyor. `ÜST-1` yazan boş sayfa ve stack trace görüyor |
-| **B2** | §5 Dizin geçişi | Sayım doğruluğunu etkilemiyor ama veritabanı ve Tiger çıktısı Wi-Fi'dan indirilebiliyor |
+| ~~B1~~ | ~~§8 Türkçe raf adı~~ | **BİTTİ** (2026-08-26) — 500'den fazlası çıktı, aşağıya bakın |
+| ~~B2~~ | ~~§5 Dizin geçişi~~ | **BİTTİ** (2026-08-26) |
 
 ### C · Depodan sonra
 
@@ -577,5 +603,10 @@ değil). A6'da slot doldurma kararı ürün eldeyken verilebilir; gün sonunda
 | Küçükler (Escape, Barkod Tablosu, LIKE kaçışı, ölü kod) | Hiçbiri sayım verisini bozmuyor |
 | `##GERIAL##` `kuyruk.cozuldu` bayrağını geri döndürmüyor | A5'in bilinen sınırı. Kuyruktan çözülmüş bir kaydı geri almak okutmayı ve öğrenmeyi siliyor ama kuyruk kaydı "çözüldü" kalıyor |
 
-**A grubu BİTTİ** (2026-08-26) — 245 test geçiyor. Sayımı bozan, kaybeden ya
-da bitirtmeyen bilinen bir hata kalmadı. B grubu aynı gün kapatılmalı.
+**A ve B grupları BİTTİ** (2026-08-26) — **285 test** geçiyor.
+
+İncelemede bulunan 8 hatanın 8'i de kapandı. Sayımı bozan, kaybeden ya da
+bitirtmeyen bilinen bir hata kalmadı; depoya gidilebilir.
+
+Kalan C grubu sayım verisini bozmuyor: biri Tiger'da araştırma istiyor (§7b),
+ötekiler arayüz ve temizlik işleri.

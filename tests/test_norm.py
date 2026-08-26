@@ -1,7 +1,8 @@
 """norm / upc_mi / kirli_mi — prototipten taşınan kuralların regresyon testi."""
 import pytest
 
-from app.norm import izleme_coz, kirli_mi, komut_coz, norm, sifirsiz, upc_mi
+from app.norm import (izleme_coz, kirli_mi, komut_coz, norm, raf_adi, sifirsiz,
+                      upc_mi)
 
 
 @pytest.mark.parametrize("giris,cikis", [
@@ -65,11 +66,47 @@ def test_sifirsiz():
     ("##IPTAL##", "iptal", None),
     ("##RAF-A1##", "raf", "A1"),
     ("##RAF-b12##", "raf", "B12"),
+    # Türkçe raf adı: Code128 ASCII dışını taşımıyor, katlanıyor (ACIL_PLAN B1).
+    ("##RAF-ÜST-1##", "raf", "UST-1"),
+    ("##RAF-ön çıkış##", "raf", "ON CIKIS"),
+    ("##RAF-A#1##", "raf", "A1"),
+    # Temizlikten sonra hiçbir şey kalmıyorsa raf komutu DEĞİL: sessizce boş
+    # rafa geçmektense tampona düşsün.
+    ("##RAF-<>##", None, None),
     ("5S47WC2", None, None),
     ("##RAF-##", None, None),
+    # Adet barkodu (ACIL_PLAN A1).
+    ("##ADET-25##", "adet", 25),
+    ("##ADET-0##", "adet", 0),
+    ("##ADET-ABC##", None, None),
+    ("##ADET-99999##", None, None),
 ])
 def test_komut_coz(ham, komut, raf):
     assert komut_coz(ham) == (komut, raf)
+
+
+@pytest.mark.parametrize("ham,beklenen", [
+    ("A1", "A1"),
+    ("a1", "A1"),
+    ("  b2  ", "B2"),
+    ("ÜST-1", "UST-1"),
+    ("ÖN ÇIKIŞ", "ON CIKIS"),
+    ("ışık", "ISIK"),
+    ("A#1", "A1"),               # # komut sınırlayıcısı
+    ("<b>x", "BX"),              # HTML'e sızabilecek karakterler
+    ("A/B", "AB"),
+    ("A   B", "A B"),            # boşluklar tekilleşir
+    ("", ""),
+    (None, ""),
+    ("ÇÇ", "CC"),
+])
+def test_raf_adi(ham, beklenen):
+    """Basılan değerle sonradan ELLE yazılan değer aynı olmalı.
+
+    Kart `UST-1` basıp telefondaki kutuya `ÜST-1` yazılırsa uygulama bunları
+    iki ayrı raf sayardı. Normalizasyon tek yerde (ACIL_PLAN B1).
+    """
+    assert raf_adi(ham) == beklenen
 
 
 @pytest.mark.parametrize("deger,izleme", [

@@ -39,6 +39,30 @@ ADET_ONEK = "##ADET-"
 ADET_TAVAN = 9999
 
 
+def raf_adi(ham):
+    """Raf adını hem BASILABİLİR hem OKUTULABİLİR hâle getirir.
+
+    Code128 yalnızca ASCII taşır: `ÜST-1` basılamaz, python-barcode
+    `IllegalCharacterError` atar ve komut kartı ucu 500 verirdi. Türkçe bir
+    depoda `ÜST`, `ÖN`, `ÇIKIŞ` yazmak en doğal şey.
+
+    Asıl tuzak 500 değil, ondan derini: basılan değerle sonradan ELLE yazılan
+    değerin aynı olması gerekiyor. Kart `UST-1` basıp telefondaki kutuya
+    `ÜST-1` yazılırsa uygulama bunları İKİ AYRI RAF sayardı. Bu yüzden
+    normalizasyon tek yerde — `komut_coz()` — ve barkod üretimi de aynı
+    işlevi kullanıyor.
+
+    Türkçe harfler katlanır (Ü→U), sonra yalnızca `A-Z 0-9 boşluk . _ -`
+    bırakılır. Beyaz liste kara listeden güvenli: `#` komut sınırlayıcısını
+    (`##RAF-A#1##`), Code128'in basamadığı her şeyi ve HTML'e sızabilecek
+    karakterleri tek kuralla eler. Raf adı bir konum etiketidir — `A1`,
+    `B2-ALT`, `UST 3` — bu küme yeter.
+    """
+    s = str(ham or "").strip().translate(TR).upper()
+    s = re.sub(r"[^A-Z0-9 ._-]", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def komut_coz(ham):
     """Okutulan değer komut barkodu mu? (komut_adi, deger) döner.
 
@@ -48,7 +72,11 @@ def komut_coz(ham):
     if u in KOMUT:
         return KOMUT[u], None
     if u.startswith(RAF_ONEK) and u.endswith("##") and len(u) > len(RAF_ONEK) + 2:
-        return "raf", u[len(RAF_ONEK):-2]
+        ad = raf_adi(u[len(RAF_ONEK):-2])
+        # Temizlikten sonra hiçbir şey kalmadıysa bu bir raf komutu değildir
+        # (`##RAF-ÇÇ##` gibi). Sessizce boş rafa geçmektense tampona düşsün.
+        if ad:
+            return "raf", ad
     # ##ADET-25## — lot / izlemesiz kalemde "bu üründen 25 tane var" (CLAUDE.md 2.4).
     # Tanınmayan bir ##ADET-...## komut değil sayılır ve tampona düşer; sessizce
     # 0 adet saymaktansa kullanıcının gördüğü bir "bilinmiyor" daha iyidir.

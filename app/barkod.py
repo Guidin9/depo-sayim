@@ -10,6 +10,8 @@ import base64
 import html
 import io
 
+from .norm import raf_adi
+
 KOMUTLAR = [
     ("##SONRAKI##", "SIRADAKİ ÜRÜN",
      "Bir ürünün tüm barkodlarını okuttuktan sonra bunu okut. Gruplama böyle kapanır."),
@@ -38,9 +40,13 @@ def _svg(kod):
 
 
 def _kart(kod, ad, ac, renk):
+    # html.escape: raf adı kullanıcıdan geliyor. `_etiket()` kaçıyordu, burası
+    # kaçmıyordu — tutarsızdı.
     return ("<div class=k style=\"--r:%s\"><div class=ad>%s</div>"
             "<img src=\"data:image/svg+xml;base64,%s\"><div class=kod>%s</div>"
-            "<div class=ac>%s</div></div>" % (renk, ad, _svg(kod), kod, ac))
+            "<div class=ac>%s</div></div>"
+            % (renk, html.escape(str(ad)), _svg(kod), html.escape(str(kod)),
+               html.escape(str(ac))))
 
 
 ADET_VARSAYILAN = (1, 5, 10, 25, 50, 100)
@@ -53,7 +59,9 @@ def kart_html(raflar=None, adetler=None):
     `##ADET-N##` barkodları (CLAUDE.md 2.4). Değerler BİRİKİR — 25 iki kez
     okutulunca 50 olur — o yüzden her sayıyı basmaya gerek yok.
     """
-    raflar = [str(r).strip().upper() for r in (raflar or []) if str(r).strip()]
+    # raf_adi(): Code128 ASCII dışını basamaz ve basılan değerle sonradan elle
+    # yazılan değer aynı olmalı — normalizasyon `komut_coz` ile TEK kaynaktan.
+    raflar = [a for a in (raf_adi(r) for r in (raflar or [])) if a]
     adetler = ADET_VARSAYILAN if adetler is None else adetler
     adetler = sorted({int(a) for a in adetler if 0 < int(a) <= 9999})
     parcalar = [_kart(k, a, c, RENKLER[i % len(RENKLER)])
@@ -132,7 +140,7 @@ def raf_satirlari(raflar, kopya=1):
     yalnızca bir konum işaretidir (CLAUDE.md 12.1). Aynı raf birden çok yüze
     yapıştırılacaksa `kopya` ile çoğaltılır.
     """
-    raflar = [str(r).strip().upper() for r in (raflar or []) if str(r).strip()]
+    raflar = [a for a in (raf_adi(r) for r in (raflar or [])) if a]
     kopya = max(1, int(kopya or 1))
     satirlar = []
     for r in raflar:

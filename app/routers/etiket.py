@@ -51,6 +51,8 @@ def basim(istek: BasimIstek, c=DB):
         raise HTTPException(
             501, "Barkod üretimi için python-barcode gerekli: pip install "
                  "python-barcode") from h
+    except Exception as h:
+        raise HTTPException(400, "Etiket sayfası üretilemedi: %s" % h) from h
 
 
 @router.get("/etiket")

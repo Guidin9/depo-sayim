@@ -158,9 +158,24 @@ if os.path.isdir(STATIK):
 
     @app.get("/{tam_yol:path}")
     def spa(tam_yol: str):
-        """Tek sayfa uygulaması — bilinmeyen yollar index.html'e düşer."""
-        aday = os.path.join(STATIK, tam_yol)
-        if tam_yol and os.path.isfile(aday):
+        """Tek sayfa uygulaması — bilinmeyen yollar index.html'e düşer.
+
+        DİZİN GEÇİŞİ KORUMASI. `os.path.join(STATIK, tam_yol)` + `isfile`
+        yeterli değildi: `..` normalize edilmiyordu. Tarayıcı düz `../` yolunu
+        düzeltiyor ama YÜZDE-KODLANMIŞINI düzeltmiyor, sunucu da hiç
+        düzeltmiyordu:
+
+            GET /..%2f..%2fdata%2fsayim.db  -> 200, canlı sayım veritabanı
+            GET /..%2f..%2fdeneme.XLSX      -> 200, stok ve tutarlar
+
+        Sunucu `--host 0.0.0.0` ile açık ve kimlik doğrulaması yok (baslat.bat),
+        yani depo Wi-Fi'sındaki herkes indirebiliyordu. `realpath` ile hem `..`
+        hem sembolik bağlantı çözülüp kökün altında kalıp kalmadığına bakılıyor.
+        """
+        kok = os.path.realpath(STATIK)
+        aday = os.path.realpath(os.path.join(kok, tam_yol))
+        icerde = aday == kok or aday.startswith(kok + os.sep)
+        if tam_yol and icerde and os.path.isfile(aday):
             return FileResponse(aday)
         # index.html önbelleğe alınmamalı: telefon eski sayfayı tutarsa yeni
         # arayüzü ve canlı güncellemeyi hiç görmez. /assets/* dosyaları hash'li,

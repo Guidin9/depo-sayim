@@ -46,7 +46,21 @@ def indir(oturum_id: int, c=DB):
 
 @router.post("/komut-karti", response_class=HTMLResponse)
 def komut_karti(istek: KartIstek):
-    return HTMLResponse(barkod.kart_html(istek.raflar, istek.adetler))
+    """Laminatlanacak komut kartı.
+
+    Raf adları `norm.raf_adi()` ile temizlenir (`ÜST-1` -> `UST-1`): Code128
+    ASCII dışını taşımıyor ve basılan değerle sonradan elle yazılan değer aynı
+    olmalı. Barkod üretimi yine de patlarsa 400 dönüyoruz — kullanıcı boş sayfa
+    ve stack trace yerine ne olduğunu görsün.
+    """
+    try:
+        return HTMLResponse(barkod.kart_html(istek.raflar, istek.adetler))
+    except ImportError as h:
+        raise HTTPException(
+            501, "Barkod üretimi için python-barcode gerekli: pip install "
+                 "python-barcode") from h
+    except Exception as h:
+        raise HTTPException(400, "Komut kartı üretilemedi: %s" % h) from h
 
 
 @router.post("/raf-etiketi", response_class=HTMLResponse)
@@ -65,3 +79,5 @@ def raf_etiketi(istek: RafEtiketIstek):
         raise HTTPException(
             501, "Barkod üretimi için python-barcode gerekli: pip install "
                  "python-barcode") from h
+    except Exception as h:
+        raise HTTPException(400, "Raf etiketi üretilemedi: %s" % h) from h

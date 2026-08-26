@@ -289,6 +289,7 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 | `##ATLA##` | Grubu kuyruğa at |
 | `##BITIR##` | Oturumu kapat |
 | `##RAF-A1##` | Aktif rafı ayarla (sonraki okutmalar bu rafa yazılır) |
+| `##RAF-UST-1##` | Raf adı ASCII'ye katlanır — aşağıya bakın |
 | `##ADET-25##` | Sıradaki grubun miktarı — lot / dökme kalemde (§2.4) |
 | `##ADET-0##` | Girilen adedi sıfırla |
 
@@ -300,6 +301,23 @@ sonraki ürüne sızmaz. **Boş tamponda `##SONRAKI##`'ye basmak adedi yakmaz.**
 
 Seri takipli kalemde adet uygulanmaz — her cihaz Tiger'da ayrı bir satır.
 Girilmişse sessizce yutulmaz, sonuçta `adet_yersiz` olarak bildirilir.
+
+**Raf adı `norm.raf_adi()` ile temizlenir** ve normalizasyon TEK yerdedir:
+`ÜST-1` → `UST-1`, `ön çıkış` → `ON CIKIS`. Türkçe harfler katlanır, sonra
+yalnızca `A-Z 0-9 boşluk . _ -` bırakılır.
+
+İki sebep, ikisi de zorunlu:
+
+1. **Code128 ASCII dışını taşımaz.** `ÜST-1` basılamaz; python-barcode
+   `IllegalCharacterError` atıyor ve komut kartı ucu 500 veriyordu. Türkçe bir
+   depoda `ÜST`, `ÖN`, `ÇIKIŞ` yazmak en doğal şey.
+2. **Asıl tuzak bu:** basılan değerle sonradan ELLE yazılan değer aynı olmak
+   zorunda. Kart `UST-1` basıp telefondaki kutuya `ÜST-1` yazılırsa uygulama
+   bunları **iki ayrı raf** sayardı ve sayımın raf bilgisi bölünürdü.
+
+Temizlikten sonra hiçbir şey kalmazsa (`##RAF-ÇÇ##` değil ama `##RAF-<>##`
+gibi) bu bir raf komutu SAYILMAZ; `POST /oturum/{id}/raf` ucu da 400 döner.
+Sessizce boş rafa geçmek raf bilgisini yok ederdi.
 
 ---
 

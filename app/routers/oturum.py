@@ -166,8 +166,14 @@ def bitir(oturum_id: int, zorla: bool = False, c=DB):
 def raf_ayarla(oturum_id: int, istek: RafAyar, c=DB):
     """Rafı okuyucusuz ayarla (telefondan). Kuyruk kapısı burada da işler."""
     o = oturum_getir(oturum_id, c)
-    sonuc = matching.okut(c, o, "##RAF-%s##" % istek.raf.strip().upper(),
-                          zorla=istek.zorla)
+    # Normalizasyon `norm.raf_adi()`de, tek yerde: kartta basılan değerle
+    # burada elle yazılan değer aynı olmalı, yoksa `ÜST-1` ve `UST-1` iki ayrı
+    # raf sayılır. Temizlikten sonra hiçbir şey kalmadıysa reddediyoruz —
+    # sessizce boş rafa geçmek sayımın raf bilgisini yok ederdi.
+    ad = norm.raf_adi(istek.raf)
+    if not ad:
+        raise HTTPException(400, "Raf adı harf ya da rakam içermeli.")
+    sonuc = matching.okut(c, o, "##RAF-%s##" % ad, zorla=istek.zorla)
     c.commit()
     sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
     return sonuc
