@@ -162,7 +162,9 @@ export default function Gecmis({
               </label>
               <span className="text-kucuk text-solgun">
                 Kopya ve başlangıç hücresi yalnızca yapışkanlı raf etiketi içindir —
-                yarım kalmış sayfayı israf etmeyin.
+                yarım kalmış sayfayı israf etmeyin. Komut kartı ayrıca 1/5/10/25/50/100
+                adet barkodlarını da basar: lot ve dökme kalemlerde miktar girmek için.
+                Üst üste okutulursa toplanır.
               </span>
             </div>
             <div className="flex flex-wrap gap-2">

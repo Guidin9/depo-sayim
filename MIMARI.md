@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-22 · 193 test geçiyor.
+Son güncelleme: 2026-08-26 · 245 test geçiyor.
 
 ---
 
@@ -65,8 +65,8 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 | `yukleme` | id · ts · dosya_adi · kaynak · satir · not_ |
 | `beklenen` | id · yukleme · kod · **kod_n** · aciklama · tur · ambar · izleme · seri · **seri_n** · **seri_n0** · seri_aciklama · miktar · birim · kirli · kirli_sebep · haric · haric_sebep · kaynak |
 | `haric_kural` | id · tip · desen · aktif · varsayilan · UNIQUE(tip,desen) |
-| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum |
-| `okutma` | id · oturum · ts · ham · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad |
+| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** |
+| `okutma` | id · oturum · ts · ham · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** |
 | `eslesme` | **barkod (PK)** · kod · seri · ts |
 | `tampon` | id · oturum · ts · ham |
 | `kuyruk` | id · oturum · ts · barkodlar (JSON) · raf · cozuldu · not_ · beklet · **tur** · kod · ad |
@@ -83,6 +83,20 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
   hangi malzeme?") ve `fazla_onay` (malzeme tanındı, karşılığı bulunamadı —
   "gerçekten fazla mı?"). Fazla kaydı yalnızca `kuyruk_fazla()` ve `##FAZLA##`
   komutundan doğar; motor kendiliğinden fazla yazmaz.
+* **`oturum.bekleyen_adet` kalıcı bir ayar değildir.** Sıradaki grubun miktarını
+  taşır (`##ADET-N##` / telefon Adet paneli) ve grup kapanınca — ya da
+  `##IPTAL##` ile — sıfırlanır. Oturum ayarı gibi davranırsa 25 adet sonraki
+  ürüne sızar.
+* **`okutma.geri`, `##GERIAL##`'in sözleşmesidir.** Bir okutmanın KENDİ SATIRI
+  DIŞINDA ne yarattığını JSON olarak tutar:
+  `{"ogrenilen": ["198701689928"], "etiket": "DS-000045"}`. Geri alma bunu
+  okuyup `eslesme` kaydını siler ve etiket bağlamasını çözer
+  (`etiketler.coz_bagla`, numara TÜKETİLMEZ — defter kaydı durur).
+  **`eslesme` ya da `etiket` yazan yeni bir yol eklerseniz `geri`'yi de
+  doldurun**, yoksa geri alma yarım kalır ve öğrenilen yanlış barkod Barkod
+  Tablosu üzerinden Tiger'a taşınır.
+  *Bilinen sınır:* `kuyruk_coz` ile çözülmüş bir kaydı geri almak
+  `kuyruk.cozuldu` bayrağını geri döndürmez.
 * **`sayim` diye tablo yoktur.** Sayaçlar `okutma` + `beklenen` üzerinden
   anlık hesaplanır (`matching.sayaclar()`).
 * `beklenen.kod_n` / `seri_n` / `seri_n0` yükleme anında yazılır; motor
@@ -122,7 +136,15 @@ uygulama açılmaz. `EK_INDEKS` göçten sonra uygulanır. Bu gerçekten yaşand
 `goc()` yalnızca **sütun** ekler. Hatalı kodun ürettiği **veriyi** düzeltmek
 ayrı bir iştir; `baglan()` bunun için `bolunmus_fazlalari_birlestir()` çağırır.
 
-Şu an tek onarım var: 2026-08-23'e kadar bir gruptaki her barkod için ayrı bir
+İki onarım var.
+
+`lic_kuralini_duzelt()` — fazla geniş `LIC` hariç kuralını `LICENSE` ile
+değiştirir ve hariç bayraklarını tüm yüklemelerde yeniden hesaplar.
+`kurallari_tohumla()` yalnızca tablo boşken çalıştığı için varsayılan listesini
+düzeltmek mevcut veritabanlarına ulaşmıyor. Yalnızca `varsayilan=1` kurala
+dokunur: kullanıcı deseni elle yazdıysa karar onundur.
+
+`bolunmus_fazlalari_birlestir()` — 2026-08-23'e kadar bir gruptaki her barkod için ayrı bir
 fazla satırı yazılıyordu (bkz. `CLAUDE.md` §4.4). Onarım aynı `(oturum, grup)`
 içindeki `tip='fazla'` satırlarını tek satıra indirir — `ham` birleşir, `seri`
 yeniden seçilir, fotoğraflar taşınır, fazlası silinir.
@@ -170,11 +192,13 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `POST /okutma/{id}/coz-ayir` | — | Eşleştirmeyi geri al |
 | `POST /oturum/{id}/bitir` | `?zorla=` | Çözülmemiş kuyruk, **adsız fazla** veya fotoğrafsız fazla varsa 409 |
 | `POST /oturum/{id}/raf` | `{raf, zorla}` | İçeride `##RAF-X##` üretip `okut()`'a verir |
+| `POST /oturum/{id}/adet` | `{adet}` | İçeride `##ADET-N##` üretip `okut()`'a verir. 0 sıfırlar, öteki değerler EKLENİR. Telefondaki Adet paneli buraya gider |
 | `GET /oturum/{id}/raflar` | — | Bu oturumda kullanılmış raflar |
 | `GET /oturum/{id}/ara` | `?q=&limit=&offset=&sadece_acik=&kirli=&izleme=` | Malzeme arama / listeleme → `{satirlar, toplam}` |
 
 > **Grup kapatma / komut barkodları için ayrı uç YOKTUR.** `##SONRAKI##`,
-> `##IPTAL##`, `##GERIAL##`, `##FAZLA##`, `##ATLA##`, `##BITIR##`, `##RAF-X##`
+> `##IPTAL##`, `##GERIAL##`, `##FAZLA##`, `##ATLA##`, `##BITIR##`, `##RAF-X##`,
+> `##ADET-N##`
 > hepsi `POST /oturum/{id}/okut` gövdesindeki `ham` alanından geçer ve
 > `matching.okut()` içinde `norm.komut_coz()` ile ayrıştırılır. Yeni bir komut
 > eklemek = `norm.py` `KOMUT` sözlüğüne bir satır + `matching.okut()`'ta bir dal.
@@ -234,7 +258,12 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | 5 | `len(n)>=6`, kirli seri kaydının **içine gömülü** ve bu oturumda sayılmamış | `seri` |
 | 6/7 | hiçbiri | `upc` ya da `bilinmiyor` |
 
-`tekrar` = aynı `beklenen_id` bu oturumda zaten okutulmuş.
+`tekrar` = o `beklenen` satırının **kapasitesi bitmiş** (`kapasite_kaldi()`):
+seri takiplide "bu oturumda zaten okutulmuş", lot/izlemesizde
+"sayılan >= beklenen". Tek satır çok adet taşıdığı için lot satırı bir
+okutmayla kapanmaz — 77 adetlik lot 77 okutma kabul eder. Ölçüt tek yerde
+durur; `ara(sadece_acik=True)` ve `kuyruk_coz()` de aynı işlevi kullanır.
+
 **`coz()` asla "fazla" döndürmez** — fazla kararı yalnızca `grup_coz()`'da alınır.
 
 ### `grup_coz(c, ot, raf)` — `##SONRAKI##`
@@ -243,13 +272,36 @@ Tampondaki barkodların hepsi **tek ürün** kabul edilir.
 
 ```
 tekrar var, seri yok                     -> tip="tekrar"   (hiçbir şey yazılmaz)
+kaynak SAYIM DIŞI kalem                  -> tip="haric"    (hiçbir şey yazılmaz)
 seri de kod da tanınmadı                 -> tip="kuyruk"   (kullanıcıya sorulur)
-seri eşleşti                             -> tip="eslesti"  (+ bilinmeyenler öğrenilir)
-kod tanındı, seri yok:
-  izleme='seri', açık KİRLİ slot var     -> tip="slot"     (Tiger düzeltmesi)
+izleme='seri' satırı eşleşti             -> tip="eslesti"  (+ bilinmeyenler öğrenilir)
+kod tanındı (ya da lot satırı eşleşti):
+  izleme='seri', açık KİRLİ slot var     -> tip="slot"     (Tiger düzeltmesi *)
   izleme='seri', slot yok                -> tip="onay"     (*)
   izleme='lot' | 'yok'                   -> tip="adet"     (adet +1)
 ```
+
+**Seri dalına yalnızca `izleme='seri'` satırları girer.** Lot numarası birebir
+eşleşse bile (1. adım) adet dalına düşer: seri dalı `miktar=1` yazıp satırı
+kapatır, lot satırı ise tek satırda çok adet taşır. Bu ayrım olmadan 77 adetlik
+lot bir okutmada "sayıldı" olup ikinci okutmada `tekrar` diyordu.
+
+Adet dalında **hangi satır(lar)a yazıldığı** önemlidir (`_adet_dagit()`): lot
+numarası okutulduysa miktarın tamamı o satıra, yalnızca malzeme kodu biliniyorsa
+**kapasitesi kalan satırlara sırayla dağıtılır**. Bir malzemenin birden çok lotu
+olabilir (örnek veride bir malzeme tek başına 57 lot satırı taşıyor); hep ilk
+satıra yazmak o lotu şişirip ötekileri eksik bırakıyordu.
+
+Miktar `oturum.bekleyen_adet`'ten gelir (`##ADET-N##` / telefon Adet paneli),
+verilmemişse 1. Grup kapanınca tüketilir. Seri takipli kalemde uygulanmaz ama
+sessizce yutulmaz — yanıtta `adet_yersiz` döner.
+
+(*) Slot dolduruluyorsa `okutma.ham` alanına Tiger'a önerilecek YENİ seri
+numarası yazılır. Aday yoksa (ne üretici S/N ne DS- etiketi okutuldu) alan
+**boş bırakılır** ve `sn_yok=True` döner: sayım işlenir, Tiger Düzeltme satırı
+üretilmez, kullanıcı uyarılır. Eskiden oraya MALZEME KODU yazılıyordu ve
+Tiger'a "bu cihazın seri numarası 04RW5H olsun" deniyordu —
+`kirli_mi(kod, kod)` kirli döndüğü için düzeltme kendi kendini bozuyordu.
 
 (*) `kuyruk` tablosuna `tur='fazla_onay'` ile yazılır. **Motor kendiliğinden
 fazla yazmaz** — eski davranış sessizce fazla yazıyordu ve sahada yanlış çıktı
@@ -367,7 +419,7 @@ zaten `POST /okut` gövdesinden geçtiği için yeni uç gerekmedi).
 | Yer | Eylem |
 |---|---|
 | Sabit alt çubuk | **Sıradaki ürün** (`##SONRAKI##`) · **Geri al** (`##GERIAL##`) |
-| Sayaçların altındaki satır | Raf (`##RAF-X##`) · İptal · Atla · Fazla |
+| Sayaçların altındaki satır | Raf (`##RAF-X##`) · Adet · İptal · Atla · Fazla |
 
 `raf_engel` yanıtı telefonda da onay sorup `zorla:true` ile tekrar gönderir.
 `##BITIR##` telefonda **bilerek yoktur.** Alt çubuk `fixed` olduğu için kabuk

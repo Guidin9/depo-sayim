@@ -93,7 +93,18 @@ Tiger'da malzeme kartı > İzleme ve Sıralama > İzleme Yöntemi:
 | `İzleme Yapılmayacak` | Sadece adet | Seri/Lot raporunda hiç gelmez |
 
 Lot örneği: `0C5RNH` SFP, `0C5RNHLOT1221` lot numarası altında 77 adet. Bunları
-tek tek okutmak anlamsız — lot okut, adet gir.
+tek tek okutmak anlamsız — lot okut, adet gir (`##ADET-N##` ya da telefondaki
+Adet paneli, §4.5).
+
+**Bir malzemenin birden çok lotu olabilir ve bu istisna değil kuraldır.** Örnek
+veride `BRODCOM 57414` tek başına **57 ayrı lot satırı** taşıyor, her biri 1
+adet. Bu yüzden okutma hep "o malzemenin ilk satırına" yazılamaz: lot numarası
+okutulduysa O satıra, yalnızca malzeme kodu biliniyorsa kapasitesi kalan
+satırlara sırayla dağıtılır (`matching._adet_dagit`). Hep ilk satıra yazmak o
+lotu şişirip diğer 56 satırı eksik gösteriyordu.
+
+Lot satırı **tek okutmayla kapanmaz**: ölçüt `sayılan < beklenen`
+(`matching.kapasite_kaldi`), seri takiplideki "bir kez okutuldu" değil.
 
 ### 2.5 Barkod alanı boş
 
@@ -145,9 +156,32 @@ Bunlar fiziksel nesne değildir, sayım kapsamından **çıkarılmalıdır**, yo
 "eksik" olarak raporlanır:
 
 - Malzeme Türü: `DESTEK-HP`, `YAZILIM`, `MİCROSOFT OPEN`, `HİZMET`, `FİKTİF`
-- Ayrıca açıklamasında `LIC`, `LİSANS`, `E-LTU`, `NAKLİYE`, `KARGO` geçenler
+- Ayrıca açıklamasında `LICENSE`, `LİSANS`, `E-LTU`, `NAKLİYE`, `KARGO` geçenler
   (tür filtresi bunları yakalamaz — örn. `JW473AAE` Aruba lisansı 460 adet,
   `60007` nakliye 118 adet)
+
+**Desenler alt dize olarak aranır ve kelime sınırı YOKTUR.** `norm()` boşlukla
+noktalamayı attığı için `"Dual Port 10GB Ethernet S-LIC-E Optical"` metni
+`"...ETHERNETSLICOPTICAL"` oluyor. Bu yüzden kısa desen tehlikelidir: üç
+harflik `LIC` bu ağ kartını lisans sanıp sayım dışı bırakıyordu — örnek veride
+hariç edilen TEK satır oydu, üstelik gerçek yazılım lisansı
+(`04RW5H` OEM MICROSOFT SQL SERVER) filtreye hiç takılmıyordu. Filtre tam
+tersini yapıyordu. 2026-08-26'da `LICENSE`'a çevrildi; mevcut veritabanları
+`db.lic_kuralini_duzelt()` göçüyle düzeltiliyor. **Yeni desen eklerken kısa ve
+başka kelimelerin içinde geçebilecek olanlardan kaçının.**
+
+**Sayım dışı kalem okutulursa sistem SESSİZ KALMAZ.** `grup_coz` `haric`
+tipiyle döner, hiçbir şey yazmaz ve ekran hangi kuralın kalemi dışarıda
+bıraktığını söyler. Eskiden `coz()` bu alana hiç bakmıyordu: ekran yeşil yanıp
+"eşleşti" sesi veriyor, ama `sayaclar()` hariç satırları saymadığı için sayaç
+dönmüyor, `eksik_kayitlar` da onları atladığı için raporda hiç görünmüyordu.
+Kullanıcı elindeki ürünü okutup "tamam" sesini duyuyor, ürün mutabakattan
+tamamen buharlaşıyordu. Çıkış yolu Kurulum ekranından kuralı kapatmaktır.
+
+**Uyarı — bu tür değerleri kendi Tiger çıktınızda doğrulayın.** Örnek Ambar 1
+raporunda `Malzeme Türü` sütunu `TM` (860) ve `TK` (10) kısa kodlarını
+döndürüyor; yukarıdaki beş tür deseninin hiçbiri bu veride geçmiyor, yani
+o kurallar hiç ateşlemiyor.
 
 ---
 
@@ -250,11 +284,22 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 |---|---|
 | `##SONRAKI##` | Grubu kapat ve çözümle |
 | `##IPTAL##` | Mevcut grubu sil |
-| `##GERIAL##` | Son okutmayı geri al |
+| `##GERIAL##` | Son okutmayı geri al (öğrenilen barkodu unutur, etiketi çözer) |
 | `##FAZLA##` | Grubu fazla olarak işaretle |
 | `##ATLA##` | Grubu kuyruğa at |
 | `##BITIR##` | Oturumu kapat |
 | `##RAF-A1##` | Aktif rafı ayarla (sonraki okutmalar bu rafa yazılır) |
+| `##ADET-25##` | Sıradaki grubun miktarı — lot / dökme kalemde (§2.4) |
+| `##ADET-0##` | Girilen adedi sıfırla |
+
+Adet **birikir**: `##ADET-25##` iki kez okutulursa 50 olur. Kartta sabit
+değerler basılı (1/5/10/25/50/100), ara değere ancak böyle ulaşılır. Telefondaki
+Adet paneli aynı işi yapar ve her sayıyı girer — ikisi de `POST /oturum/{id}/adet`
+ile aynı koddan geçer. Adet grup kapanınca (ya da `##IPTAL##` ile) tükenir,
+sonraki ürüne sızmaz. **Boş tamponda `##SONRAKI##`'ye basmak adedi yakmaz.**
+
+Seri takipli kalemde adet uygulanmaz — her cihaz Tiger'da ayrı bir satır.
+Girilmişse sessizce yutulmaz, sonuçta `adet_yersiz` olarak bildirilir.
 
 ---
 
@@ -735,6 +780,21 @@ Etiketler eklenmeseydi de birer tuzaktı; hepsinin regresyon testi var.
 
 **Üretici S/N her zaman kazanır** (`yeni_sn` sırası): garanti/RMA izi uydurma
 numarayla değiştirilmez. Havuz etiketi yalnızca başka kimlik yokken kullanılır.
+
+**Hiçbir kimlik yoksa malzeme kodu seri numarası diye YAZILMAZ.** Yalnızca
+malzeme kodu okutulunca (ne üretici S/N ne DS- etiketi) slot doldurulur ve
+sayım işlenir, ama Tiger Düzeltme satırı üretilmez — kullanıcı uyarılır.
+Eskiden oraya malzeme kodunun kendisi yazılıyordu: `kirli_mi(kod, kod)` KİRLİ
+döner, yani uygulama Tiger'a tam da temizlemeye çalıştığı deseni yazdırıyordu,
+üstelik aynı malzemenin birden çok slotu bu yoldan dolarsa aynı numaradan
+birden çok tane.
+
+**`##GERIAL##` yan etkileri de geri alır.** Okutmanın `eslesme`'ye yazdığı
+öğrenme silinir, bağladığı etiket havuza döner (numara tüketilmez, defter
+kaydı durur). Yoksa yanlış ürüne okutulup geri alınan bir barkod kalıcı olarak
+o malzemeye bağlı kalıyor ve Barkod Tablosu sekmesinden Tiger'ın malzeme
+kartına yazılmak üzere listeleniyordu — sessiz, kalıcı, gelecek yıla taşınan
+bir bozulma.
 
 Lot / izlemesiz malzemede boş seri etiketi okutulursa bağlama yapılmaz — Tiger'da
 adet başına seri saklanmıyor. Sayım yine işlenir, kullanıcı uyarılır.

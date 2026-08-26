@@ -52,10 +52,13 @@ def test_saglik(istemci):
 def test_yukleme_ve_ambarlar(kurulu):
     ist, ozet, _ = kurulu
     assert ozet["satir"] == 870 and ozet["kirli"] == 394
-    assert any(k["desen"] == "LIC" for k in ozet["kurallar"])
+    assert any(k["desen"] == "LICENSE" for k in ozet["kurallar"])
 
+    # haric=0: varsayılan kurallar bu veride hiçbir satır yakalamamalı.
+    # Eskiden 1'di ve o satır bir lisans değil, gerçek bir ağ kartıydı
+    # (bkz. tests/test_haric.py, ACIL_PLAN.md A3).
     amb = ist.get("/api/yukleme/%s/ambarlar" % ozet["yukleme"]).json()
-    assert amb == [{"ambar": "1", "satir": 870, "adet": 1072.0, "haric": 1,
+    assert amb == [{"ambar": "1", "satir": 870, "adet": 1072.0, "haric": 0,
                     "kirli": 394, "malzeme": 161}]
 
 
@@ -68,7 +71,7 @@ def test_bozuk_dosya_400(istemci):
 def test_kural_guncelleme(kurulu):
     ist, ozet, _ = kurulu
     yid = ozet["yukleme"]
-    lic = next(k for k in ozet["kurallar"] if k["desen"] == "LIC")
+    lic = next(k for k in ozet["kurallar"] if k["desen"] == "LICENSE")
     r = ist.put("/api/yukleme/%s/kurallar" % yid,
                 json={"yukleme": yid, "kurallar": [{"id": lic["id"], "aktif": False}]})
     assert r.status_code == 200
@@ -306,7 +309,7 @@ def test_rapor_onizleme_ve_indirme(kurulu):
     on = ist.get("/api/oturum/%s/rapor/onizleme" % oid, params={"limit": 5}).json()
     assert on["Tiger Düzeltme"]["satirlar"][0][2] == "0WGP72SAYIM1"
     assert on["Eksik"]["toplam"] > len(on["Eksik"]["satirlar"]) == 5
-    assert on["_ozet"]["haric"] == 1
+    assert on["_ozet"]["haric"] == 0
 
     r = ist.get("/api/oturum/%s/rapor.xlsx" % oid)
     assert r.status_code == 200
@@ -374,6 +377,18 @@ def test_bitir_ucu_kuyrukta_409(kurulu):
     assert r.status_code == 409
     assert "çözülmemiş" in r.json()["detail"]["mesaj"]
     assert ist.post("/api/oturum/%s/bitir?zorla=true" % o["id"]).json()["durum"] == "bitti"
+
+
+def test_bitir_ucu_kapanmamis_grubu_da_gorur(kurulu):
+    """Regresyon (ACIL_PLAN.md A2): uçta da tampon önce kapanmalı."""
+    ist, _, o = kurulu
+    okut(ist, o["id"], "198701689928", "EDBP0153231475674")   # SONRAKI YOK
+    r = ist.post("/api/oturum/%s/bitir" % o["id"])
+    assert r.status_code == 409
+    assert "çözülmemiş" in r.json()["detail"]["mesaj"]
+    # grup_coz'un yazdığı kayıt 409'a rağmen kalıcı olmalı: HTTPException
+    # DB bağımlılığının commit'ini atlıyor, o yüzden açıkça commit ediliyor.
+    assert len(ist.get("/api/oturum/%s/kuyruk" % o["id"]).json()) == 1
 
 
 def test_aday_onerisi_kaldirildi(kurulu):

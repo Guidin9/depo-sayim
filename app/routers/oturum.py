@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .. import matching, oturumlar
+from .. import matching, norm, oturumlar
 from .ortak import DB, oturum_getir, yukleme_getir
 
 router = APIRouter(prefix="/api", tags=["oturum"])
@@ -25,6 +25,11 @@ class GeriAl(BaseModel):
 class RafAyar(BaseModel):
     raf: str
     zorla: bool = False
+
+
+class AdetAyar(BaseModel):
+    """Sıradaki grubun adedi. 0 sıfırlar, öteki değerler mevcuda EKLENİR."""
+    adet: int
 
 
 class OkutmaGuncelle(BaseModel):
@@ -132,6 +137,14 @@ def okutma_coz_ayir(okutma_id: int, c=DB):
 @router.post("/oturum/{oturum_id}/bitir")
 def bitir(oturum_id: int, zorla: bool = False, c=DB):
     o = oturum_getir(oturum_id, c)
+    # Tampon ÖNCE kapanır (matching.okut'taki ##BITIR## ile aynı sıra): grup_coz
+    # yeni bir kuyruk kaydı yaratabilir ve kapılar onu da görmeli.
+    #
+    # commit şart: aşağıdaki HTTPException, DB bağımlılığının `yield`'ine
+    # fırlatılıyor ve oradaki `c.commit()` hiç çalışmıyor — grup_coz'un yazdığı
+    # kuyruk kaydı geri alınır, kullanıcıya var olmayan bir kayıt bildirilirdi.
+    matching.grup_coz(c, o)
+    c.commit()
     bekleyen = matching.bekleyen_kuyruk(c, oturum_id)
     if bekleyen and not zorla:
         raise HTTPException(409, {"mesaj": "Kuyrukta çözülmemiş %d ürün var."
@@ -146,7 +159,6 @@ def bitir(oturum_id: int, zorla: bool = False, c=DB):
     if fotosuz and not zorla:
         raise HTTPException(409, {"mesaj": "%d fazla kaydının fotoğrafı yok."
                                            % len(fotosuz), "fotosuz": fotosuz})
-    matching.grup_coz(c, o)          # tampondaki son grup kaybolmasın
     return dict(oturumlar.bitir(c, oturum_id))
 
 
@@ -156,6 +168,25 @@ def raf_ayarla(oturum_id: int, istek: RafAyar, c=DB):
     o = oturum_getir(oturum_id, c)
     sonuc = matching.okut(c, o, "##RAF-%s##" % istek.raf.strip().upper(),
                           zorla=istek.zorla)
+    c.commit()
+    sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
+    return sonuc
+
+
+@router.post("/oturum/{oturum_id}/adet")
+def adet_ayarla(oturum_id: int, istek: AdetAyar, c=DB):
+    """Sıradaki grubun adedini okuyucusuz gir (telefondaki tuş takımı).
+
+    `##ADET-N##` komut barkoduyla BİREBİR aynı yoldan geçer (`matching.okut`) —
+    iki giriş yolu iki ayrı davranışa ayrılmasın. Komut barkodu sabit adetlerle
+    sınırlı; telefon ara değerleri girer.
+    """
+    o = oturum_getir(oturum_id, c)
+    if o["durum"] != "acik":
+        raise HTTPException(409, "Oturum kapalı.")
+    if istek.adet < 0 or istek.adet > norm.ADET_TAVAN:
+        raise HTTPException(400, "Adet 0 ile %d arasında olmalı." % norm.ADET_TAVAN)
+    sonuc = matching.okut(c, o, "##ADET-%d##" % istek.adet)
     c.commit()
     sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
     return sonuc

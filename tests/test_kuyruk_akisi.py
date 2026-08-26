@@ -7,7 +7,7 @@ hangi rafta okutulduğu hatırlanamıyor. Çözüm sırası:
   3. not ve fotoğraf (isteğe bağlı hatırlatıcılar)
 """
 from app import matching
-from tests.conftest import oturum_taze
+from tests.conftest import haric_kur, oturum_taze
 
 SONRAKI = "##SONRAKI##"
 BILINMEYEN = ("198701689928", "EDBP0153231475674")
@@ -80,6 +80,36 @@ def test_rafsiz_sayimda_kapi_calisir(c, ot, yaz):
     """Raf hiç kullanılmıyorsa da bitirirken kuyruk uyarısı gelmeli."""
     yaz(*BILINMEYEN, SONRAKI)
     assert yaz("##BITIR##")["tip"] == "bitir_engel"
+
+
+def test_bitir_kapanmamis_grubu_da_gorur(c, ot, yaz):
+    """Regresyon (ACIL_PLAN.md A2): kapı kendi deliğini açıyordu.
+
+    Kullanıcı tanınmayan bir ürünü okutup SONRAKI demeden ##BITIR## derse:
+    kapılar önce boş kuyruğa bakıyor, SONRA `grup_coz` tampondaki grubu YENİ
+    bir kuyruk kaydına yazıyor ve oturum kapanıyordu. Kullanıcı "bitti" sesini
+    duyup depodan çıkıyor, elindeki ürün kayıt dışı kalıyordu.
+
+    Doğrusu: tampon önce kapanır, kapılar sonra bakar.
+    """
+    yaz(*BILINMEYEN)                       # SONRAKI YOK — grup hâlâ tamponda
+    r = yaz("##BITIR##")
+    assert r["tip"] == "bitir_engel"
+    assert len(r["kuyruk"]) == 1
+    assert oturum_taze(c, ot)["durum"] == "acik"
+    assert len(matching.bekleyen_kuyruk(c, ot["id"])) == 1
+
+
+def test_bitir_kapanmamis_eslesen_grubu_kaybetmez(c, ot, yaz):
+    """Tanınan bir grup da kaybolmamalı: yazılır ve oturum normal kapanır."""
+    b = c.execute("""SELECT seri FROM beklenen WHERE yukleme=1 AND ambar='1'
+                     AND haric=0 AND izleme='seri' AND kirli=0 AND seri<>''
+                     ORDER BY id LIMIT 1""").fetchone()
+    yaz(b["seri"])                         # SONRAKI YOK
+    assert yaz("##BITIR##")["tip"] == "bitti"
+    assert oturum_taze(c, ot)["durum"] == "bitti"
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='eslesti'",
+                     (ot["id"],)).fetchone()["n"] == 1
 
 
 # ---------------------------------------------------------------- 2. arama / listeleme
@@ -164,7 +194,8 @@ def test_arama_ayni_raftakini_one_alir(c, ot, yaz):
 
 def test_arama_haric_kalemi_gostermez(c, ot):
     """Lisans / hizmet kalemi fiziksel nesne değil, bağlanacak hedef de değil."""
-    r = matching.ara(c, ot["yukleme"], ot["ambar"], "303-195-100C-001", limit=50,
+    _, _, kod = haric_kur(c)
+    r = matching.ara(c, ot["yukleme"], ot["ambar"], kod, limit=50,
                      oturum=ot["id"])
     assert r["satirlar"] == []
 

@@ -74,6 +74,28 @@ def yaz(c, ot):
     return _yaz
 
 
+def haric_kur(c, yukleme=1, tip="tur", desen="TK"):
+    """Test verisinde GERÇEKTEN satır yakalayan bir sayım dışı kuralı kurar.
+
+    Testler eskiden varsayılan `LIC` kuralına dayanıyordu: örnek veride tek bir
+    satırı yakalıyordu ve o satır bir LİSANS DEĞİL, gerçek bir ağ kartıydı
+    (`303-195-100C-001`, "...Ethernet S-LIC-E Optical"). Yani testler hatayı
+    doğru davranış diye kilitlemişti. Artık hariç davranışı, veriye gerçekten
+    uyan bir kuralla sınanıyor.
+
+    (kural_id, satir_sayisi, ornek_kod) döner.
+    """
+    from app import importer
+    c.execute("INSERT OR IGNORE INTO haric_kural(tip,desen,aktif,varsayilan) "
+              "VALUES(?,?,1,0)", (tip, desen))
+    kid = c.execute("SELECT id FROM haric_kural WHERE tip=? AND desen=?",
+                    (tip, desen)).fetchone()["id"]
+    sayim = importer.haric_uygula(c, yukleme)
+    kod = c.execute("SELECT kod FROM beklenen WHERE yukleme=? AND haric=1 "
+                    "ORDER BY id LIMIT 1", (yukleme,)).fetchone()["kod"]
+    return kid, sayim[kid]["satir"], kod
+
+
 def oturum_taze(c, ot):
     """aktif_raf gibi alanlar değişebildiği için oturum satırını tazeler."""
     return c.execute("SELECT * FROM oturum WHERE id=?", (ot["id"],)).fetchone()

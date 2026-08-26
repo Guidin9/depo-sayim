@@ -37,15 +37,21 @@ CREATE TABLE IF NOT EXISTS haric_kural(
 
 CREATE TABLE IF NOT EXISTS oturum(
   id INTEGER PRIMARY KEY, yukleme INT, ambar TEXT, basla TEXT, bitir TEXT,
-  aktif_raf TEXT, durum TEXT DEFAULT 'acik');
+  aktif_raf TEXT, durum TEXT DEFAULT 'acik', bekleyen_adet INT DEFAULT 0);
 
 -- ad: kullanıcının elle yazdığı ürün adı. Tiger'da kaydı olmayan bir ürün
 -- fazla işaretlendiğinde `kod` boş kalır ve raporda açıklama üretilemez;
 -- isimsiz fazla kaydı sonradan hiçbir işe yaramıyor (DEMO_FEEDBACK.md 3).
+-- geri: bu okutmanın KENDİ SATIRI DIŞINDA ne yarattığı (JSON).
+--   {"ogrenilen": ["198701689928"], "etiket": "DS-000045"}
+-- ##GERIAL## bunu okuyup `eslesme` kaydını siler ve etiket bağlamasını çözer.
+-- Olmadan geri alma yarım kalıyordu: okutma siliniyor ama öğrenilen barkod
+-- kalıcı olarak yanlış malzemeye bağlı kalıyor ve Barkod Tablosu sekmesinden
+-- Tiger'ın malzeme kartına yazılmak üzere listeleniyordu.
 CREATE TABLE IF NOT EXISTS okutma(
   id INTEGER PRIMARY KEY, oturum INT, ts TEXT, ham TEXT, kod TEXT, seri TEXT,
   miktar REAL DEFAULT 1, beklenen_id INT, tip TEXT, raf TEXT, grup INT,
-  not_ TEXT, ad TEXT);
+  not_ TEXT, ad TEXT, geri TEXT);
 CREATE INDEX IF NOT EXISTS ix_ok_bek  ON okutma(oturum, beklenen_id);
 CREATE INDEX IF NOT EXISTS ix_ok_kod  ON okutma(oturum, kod);
 CREATE INDEX IF NOT EXISTS ix_ok_grup ON okutma(oturum, grup);
@@ -109,8 +115,14 @@ EK_SUTUNLAR = [
     ("okutma", "grup", "INT"),
     ("okutma", "raf", "TEXT"),
     ("okutma", "ad", "TEXT"),
+    # ##GERIAL##'in geri alacağı yan etkiler (öğrenilen barkod, bağlanan etiket).
+    ("okutma", "geri", "TEXT"),
     ("kuyruk_foto", "okutma", "INT"),
     ("oturum", "aktif_raf", "TEXT"),
+    # Sıradaki grubun adedi (##ADET-25## / telefondaki tuş takımı). Lot ve
+    # izlemesiz kalemde 77 adedi 77 kez okutmamak için — CLAUDE.md 2.4.
+    # Grup kapanınca sıfırlanır, oturumda kalıcı değildir.
+    ("oturum", "bekleyen_adet", "INT DEFAULT 0"),
 ]
 
 # EK_SUTUNLAR'daki bir sütuna dayanan indeksler. SEMA'ya YAZILAMAZLAR.
@@ -128,7 +140,11 @@ EK_INDEKS = [
 HARIC_VARSAYILAN = [
     ("tur", "DESTEK-HP"), ("tur", "YAZILIM"), ("tur", "MİCROSOFT OPEN"),
     ("tur", "HİZMET"), ("tur", "FİKTİF"),
-    ("aciklama", "LIC"), ("aciklama", "LİSANS"), ("aciklama", "E-LTU"),
+    # "LIC" DEĞİL: desenler norm() üzerinden alt dize olarak aranıyor ve
+    # normalize edilmiş metinde kelime sınırı kalmıyor. Gerçek veride
+    # "Dual Port 10GB Ethernet S-LIC-E Optical" (bir ağ kartı) lisans sanılıp
+    # sayım dışı bırakılıyordu — tüm Ambar 1'de hariç edilen TEK satır oydu.
+    ("aciklama", "LICENSE"), ("aciklama", "LİSANS"), ("aciklama", "E-LTU"),
     ("aciklama", "NAKLİYE"), ("aciklama", "KARGO"),
 ]
 
@@ -146,6 +162,7 @@ def baglan(yol=None):
     c.executescript(SEMA)
     goc(c)
     bolunmus_fazlalari_birlestir(c)
+    lic_kuralini_duzelt(c)
     kurallari_tohumla(c)
     etiketleri_geri_yukle(c)
     c.commit()
@@ -216,6 +233,38 @@ def bolunmus_fazlalari_birlestir(c):
             c.execute("UPDATE kuyruk_foto SET okutma=? WHERE okutma=?",
                       (kalan["id"], r["id"]))
             c.execute("DELETE FROM okutma WHERE id=?", (r["id"],))
+
+
+def lic_kuralini_duzelt(c):
+    """Fazla geniş "LIC" hariç kuralını "LICENSE" ile değiştirir.
+
+    `kurallari_tohumla()` yalnızca tablo BOŞKEN çalışır, o yüzden varsayılan
+    listesini düzeltmek mevcut veritabanlarına ulaşmıyor. Bu onarım ulaştırır.
+
+    Neden gerekti: kural desenleri `norm()` çıktısında alt dize olarak aranıyor
+    ve normalize edilmiş metinde kelime sınırı yok
+    ("...ETHERNETSLICOPTICAL"). Üç harflik "LIC" gerçek bir ağ kartını
+    (`303-195-100C-001`, EMC Dual Port 10GB Ethernet S-LIC-E) lisans sanıp
+    sayım dışı bırakıyordu — üstelik gerçek yazılım lisansları (OEM MICROSOFT
+    SQL SERVER) filtreye hiç takılmıyordu. Filtre tam tersini yapıyordu.
+
+    Yalnızca VARSAYILAN kurala dokunur: kullanıcı deseni elle değiştirdiyse
+    (`varsayilan=0`) kararı onundur. Değişiklik olursa hariç bayrakları tüm
+    yüklemelerde yeniden hesaplanır, yoksa düzeltme bir sonraki yüklemeye
+    kadar görünmezdi. Idempotent: LIC kuralı kalmayınca hiçbir şey yapmaz.
+    """
+    var = c.execute("SELECT id FROM haric_kural WHERE tip='aciklama' AND desen='LIC' "
+                    "AND varsayilan=1").fetchone()
+    if not var:
+        return
+    if c.execute("SELECT 1 FROM haric_kural WHERE tip='aciklama' AND desen='LICENSE'"
+                 ).fetchone():
+        c.execute("DELETE FROM haric_kural WHERE id=?", (var["id"],))
+    else:
+        c.execute("UPDATE haric_kural SET desen='LICENSE' WHERE id=?", (var["id"],))
+    from . import importer
+    for r in c.execute("SELECT id FROM yukleme").fetchall():
+        importer.haric_uygula(c, r["id"])
 
 
 def etiketleri_geri_yukle(c):

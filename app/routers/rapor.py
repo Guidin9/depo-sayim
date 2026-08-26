@@ -11,6 +11,8 @@ router = APIRouter(prefix="/api", tags=["rapor"])
 
 class KartIstek(BaseModel):
     raflar: list[str] = []
+    # None = varsayılan adet barkodları (1/5/10/25/50/100). Boş liste = hiç basma.
+    adetler: list[int] | None = None
 
 
 class RafEtiketIstek(BaseModel):
@@ -44,7 +46,7 @@ def indir(oturum_id: int, c=DB):
 
 @router.post("/komut-karti", response_class=HTMLResponse)
 def komut_karti(istek: KartIstek):
-    return HTMLResponse(barkod.kart_html(istek.raflar))
+    return HTMLResponse(barkod.kart_html(istek.raflar, istek.adetler))
 
 
 @router.post("/raf-etiketi", response_class=HTMLResponse)

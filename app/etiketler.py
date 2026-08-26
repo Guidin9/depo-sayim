@@ -266,6 +266,17 @@ def bagla(c, etiket_kod, malzeme, beklenen_id, oturum, ts, raf):
               (malzeme, beklenen_id, oturum, ts, raf, norm(etiket_kod)))
 
 
+def coz_bagla(c, etiket_kod):
+    """Bağlamayı çözer — etiket havuza geri döner. `##GERIAL##` kullanır.
+
+    Etiket numarası TÜKETİLMEZ: `basim` kaydı ve CSV defteri yerinde kalır,
+    yalnızca "neye yapıştı" bilgisi silinir. Fiziksel etiket hâlâ elde ya da
+    ürünün üstünde; bir sonraki okutmada yeniden bağlanır.
+    """
+    c.execute("""UPDATE etiket SET malzeme=NULL, beklenen_id=NULL, oturum=NULL,
+                 ts_bagla=NULL, raf=NULL WHERE kod=?""", (norm(etiket_kod),))
+
+
 # ------------------------------------------------------- sıfırlamaya dayanma
 def klasor(c):
     """Basım CSV'lerinin klasörü — bağlantının veritabanı dosyasının yanında.

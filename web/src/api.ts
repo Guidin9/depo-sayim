@@ -77,6 +77,8 @@ export type Durum = {
   yukleme: number;
   ambar: string;
   aktif_raf: string | null;
+  /** Sıradaki grubun adedi — ##ADET-N## / telefon tuş takımı. 0 = verilmedi. */
+  bekleyen_adet: number;
   durum: string;
   sayac: Sayac;
   tampon: TamponSatiri[];
@@ -99,6 +101,23 @@ export type OkutmaSonucu = {
   yeni?: string;
   toplam?: number;
   beklenen?: number;
+  /** Adet dalında hangi lot satırına yazıldığı — çok lotlu malzemede şart. */
+  izleme?: "seri" | "lot" | "yok";
+  /** Bu grupta işlenen MİKTAR (kaç ürün) ve kaç beklenen satırına dağıtıldığı.
+      `adet` ile karıştırmayın: o, tamponda kaç BARKOD olduğunu söylüyor. */
+  miktar?: number;
+  satir?: number;
+  /** Seri takipli kalemde girilen adet uygulanamadı — sessizce yutmuyoruz. */
+  adet_yersiz?: number | null;
+  /** Adet tavanı aşıldığında dönen sınır. */
+  tavan?: number;
+  /** tip="haric": kalemi sayım dışı bırakan kural (`tur:TK`, `aciklama:LİSANS`). */
+  sebep?: string;
+  /** tip="slot": sayıldı ama Tiger'a yazılacak seri numarası verilmedi. */
+  sn_yok?: boolean;
+  /** ##GERIAL## geri alınan yan etkileri bildirir. */
+  unutulan?: string[];
+  etiket_cozuldu?: string | null;
   barkodlar?: string[];
   ogrenilen?: string[];
   raf?: string;
@@ -398,6 +417,10 @@ export const api = {
     istek<{ adresler: string[]; telefon: string[]; port: number; yerel: string }>("/api/ag"),
   rafAyarla: (id: number, raf: string, zorla = false) =>
     gonder<OkutmaSonucu>(`/api/oturum/${id}/raf`, { raf, zorla }),
+  /** Sıradaki grubun adedi. 0 sıfırlar, öteki değerler mevcuda EKLENİR —
+      ##ADET-N## komut barkoduyla birebir aynı yol. */
+  adetAyarla: (id: number, adet: number) =>
+    gonder<OkutmaSonucu>(`/api/oturum/${id}/adet`, { adet }),
   raflar: (id: number) => istek<string[]>(`/api/oturum/${id}/raflar`),
 
   onizleme: (id: number) => istek<RaporOnizleme>(`/api/oturum/${id}/rapor/onizleme`),
@@ -441,11 +464,11 @@ export const api = {
     return y.text();
   },
 
-  komutKarti: async (raflar: string[]) => {
+  komutKarti: async (raflar: string[], adetler?: number[]) => {
     const y = await fetch("/api/komut-karti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ raflar }),
+      body: JSON.stringify({ raflar, adetler: adetler ?? null }),
     });
     if (!y.ok) throw new ApiHatasi("Komut kartı üretilemedi");
     return y.text();

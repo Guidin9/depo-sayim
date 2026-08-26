@@ -2,7 +2,7 @@
 from openpyxl import load_workbook
 
 from app import matching, reports
-from tests.conftest import oturum_taze
+from tests.conftest import haric_kur, oturum_taze
 
 SONRAKI = "##SONRAKI##"
 
@@ -105,10 +105,16 @@ def test_lot_adet_fazlasi(c, ot, yaz):
 
 
 def test_haric_kalem_eksikte_yok_dipnotta_var(c, ot):
+    """Sayım dışı kalem Eksik sekmesine girmez, sayısı dipnotta durur.
+
+    Kural veriye gerçekten uyan bir desenle kuruluyor: varsayılanlar bu veride
+    hiçbir satır yakalamıyor ve yakalamaMAlı da (bkz. tests/test_haric.py).
+    """
+    _, satir, kod = haric_kur(c)
     veri = reports.rapor_verisi(c, ot["id"])
-    assert not _bul(_satirlar(veri, "Eksik"), "303-195-100C-001")
+    assert not _bul(_satirlar(veri, "Eksik"), kod)
     assert any("sayım dışı" in d for d in veri["Eksik"]["dipnot"])
-    assert veri["_ozet"]["haric"] == 1
+    assert veri["_ozet"]["haric"] == satir
 
 
 def test_excel_dosyasi_yazilir(c, ot, yaz, tmp_path):

@@ -226,6 +226,16 @@ export const Pano = (p: Props) => (
   </Ikon>
 );
 
+/* Adet / miktar: üst üste konmuş katmanlar. Lot ve dökme kalemlerde "tek satır
+   çok adet" fikrini anlatan tek şekil — kutu ikonu tekil ürün çağrıştırıyordu. */
+export const Katman = (p: Props) => (
+  <Ikon {...p}>
+    <path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z" />
+    <path d="M3 12.5 12 17l9-4.5" />
+    <path d="M3 17 12 21.5 21 17" />
+  </Ikon>
+);
+
 export const Bos = (p: Props) => (
   <Ikon {...p}>
     <circle cx="12" cy="12" r="2" />

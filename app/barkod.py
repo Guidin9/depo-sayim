@@ -43,11 +43,28 @@ def _kart(kod, ad, ac, renk):
             "<div class=ac>%s</div></div>" % (renk, ad, _svg(kod), kod, ac))
 
 
-def kart_html(raflar=None):
-    """Yazdırılabilir A4 komut kartı HTML'i döner."""
+ADET_VARSAYILAN = (1, 5, 10, 25, 50, 100)
+
+
+def kart_html(raflar=None, adetler=None):
+    """Yazdırılabilir A4 komut kartı HTML'i döner.
+
+    `adetler`: lot / izlemesiz kalemlerde miktar girmek için basılacak
+    `##ADET-N##` barkodları (CLAUDE.md 2.4). Değerler BİRİKİR — 25 iki kez
+    okutulunca 50 olur — o yüzden her sayıyı basmaya gerek yok.
+    """
     raflar = [str(r).strip().upper() for r in (raflar or []) if str(r).strip()]
+    adetler = ADET_VARSAYILAN if adetler is None else adetler
+    adetler = sorted({int(a) for a in adetler if 0 < int(a) <= 9999})
     parcalar = [_kart(k, a, c, RENKLER[i % len(RENKLER)])
                 for i, (k, a, c) in enumerate(KOMUTLAR)]
+    for a in adetler:
+        parcalar.append(_kart(
+            "##ADET-%d##" % a, "%d ADET" % a,
+            "Lot/dökme kalemde miktar. Üst üste okutulursa toplanır.", "#00695c"))
+    if adetler:
+        parcalar.append(_kart("##ADET-0##", "ADEDİ SIFIRLA",
+                              "Yanlış adet okuttuysan bunu okut.", "#00695c"))
     for r in raflar:
         parcalar.append(_kart("##RAF-%s##" % r, "RAF %s" % r,
                               "Bu rafta saymaya başlarken okut.", "#37474f"))

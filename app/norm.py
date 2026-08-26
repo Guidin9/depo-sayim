@@ -32,15 +32,30 @@ KOMUT = {"##SONRAKI##": "sonraki", "##IPTAL##": "iptal", "##GERIAL##": "gerial",
          "##FAZLA##": "fazla", "##ATLA##": "atla", "##BITIR##": "bitir"}
 
 RAF_ONEK = "##RAF-"
+ADET_ONEK = "##ADET-"
+
+# Adet barkodunun üst sınırı. Dört hane, çünkü beş haneli bir değer okuma
+# hatasıdır: en büyük Tiger kalemi 460 adet.
+ADET_TAVAN = 9999
 
 
 def komut_coz(ham):
-    """Okutulan değer komut barkodu mu? (komut_adi, raf) döner."""
+    """Okutulan değer komut barkodu mu? (komut_adi, deger) döner.
+
+    `deger` rafta raf adı (metin), adette miktar (tam sayı), ötekilerde None.
+    """
     u = str(ham).strip().upper()
     if u in KOMUT:
         return KOMUT[u], None
     if u.startswith(RAF_ONEK) and u.endswith("##") and len(u) > len(RAF_ONEK) + 2:
         return "raf", u[len(RAF_ONEK):-2]
+    # ##ADET-25## — lot / izlemesiz kalemde "bu üründen 25 tane var" (CLAUDE.md 2.4).
+    # Tanınmayan bir ##ADET-...## komut değil sayılır ve tampona düşer; sessizce
+    # 0 adet saymaktansa kullanıcının gördüğü bir "bilinmiyor" daha iyidir.
+    if u.startswith(ADET_ONEK) and u.endswith("##"):
+        s = u[len(ADET_ONEK):-2]
+        if s.isdigit() and int(s) <= ADET_TAVAN:
+            return "adet", int(s)
     return None, None
 
 

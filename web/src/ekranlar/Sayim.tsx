@@ -50,18 +50,33 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
         alt:
           `${r.aciklama ?? ""}` +
           (r.ogrenilen?.length ? ` · öğrenildi: ${r.ogrenilen.join(", ")}` : "") +
+          (r.adet_yersiz ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli` : "") +
           (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
         ...YESIL,
       };
     case "slot":
-      return {
-        Ikon: Ik.Onay,
-        ana: `${r.kod} — uydurma kayıt düzeltildi`,
-        alt:
-          `${r.eski} → ${r.yeni || "?"} · ${r.aciklama ?? ""}` +
-          (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
-        ...YESIL,
-      };
+      // Seri numarası verilmediyse sayım işlendi ama Tiger düzeltmesi
+      // ÜRETİLMEDİ. Eskiden buraya malzeme kodu yazılıyor ve Tiger'a kirli bir
+      // seri numarası öneriliyordu; şimdi boş bırakılıyor, kullanıcı uyarılıyor.
+      return r.sn_yok
+        ? {
+            Ikon: Ik.Uyari,
+            ana: `${r.kod} — sayıldı, seri numarası YOK`,
+            alt:
+              `${r.aciklama ?? ""} · Tiger'daki uydurma kayıt (${r.eski}) düzelmeyecek. ` +
+              "Düzelmesi için üretici S/N'yi okut ya da bir DS- etiketi yapıştırıp okut, " +
+              "sonra Ctrl+Z ile bu okutmayı geri al.",
+            ...SARI,
+          }
+        : {
+            Ikon: Ik.Onay,
+            ana: `${r.kod} — uydurma kayıt düzeltildi`,
+            alt:
+              `${r.eski} → ${r.yeni} · ${r.aciklama ?? ""}` +
+              (r.adet_yersiz ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli` : "") +
+              (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
+            ...YESIL,
+          };
     case "adet":
       // Lot/izlemesiz kalemde boş etiket okutulmuşsa bağlanacak kayıt yok:
       // sayım işlendi ama etiket havuzda kalsın diye kullanıcı uyarılır.
@@ -74,10 +89,51 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
           }
         : {
             Ikon: Ik.Onay,
-            ana: `${r.kod} — sayılan ${r.toplam} / beklenen ${r.beklenen}`,
-            alt: r.aciklama ?? "",
+            ana:
+              `${r.kod} — sayılan ${r.toplam} / beklenen ${r.beklenen}` +
+              ((r.miktar ?? 1) > 1 ? `  (+${r.miktar})` : ""),
+            // Sayaç artık malzemenin geneli değil, yazıldığı SATIR için.
+            // Çok lotlu malzemede hangi lota işlendiği görünmezse "1 / 1"
+            // sonuçları birbirinin aynısı görünür (CLAUDE.md 2.4).
+            alt:
+              (r.izleme === "lot" && r.seri ? `Lot ${r.seri} · ` : "") +
+              ((r.satir ?? 1) > 1 ? `${r.satir} lot satırına dağıtıldı · ` : "") +
+              (r.aciklama ?? ""),
             ...YESIL,
           };
+    // Adet girişi (CLAUDE.md 2.4). Henüz sayılmadı — sıradaki grubu bekliyor.
+    case "adet_bekliyor":
+      return r.miktar
+        ? {
+            Ikon: Ik.Raf,
+            ana: `Sıradaki ürün: ${r.miktar} adet`,
+            alt: "Şimdi ürünün barkodunu okut, sonra SIRADAKİ ÜRÜN. Üst üste okutursan toplanır.",
+            ...SARI,
+          }
+        : {
+            Ikon: Ik.Raf,
+            ana: "Adet sıfırlandı",
+            alt: "Sıradaki ürün 1 adet sayılacak.",
+            ...SARI,
+          };
+    case "adet_tavan":
+      return {
+        Ikon: Ik.Uyari,
+        ana: `Adet tavanı aşıldı — ${r.tavan} üstüne çıkılamaz`,
+        alt: `Bekleyen adet ${r.miktar} olarak kaldı. Sıfırlamak için ADEDİ SIFIRLA okut.`,
+        ...KIRMIZI,
+      };
+    // Sayım dışı kalem. Hiçbir şey yazılmadı — sessiz kalmak, kullanıcının
+    // elindeki fiziksel ürünü mutabakattan buharlaştırıyordu.
+    case "haric":
+      return {
+        Ikon: Ik.Engel,
+        ana: `SAYIM DIŞI — ${r.kod}`,
+        alt:
+          `${r.aciklama ?? ""} · "${r.sebep}" kuralı bu kalemi sayım dışı bırakıyor, ` +
+          "sayılmadı. Sayılması gerekiyorsa Kurulum ekranından kuralı kapat.",
+        ...SARI,
+      };
     case "fazla":
     case "fazla_elle":
       return {
@@ -93,7 +149,9 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
       return {
         Ikon: Ik.Soru,
         ana: `KARŞILIĞI BULUNAMADI — ${r.kod}`,
-        alt: `${r.aciklama ?? ""} · Kuyrukta seni bekliyor: stokta karşılığı var mı, yoksa gerçekten fazla mı?`,
+        alt:
+          `${r.aciklama ?? ""} · Kuyrukta seni bekliyor: stokta karşılığı var mı, yoksa gerçekten fazla mı?` +
+          (r.adet_yersiz ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli` : ""),
         ...SARI,
       };
     case "tekrar":
@@ -118,7 +176,12 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
       return {
         Ikon: Ik.Geri,
         ana: r.kapsam === "grup" ? "SON GRUP GERİ ALINDI" : "SON OKUTMA SİLİNDİ",
-        alt: r.kapsam === "grup" ? (r.barkodlar ?? []).join(", ") : (r.ham ?? ""),
+        // Yan etkiler de geri alındı: öğrenilen barkod unutuldu, etiket havuza
+        // döndü. Söylenmezse kullanıcı öğrenmenin durduğunu sanır.
+        alt:
+          (r.kapsam === "grup" ? (r.barkodlar ?? []).join(", ") : (r.ham ?? "")) +
+          (r.unutulan?.length ? ` · unutuldu: ${r.unutulan.join(", ")}` : "") +
+          (r.etiket_cozuldu ? ` · ${r.etiket_cozuldu} havuza döndü` : ""),
         ...SARI,
       };
     case "raf":
@@ -299,6 +362,14 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               </span>
             ) : (
               <span className="text-solgun italic">raf seçilmedi</span>
+            )}
+            {/* Bekleyen adet sessiz kalmamalı: kullanıcı 25 okuttuğunu unutup
+                sonraki ürüne geçerse 25 adet yanlış kaleme yazılır. */}
+            {durum.bekleyen_adet > 0 && (
+              <span className="ml-3 inline-flex items-center gap-1 border border-vurgu
+                               bg-vurgu-tint px-2 py-0.5 text-govde font-bold text-vurgu">
+                sıradaki: <span className="rakam">{durum.bekleyen_adet}</span> adet
+              </span>
             )}
           </div>
         </div>

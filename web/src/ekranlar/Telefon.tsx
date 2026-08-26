@@ -237,6 +237,11 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
   /* Elle fazla işaretlenen kayıtlar — adı yazılana ya da geçilene kadar. */
   const [fazlaIdler, setFazlaIdler] = useState<number[]>([]);
   const [fazlaAd, setFazlaAd] = useState("");
+  /* Adet paneli — lot / dökme kalemde miktar girişi (CLAUDE.md 2.4).
+     Komut kartındaki ##ADET-N## barkodları sabit değerlerle sınırlı; ara
+     değerler buradan girilir. İkisi de aynı API ucuna gider. */
+  const [adetPanel, setAdetPanel] = useState(false);
+  const [adetYazi, setAdetYazi] = useState("");
 
   async function fazlaAdKaydet() {
     const ad = fazlaAd.trim();
@@ -282,6 +287,22 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
       navigator.vibrate?.(r.tip === "eslesti" || r.tip === "slot" ? 60 : [80, 50, 80]);
       setHata(null);
       await kuyrukTazele();
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
+  }
+
+  async function adetGonder(n: number) {
+    if (!oturum || mesgul || !Number.isFinite(n)) return;
+    setMesgul(true);
+    try {
+      await api.adetAyarla(oturum, Math.max(0, Math.trunc(n)));
+      navigator.vibrate?.(40);
+      setAdetYazi("");
+      setHata(null);
       tazele();
     } catch (e) {
       setHata(e instanceof Error ? e.message : String(e));
@@ -690,7 +711,22 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
             )}
           </div>
         </div>
-        <div className="ml-auto shrink-0">{baglantiSeridi}</div>
+        {/* Bekleyen adet başlıkta durur: panel kapalıyken de görünmezse
+            kullanıcı 25 girdiğini unutup sonraki ürüne geçer. */}
+        {durum.bekleyen_adet > 0 && (
+          <button
+            type="button"
+            onClick={() => setAdetPanel(true)}
+            className="border-vurgu bg-vurgu-tint text-vurgu ml-auto flex shrink-0
+              items-center gap-1 rounded-sm border px-2 py-1 text-mikro font-bold"
+          >
+            <Ik.Katman boy={14} />
+            <span className="rakam">{durum.bekleyen_adet}</span> adet
+          </button>
+        )}
+        <div className={`shrink-0 ${durum.bekleyen_adet > 0 ? "" : "ml-auto"}`}>
+          {baglantiSeridi}
+        </div>
       </header>
 
       {hata && (
@@ -754,9 +790,10 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
 
       {/* İkincil kumanda. Birincil iki eylem alt çubukta; bunlar daha seyrek
           ama yine de karta uzanmadan erişilebilmeli. */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         {[
           { e: "Raf", I: Ik.Raf, f: () => void rafDegistir() },
+          { e: "Adet", I: Ik.Katman, f: () => setAdetPanel((v) => !v) },
           { e: "İptal", I: Ik.Kapat, f: () => void komut("##IPTAL##") },
           { e: "Atla", I: Ik.Soru, f: () => void komut("##ATLA##") },
           { e: "Fazla", I: Ik.Uyari, f: () => void komut("##FAZLA##") },
@@ -774,6 +811,69 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
           </button>
         ))}
       </div>
+
+      {/* Adet paneli. Bekleyen adet panel kapalıyken de görünür (aşağıdaki
+          rozet), yoksa kullanıcı 25 girdiğini unutup sonraki ürüne geçer. */}
+      {adetPanel && (
+        <section className="border-vurgu bg-vurgu-tint space-y-3 rounded-sm border p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-mikro text-vurgu font-semibold tracking-wider uppercase">
+              sıradaki ürünün adedi
+            </div>
+            <div className="rakam text-vurgu text-2xl font-bold">
+              {durum.bekleyen_adet || 1}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[1, 5, 10, 25, 50, 100].map((n) => (
+              <button
+                key={n}
+                type="button"
+                disabled={mesgul}
+                onClick={() => void adetGonder(n)}
+                className="border-cizgi-kuvvetli bg-panel rakam rounded-sm border py-3
+                  text-govde font-bold disabled:bg-panel2 disabled:text-solgun-hafif"
+              >
+                +{n}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={adetYazi}
+              onChange={(e) => setAdetYazi(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              onKeyDown={(e) => e.key === "Enter" && void adetGonder(Number(adetYazi))}
+              placeholder="elle"
+              className="border-cizgi-kuvvetli bg-zemin rakam w-24 rounded-sm border px-3
+                py-3 text-govde"
+            />
+            <button
+              type="button"
+              disabled={mesgul || !adetYazi}
+              onClick={() => void adetGonder(Number(adetYazi))}
+              className="bg-vurgu flex-1 rounded-sm py-3 text-govde font-bold text-white
+                disabled:bg-solgun-hafif"
+            >
+              Ekle
+            </button>
+            <button
+              type="button"
+              disabled={mesgul}
+              onClick={() => void adetGonder(0)}
+              className="border-cizgi-kuvvetli bg-panel rounded-sm border px-4 py-3
+                text-govde font-semibold"
+            >
+              Sıfırla
+            </button>
+          </div>
+          <p className="text-mikro text-solgun">
+            Değerler TOPLANIR. Sonra ürünün barkodunu okut ve SIRADAKİ ÜRÜN&rsquo;e bas.
+            Seri takipli kalemde adet uygulanmaz — her cihaz ayrı satırdır.
+          </p>
+        </section>
+      )}
 
       {son && (
         <div className={`girdi rounded-sm border px-4 py-3 ${seritSinifi(son.tip)}`}>
