@@ -597,7 +597,12 @@ diye kilitlemişti — `conftest.haric_kur`'daki `LIC` dersinin aynısı. Test
 verisi seçerken "bu sabit gerçekte ne demek?" diye sorun.
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 443 test geçiyor. **Arayüz yeniden
+altında React + Vite + Tailwind arayüz. **447 arka uç testi** (`pytest`) ve
+**32 arayüz testi** (`cd web && npm test`) geçiyor.
+
+Arayüz testleri derlemeden yalıtıldı: `tsconfig.json` test dosyalarını dışlar
+ve yapılandırma ayrı dosyadadır, çünkü test tarafındaki bir tip hatası sahaya
+giden `npm run build` çıktısını kırmamalı. Ayrıntı `MIMARI.md` §7. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
 kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
 
@@ -868,6 +873,12 @@ Hepsi `.gitignore`'da, yani `git clone` bunları hiç taşımaz. Buna rağmen
 bastırdıkları için yavaş diskte veya antivirüs taramalı makinede kurulum
 donmuş gibi görünüyor ve Ctrl+C ile kesiliyordu. Yarım kesilen kurulumda
 arayüz derlenmemiş oluyor ve `baslat.bat` "Arayuz derlenmemis" hatası veriyor.
+
+`npm install` **devDependency'leri de kurar** ve kurmak zorunda: derleme
+`vite`, `tailwindcss` ve `typescript`'e muhtaç, yani `--omit=dev` bir seçenek
+değil. Test araçları (vitest + jsdom + testing-library) da orada duruyor ve
+`node_modules`'ü 79,6 MB'tan 113,1 MB'a çıkarıyor. Depo laptopunda kurulum
+yavaşsa sebebi budur — bir kez inen bir maliyet, ama beklenmedik değil.
 
 Referans: `python -m venv` temiz bir makinede ~4 saniye. Dakikalar sürüyorsa
 klasör USB sürücüde ya da antivirüs her dosyayı tarıyordur.

@@ -1,0 +1,11 @@
+{
+  // Testlerin tip denetimi — DERLEMEDEN AYRI (`npm run test:tip`).
+  // Ana tsconfig testleri dislaniyor ki test tarafindaki bir hata sahaya giden
+  // `npm run build` ciktisini kirmasin; tip guvenligi burada geri aliniyor.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vitest/globals"]
+  },
+  "include": ["src"],
+  "exclude": []
+}

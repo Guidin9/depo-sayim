@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:izle": "vitest",
+    "test:tip": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -14,11 +17,15 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "vitest": "^4.1.11"
   }
 }

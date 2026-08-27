@@ -40,8 +40,14 @@ type Serit = {
   renk: IsimaRenk;
 };
 
-/** Okutma sonucunu ekranın üstündeki büyük şeride çevirir. */
-function seritMetni(r: OkutmaSonucu): Serit | null {
+/** Okutma sonucunu ekranın üstündeki büyük şeride çevirir.
+ *
+ * `export` yalnızca test içindir (`Sayim.serit.test.ts`) — bileşenin dışından
+ * çağrılmıyor. Saf fonksiyon: girdi sunucu yanıtı, çıktı renk + ikon + metin.
+ * Sahadaki en kritik karar burada veriliyor: kullanıcı ekrandaki RENGE bakıp
+ * sonraki ürüne geçiyor. Yanlış renk = üstünden geçilen hata.
+ */
+export function seritMetni(r: OkutmaSonucu): Serit | null {
   switch (r.tip) {
     case "eslesti":
       return {

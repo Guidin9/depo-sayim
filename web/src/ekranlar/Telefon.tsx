@@ -38,9 +38,12 @@ type Props = {
    İkisi de sessiz kalmamalı:
      * çelişkili grup — ##SONRAKI## unutulmuş, cihazlar ayrı ayrı sayıldı
      * seri no seçilmedi — Tiger'a önerilen değer bir tahmin */
-const DIKKAT_NOT = ["çelişkili grup", "seri no seçilmedi"];
+export const DIKKAT_NOT = ["çelişkili grup", "seri no seçilmedi"];
 
-function dikkatMi(not_: string | null) {
+/** `export` testler için: bu liste ARKA UÇTAKİ metne bağlı bir sözleşmedir.
+ *  `matching.py` o notları değiştirirse telefon sessizce yeşile döner —
+ *  `tests/test_telefon_notu.py` ve `Telefon.not.test.ts` ikisini birden tutar. */
+export function dikkatMi(not_: string | null) {
   return DIKKAT_NOT.some((x) => (not_ ?? "").includes(x));
 }
 

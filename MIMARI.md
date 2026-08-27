@@ -660,8 +660,10 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **413 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **447 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
+
+Arayüz tarafı ayrı: `cd web && npm test` ile **32 test** (vitest + jsdom).
 
 | Dosya | Kapsam |
 |---|---|
@@ -683,6 +685,8 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 | `test_yedek.py` | **I4**: `tip='yedek'` hiçbir mevcut sorguya sızmıyor, kendi sekmesinde çıkıyor |
 | `test_elle_giris.py` | **I5**: listeden seçerek sayma, öğrenme, çift bağlama koruması |
 | `test_kuyruk_adet.py` | Tanınmayan üründe girilen adedin kaybolmaması ve sonraki ürüne sızmaması |
+| `test_grup_celiskisi.py` | **B1**: `##SONRAKI##` unutulunca hiçbir cihazın kaybolmaması; öğrenme akışının bozulmadığı |
+| `test_telefon_notu.py` | **Telefon sözleşmesi**: `okutma.not_` metni telefonun aradığı dizeleri taşıyor (aşağıya bakın) |
 
 Denetimden çıkanlar (2026-08-27, kendi değişikliklerimin gözden geçirmesi):
 `eslesti` dalı `yeni_seri`'yi NULL bırakıp malzeme kodunu Tiger'a önerdiriyordu
@@ -700,8 +704,43 @@ oturum satırını tazeler).
 `conftest.py` **`deneme.XLSX` yoksa paketin tamamını atlar** — dosya gerçek
 stok ve tutar içerdiği için `.gitignore`'da.
 
-**Frontend testi yoktur.** `web/package.json` script'leri yalnızca `dev`,
-`build` (`tsc -b && vite build`), `preview`.
+### Arayüz testleri (`web/`, vitest + jsdom)
+
+| Komut | İş |
+|---|---|
+| `npm test` | Testleri bir kez çalıştırır (`vitest run`) |
+| `npm run test:izle` | İzleme kipi |
+| `npm run test:tip` | Testlerin TİP denetimi (`tsconfig.test.json`) |
+
+| Dosya | Kapsam |
+|---|---|
+| `src/ekranlar/Sayim.serit.test.ts` | Okutma sonucunun **rengi** ve metni — sahada kullanıcı renge bakıp geçiyor |
+| `src/liste.test.ts` | Eşleştirme listesinin süzmesi, Türkçe küçültme (`I`→`ı`, `İ`→`i`) |
+| `src/ekranlar/Telefon.not.test.ts` | Telefon şeridinin `not_` metnine bağlı sözleşmesi |
+
+**Testler DERLEMEDEN yalıtılmıştır.** `tsconfig.json` `*.test.ts(x)` dosyalarını
+`exclude` eder ve test yapılandırması ayrı dosyadadır (`vitest.config.ts`) —
+`npm run build` yalnızca `vite.config.ts`'i okur. Sebep: test tarafındaki bir
+tip hatası SAHAYA GİDEN derlemeyi kırmamalı (`baslat.bat` "Arayuz derlenmemis"
+derdi). Testin maliyeti uygulamanın çalışmaması olamaz. Tip güvenliği
+`npm run test:tip` ile geri alınıyor.
+
+Kurulduğunda `app/static` çıktısının **bit bazında değişmediği** doğrulandı
+(altı dosyanın da SHA-256'sı aynı). Uygulama kaynağına tek dokunuş iki
+fonksiyonun `export` edilmesiydi (`seritMetni`, `dikkatMi`); bundle'a etkisi
+olmadı çünkü ikisi de giriş noktasından erişilebilir değil.
+
+**İki dilli sözleşme:** telefon `OkutmaSonucu` görmez, akış satırını görür ve
+uyarı rengini `okutma.not_` METNİNDEN okur (`Telefon.tsx` → `DIKKAT_NOT`).
+`matching.py` o notu değiştirirse telefon sessizce yeşile döner. İki taraf da
+kilitli: `Telefon.not.test.ts` arayüzü, `tests/test_telefon_notu.py` arka ucu —
+sonuncusu `Telefon.tsx`'i okuyup listeleri karşılaştırır, yani metin bir
+tarafta değişirse test kırılır.
+
+Kurulum maliyeti: vitest + jsdom + testing-library `node_modules`'ü
+**79,6 → 113,1 MB** büyütüyor. `kurulum.bat` `npm install` çağırdığı için depo
+laptopu da indiriyor (derleme zaten `vite`/`tailwind`/`typescript`
+devDependency'lerine muhtaç, o yüzden `--omit=dev` bir seçenek değil).
 
 ---
 
@@ -732,9 +771,12 @@ stok ve tutar içerdiği için `.gitignore`'da.
   testlerin kendisi kilitlemişti — "tanınmayan üretici barkodu" sabiti olarak
   geçerli bir UPC kullanılıyordu ve `slot` dalının UPC'yi seri numarası diye
   Tiger'a önermesi doğru davranış sanılıyordu.
-* **Arayüzde hiç test yok** (~13k satır TS/TSX). `npx tsc --noEmit` tip
-  hatalarını yakalıyor, davranışı kimse yakalamıyor. Denetimdeki UI
-  doğrulaması elle tarayıcıda yapıldı.
+* **Arayüz testleri yeni ve dar** (8.295 satır TS/TSX, 32 test). Kapsanan:
+  şerit rengi/metni, liste süzme, telefon not sözleşmesi — yani "yanlış bilgi
+  gösterme" sınıfı. **Kapsanmayan:** okutma sırası (`gonder` kuyruğu; şu an
+  garantisi yalnızca bir yorum satırı), hata yolları (sunucu 500 dönerse ekran
+  ne yapıyor), bağlantı kopması, telefon-laptop yarışı, fotoğraf yükleme,
+  etiket basım ve eşleştirme ekranları. Bunlar hâlâ elle deneniyor.
 * `PUT /yukleme/{id}/kurallar` açık oturum sırasında `haric_uygula()`
   çalıştırıyor: sayılmış bir satır sayım dışına çıkarsa sayaç ve mutabakat
   kayar. Kural değiştirmek sayım öncesi bir iştir; arayüz uyarmıyor.

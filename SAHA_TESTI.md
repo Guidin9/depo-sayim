@@ -2,7 +2,8 @@
 
 **Bu dosyanın tek işi şu soruya cevap vermek: "sırada ne var?"**
 
-Durum (2026-08-27, denetim sonrası): 443 test geçiyor, arayüz derleniyor.
+Durum (2026-08-27, denetim sonrası): 447 arka uç + 32 arayüz testi geçiyor,
+arayüz derleniyor.
 `depo_sayim_bugs_improvements.md` ve `DEMO_FEEDBACK.md` maddelerinin hepsi
 kapalı.
 

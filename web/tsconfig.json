@@ -13,5 +13,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Test dosyalari DERLEMEYE girmez. `npm run build` -> `tsc -b` bu dosyayi
+  // okuyor; testler burada kalsaydi test tarafindaki bir tip hatasi SAHAYA
+  // GIDEN derlemeyi kirar ve baslat.bat "Arayuz derlenmemis" derdi. Testin
+  // maliyeti uygulamanin calismamasi olamaz.
+  // Testlerin tip denetimi ayri: `npm run test:tip` (tsconfig.test.json).
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"]
 }
