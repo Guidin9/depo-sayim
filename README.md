@@ -200,6 +200,10 @@ Yazdırılabilir kart: `POST /api/komut-karti` gövdesinde `{"raflar":["A1","B2"
 
 ---
 
+> **Sahada ne yapılacak?** `SAHA_TESTI.md` — tek liste. Kodda bilinen açık
+> hata yok; yazılanların hiçbiri gerçek okuyucu, yazıcı ve telefonla
+> denenmedi, sıradaki iş bu.
+
 ## Basılan her şey: Barkod ekranı
 
 Üst menüdeki **Barkod** düğmesi her şeyi tek yerde toplar: komut kartı, raf

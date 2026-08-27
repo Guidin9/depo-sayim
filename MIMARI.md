@@ -696,6 +696,9 @@ stok ve tutar içerdiği için `.gitignore`'da.
 
 ## 9. Bilinen sapmalar / açık işler
 
+**Sahada yapılacakların tek listesi `SAHA_TESTI.md`'dedir.** Aşağıdakiler
+"nerede duruyoruz" kaydı; "sırada ne var" sorusunun cevabı orada.
+
 * `depo_sayim_bugs_improvements.md` — **gerçek** sayım denemesinden çıkan
   1 bug + 5 feature. **Altısı da çözüldü** (2026-08-27), I3 dahil —
   `KUTU_TASARIM.md`. Seri takipli dal da yazıldı: kap okutunca otomatik kilit,

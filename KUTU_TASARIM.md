@@ -290,7 +290,8 @@ kilit ve sayaçtır.
 
 ## 11. Sahada denenecekler
 
-Aşağıdakiler kodda doğru, depoda doğrulanmadı:
+Aşağıdakiler kodda doğru, depoda doğrulanmadı. **Bütün saha listesi
+`SAHA_TESTI.md`'de** — burada yalnızca kap akışına özgü olanlar duruyor:
 
 1. Kap etiketi gerçek okuyucuyla okunuyor mu (büyük basım, laminatsız kap
    yüzeyi)?

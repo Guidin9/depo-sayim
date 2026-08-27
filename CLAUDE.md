@@ -494,6 +494,9 @@ Excel çıktısı üretiyoruz.
 
 ## 7. Mevcut durum
 
+**Sahada yapılacaklar `SAHA_TESTI.md`'dedir** — kodda bilinen açık hata yok,
+kalan iş depoda. "Ne yapmamız lazım?" sorusunun cevabı o dosyadır.
+
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
 altında React + Vite + Tailwind arayüz, 413 test geçiyor. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
@@ -609,6 +612,8 @@ hâlâ yok.
 | **Telefon tarayıcısı** | **TEST EDİLMEDİ** — asıl senaryo |
 
 ### Telefonda sırayla denenecekler
+
+*(Bu liste ve sahada denenecek her şey `SAHA_TESTI.md`'de toplandı.)*
 
 1. Sayfayı tamamen kapat, PC'deki QR'ı okut → `/telefon` açılıyor mu, gösterge
    🟢 mi?
