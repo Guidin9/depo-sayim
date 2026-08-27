@@ -9,6 +9,7 @@ satırı 'Malzeme Kodu' geçen ilk satır olarak aranır — prototipteki davran
 (depo_sayim.py:91-97).
 """
 import datetime
+import io
 import json
 import os
 
@@ -80,6 +81,47 @@ def _baslik_satiri(satir):
     return eslesme if "kod" in eslesme else None
 
 
+# Dosya biçimi UZANTIDAN DEĞİL İÇERİKTEN anlaşılır.
+# `bytes.fromhex` kullanılıyor, kaçış dizisi değil: imzalar ASCII dışı ve
+# kaynak dosyada ters bölülü hâlleri kolayca bozuluyor.
+ZIP_IMZA = bytes.fromhex("504b0304")    # xlsx / xlsm (OOXML aslında bir ZIP)
+OLE2_IMZA = bytes.fromhex("d0cf11e0")   # gerçek eski .xls (BIFF / OLE2)
+
+
+def _acilabilir(yol):
+    """openpyxl'e verilecek nesne. Gerçek eski .xls ise anlaşılır hata.
+
+    TIGER .XLS UZANTISIYLA XLSX YAZIYOR. Ankara deposunun 24.08.2026 raporu
+    tam olarak böyle: adı `... ankara depo.xls`, içeriği OOXML (ZIP).
+
+    openpyxl `load_workbook(yol)` çağrısında dosyanın İÇERİĞİNE değil ADINA
+    bakıyor ve `.xls` görünce `InvalidFileException` atıyor. O istisna
+    `YuklemeHatasi` değil, yani `routers/yukleme.py` onu yakalamıyordu:
+    kullanıcı Tiger'dan indirdiği dosyayı yüklemeye çalışınca **HTTP 500 ve
+    yığın izi** alıyordu — sayımın ilk adımında, hiçbir açıklama olmadan
+    (2026-08-27'de gerçek dosyayla üretildi).
+
+    Uzantıyı düzeltmesini kullanıcıdan istemek çözüm değil: dosyayı Tiger
+    üretiyor ve her rapor indirişinde aynı şey olacak.
+
+    Gerçek eski .xls (OLE2) ise openpyxl gerçekten okuyamaz; o zaman ne
+    yapacağını söyleyen bir hata veriyoruz, yığın izi değil.
+    """
+    with open(yol, "rb") as f:
+        bas = f.read(8)
+    if bas.startswith(OLE2_IMZA):
+        raise YuklemeHatasi(
+            "Bu dosya eski Excel (.xls) biçiminde. Excel'de açıp "
+            "'Farklı Kaydet > Excel Çalışma Kitabı (.xlsx)' ile kaydedip "
+            "yeniden yükleyin.")
+    if not bas.startswith(ZIP_IMZA):
+        raise YuklemeHatasi(
+            "Dosya bir Excel çalışma kitabı değil (içeriği tanınmadı).")
+    # Dosya nesnesi verilince openpyxl uzantıya BAKMAZ; içerik zaten OOXML.
+    with open(yol, "rb") as f:
+        return io.BytesIO(f.read())
+
+
 def excel_satirlar(yol):
     """(alan kümesi, satır sözlükleri) döner.
 
@@ -87,7 +129,7 @@ def excel_satirlar(yol):
     sayfalar sırayla denenir — rapor ilk sayfada olmayabilir.
     """
     from openpyxl import load_workbook
-    wb = load_workbook(yol, read_only=True, data_only=True)
+    wb = load_workbook(_acilabilir(yol), read_only=True, data_only=True)
     try:
         for ws in wb.worksheets:
             it = ws.iter_rows(values_only=True)
