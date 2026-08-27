@@ -27,6 +27,17 @@ def getir(c, oturum_id):
 
 
 def bitir(c, oturum_id):
+    """Oturumu kapatır. Açık kap varsa ÖNCE o kapanır.
+
+    İki `##BITIR##` yolu (komut barkodu ve /bitir ucu) burada birleşiyor;
+    kapatmayı ikisine ayrı ayrı yazmak, birinde unutulması demekti. Açık kap
+    kapanmadan oturum biterse kabın son bilinen adedi bu sayımla tazelenmez ve
+    gelecek yıl kap eski sayıyı önerir.
+    """
+    from . import matching
+    ot = getir(c, oturum_id)
+    if ot and ot["acik_kutu"]:
+        matching._kutu_kapat(c, ot)
     ts = datetime.datetime.now().isoformat()
     c.execute("UPDATE oturum SET bitir=?, durum='bitti' WHERE id=? AND bitir IS NULL",
               (ts, oturum_id))

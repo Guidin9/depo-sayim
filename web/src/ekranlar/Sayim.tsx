@@ -267,7 +267,16 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
         ...MAVI,
       };
     case "kilitac":
-      return { Ikon: Ik.KilitAcik, ana: "KİLİT AÇILDI", alt: "Normal sayıma dönüldü.", ...MAVI };
+      return {
+        Ikon: Ik.KilitAcik,
+        ana: "KİLİT AÇILDI",
+        // Kilit kabın kilidiyse kap da kapandı — sessiz kalmıyoruz, yoksa
+        // kullanıcı kabın hâlâ açık olduğunu sanır.
+        alt: r.kutu_kapandi
+          ? `${r.kutu_kapandi.kutu} kabı da kapandı — ${r.kutu_kapandi.sayilan} okutuldu.`
+          : "Normal sayıma dönüldü.",
+        ...MAVI,
+      };
     case "kilit_yok":
       return {
         Ikon: Ik.Engel,

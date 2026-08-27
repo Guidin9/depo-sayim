@@ -7,7 +7,7 @@ sonra kullanıcı kararıyla saha testi beklenmeden yazıldı. Karar gerekçesi:
 saha testi belirsiz bir tarihe kalıyordu ve dalın yazılması I2'yi bozmuyor —
 kap açılışı zaten I2 kilidini kuruyor, yani ikisi aynı mekanizma.
 
-**Gerçek depoda HENÜZ DENENMEDİ.** 407 test geçiyor, arayüz derleniyor.
+**Gerçek depoda HENÜZ DENENMEDİ.** 409 test geçiyor, arayüz derleniyor.
 
 Kaynak: `depo_sayim_bugs_improvements.md` I3. Dosya kendi içinde "ayrı bir
 tasarım/akış dokümanı gerektirebilir" diyor; bu o doküman.
@@ -270,7 +270,7 @@ Kodlandı (kap akışının serisiz yarısı):
 - Arayüz: Sayım ekranında kap panelleri (adet cevabı orada verilir), Kuyruk ve
   Telefon ekranlarında malzeme + adet paneli, Barkod ekranında kap basımı ve
   **kap defteri** (hangi kapta ne var, son doğrulama yaşı, Boşalt)
-- `tests/test_kutu.py` — 33 test
+- `tests/test_kutu.py` — 35 test
 
 Sonradan (yine 2026-08-27, kullanıcı kararıyla) yazılanlar:
 

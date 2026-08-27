@@ -240,6 +240,40 @@ def test_bos_kapanis_son_bilinen_adedi_silmez(c, ot):
     assert kutum.getir(c, kap)["adet"] == 21
 
 
+def test_kilidi_acmak_kabi_da_kapatir(c, ot):
+    """Kilit kabın kilidiydi: yalnız kilidi açmak sayacı dondururdu."""
+    kod = _seri_malzeme(c)
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, kod, 21, "seri")
+
+    _yaz(c, ot, kap, SONRAKI)
+    s = matching.okut(c, oturum_taze(c, ot), "##KILITAC##")
+    assert s["tip"] == "kilitac" and s["kutu_kapandi"]["kutu"] == kap
+    o = oturum_taze(c, ot)
+    assert o["acik_kutu"] is None and o["sabit_kod"] is None
+
+
+def test_oturum_biterken_acik_kap_kapanir(c, ot):
+    """Kap kapanmadan oturum biterse son bilinen adet bu sayımla tazelenmezdi."""
+    from app import oturumlar
+
+    r = c.execute("""SELECT kod, seri FROM beklenen WHERE yukleme=1 AND ambar=?
+                     AND haric=0 AND izleme='seri' AND kirli=0 AND seri<>''
+                     ORDER BY id LIMIT 1""", (AMBAR,)).fetchone()
+    if not r:
+        pytest.skip("test verisinde temiz seri kaydı yok")
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, r["kod"], 21, "seri")
+
+    _yaz(c, ot, kap, SONRAKI)
+    _yaz(c, ot, r["seri"], SONRAKI)
+    oturumlar.bitir(c, ot["id"])
+
+    o = oturum_taze(c, ot)
+    assert o["durum"] == "bitti" and o["acik_kutu"] is None
+    assert kutum.getir(c, kap)["adet"] == 1
+
+
 def test_ikinci_kap_oncekini_kapatir(c, ot):
     """İki kap aynı anda açık olamaz: sayaç hangisine ait belli olmaz."""
     kod = _seri_malzeme(c)

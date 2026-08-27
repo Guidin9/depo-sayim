@@ -962,8 +962,12 @@ def okut(c, ot, ham, zorla=False):
                 "izleme": kaynak.get("izleme"), "ses": "ok"}
 
     if komut == "kilitac":
+        # Açık kap varsa kilit ONUN kilidi: yalnızca kilidi açmak, ekranda
+        # "kap açık" yazarken sayacın donmasına yol açardı (sonraki okutmalar
+        # başka malzemeye gider, sayaç saymaz). Kabı da kapatıyoruz.
+        kapanan = _kutu_kapat(c, ot) if ot["acik_kutu"] else None
         c.execute("UPDATE oturum SET sabit_kod=NULL WHERE id=?", (oturum,))
-        return {"tip": "kilitac", "ses": "tik"}
+        return {"tip": "kilitac", "kutu_kapandi": kapanan, "ses": "tik"}
 
     if komut == "kutukapat":
         # Kabı kapatmak: kilidi bırak, sayacı özetle. Eksik kaldıysa söyle —
@@ -1069,7 +1073,9 @@ def okut(c, ot, ham, zorla=False):
         fotosuz = fotosuz_fazlalar(c, oturum)
         if fotosuz and not zorla:
             return {"tip": "foto_engel", "fotosuz": fotosuz, "ses": "uyari"}
-        c.execute("UPDATE oturum SET bitir=?, durum='bitti' WHERE id=?", (ts, oturum))
+        # Kapatma tek yerden: `oturumlar.bitir` açık kabı da kapatıyor.
+        from . import oturumlar
+        oturumlar.bitir(c, oturum)
         return {"tip": "bitti", "ses": "bitti"}
 
     if komut == "raf":

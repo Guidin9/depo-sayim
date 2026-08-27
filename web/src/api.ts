@@ -193,6 +193,8 @@ export type OkutmaSonucu = {
   eksik?: number;
   /** tip="kutu_acildi": bu kap açılırken kapanan önceki kap (varsa). */
   onceki_kutu?: KutuSayaci | null;
+  /** tip="kilitac": kilit kabın kilidiyse kap da kapanır, özeti burada. */
+  kutu_kapandi?: KutuSayaci | null;
 };
 
 /** Karar bekleyen kaydın türü.
