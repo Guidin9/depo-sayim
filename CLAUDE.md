@@ -337,6 +337,7 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 | `##ADET-0##` | Girilen adedi sıfırla |
 | `##KILIT##` | Malzeme kodunu kilitle — aşağıya bakın |
 | `##KILITAC##` | Kilidi kaldır |
+| `##KUTUKAPAT##` | Açık seri takipli kabı kapat (`KUTU_TASARIM.md`) |
 | `##YEDEK##` | Yedek parça modunu aç / kapat |
 
 **`##KILIT##` sahadaki en büyük tekrarı kaldırır.** 21 cihazlı bir malzemede
@@ -355,6 +356,13 @@ ardından yalnızca seri numaraları gelir; grupta kod yoksa kilit devreye girer
   kilitlenecek kod bulunamazsa **sessiz kalmaz**: `kilit_yok` döner. Sessizce
   kilitlenmemek şart — kullanıcı kilitlendiğini sanıp onlarca seri numarası
   okutur ve hepsi kuyruğa düşerdi.
+
+**Kap AÇMAK için komut yoktur** — kabın kendi `DK-` etiketi o işi yapar
+(`KUTU_TASARIM.md`). Seri takipli bir kap okutulunca malzeme kendiliğinden
+kilitlenir ve sayaç başlar; ardından yalnızca seri numaraları okutulur.
+`##KUTUKAPAT##` kilidi bırakır ve "kapta 150 yazıyordu, 12 okuttun" der —
+**uyarır, engellemez**: kaptaki sayı son sayımdan kalma bir ipucudur, gerçek
+değil. İki kap aynı anda açık olamaz; yeni kap öncekini kapatır.
 
 **`##YEDEK##` açıkken hiçbir şey ARANMAZ.** Yedek parçalar Tiger'da kayıtlı
 değil; aranmaları yalnızca yanlış eşleşme üretiyordu (yedek parçanın üstündeki
@@ -487,7 +495,7 @@ Excel çıktısı üretiyoruz.
 ## 7. Mevcut durum
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 402 test geçiyor. **Arayüz yeniden
+altında React + Vite + Tailwind arayüz, 407 test geçiyor. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
 kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
 

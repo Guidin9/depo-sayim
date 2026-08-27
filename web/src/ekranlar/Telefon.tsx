@@ -1056,6 +1056,35 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
           </button>
         </div>
       )}
+      {/* Açık kap da aynı kuralın altında: kalıcı kip, ekranda durmak zorunda.
+          Sayaçtaki ikinci sayı kabın SON BİLİNEN adedi — gerçek değil,
+          karşılaştırma için (KUTU_TASARIM.md 3). */}
+      {durum.acik_kutu && (
+        <div className="flex items-center gap-2 rounded-sm border border-vurgu
+          bg-vurgu-tint px-3 py-2">
+          <Ik.Katman boy={18} className="shrink-0 text-vurgu" />
+          <div className="min-w-0 flex-1">
+            <div className="font-mono text-kucuk font-bold break-all text-vurgu">
+              {durum.acik_kutu.kutu} · <span className="rakam">
+                {durum.acik_kutu.sayilan}
+                {durum.acik_kutu.beklenen != null && ` / ${durum.acik_kutu.beklenen}`}
+              </span>
+            </div>
+            <div className="text-mikro text-vurgu">
+              {durum.acik_kutu.aciklama ?? durum.acik_kutu.kod}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void komut("##KUTUKAPAT##")}
+            disabled={mesgul}
+            className="border-vurgu text-vurgu flex h-12 shrink-0 items-center gap-1
+              rounded-sm border px-3 text-mikro font-bold disabled:opacity-40"
+          >
+            <Ik.Bitti boy={14} /> Kapat
+          </button>
+        </div>
+      )}
       {durum.yedek_parca && (
         <div className="flex items-center gap-2 rounded-sm border border-hata
           bg-hata-tint px-3 py-2">

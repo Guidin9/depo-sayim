@@ -358,6 +358,82 @@ def coz(c, ham, yukleme, ambar, oturum):
     return {"t": "upc" if upc_mi(ham) else "bilinmiyor", "ham": ham}
 
 
+def kutu_sayaci(c, ot):
+    """Açık seri takipli kabın durumu — "150'nin 12'si" sayacı.
+
+    `sayilan`, kap AÇILDIKTAN SONRA o malzemeye yazılan okutma sayısıdır
+    (`acik_kutu_ilk` işaretinden büyük id'ler). Kap kapanınca `beklenen` ile
+    karşılaştırılır; eksik kalırsa UYARILIR, örtülmez.
+
+    `beklenen` kabın SON BİLİNEN adedidir, bir gerçek değil: içerik ayda bir
+    değişiyor (KUTU_TASARIM.md 3). Bu yüzden sayacın kapanışta yaptığı şey
+    engellemek değil, söylemek.
+    """
+    if not ot["acik_kutu"]:
+        return None
+    k = kutum.getir(c, ot["acik_kutu"])
+    if not k or not k["malzeme"]:
+        return None
+    sayilan = c.execute(
+        "SELECT COUNT(*) n FROM okutma WHERE oturum=? AND id>? AND kod=?",
+        (ot["id"], ot["acik_kutu_ilk"] or 0, k["malzeme"])).fetchone()["n"]
+    bek = k["adet"]
+    return {"kutu": k["gosterim"], "kod": k["malzeme"], "sayilan": sayilan,
+            "beklenen": bek, "taze": kutum.taze_mi(k),
+            "eksik": (bek - sayilan) if (bek and sayilan < bek) else 0,
+            "aciklama": (c.execute(
+                "SELECT aciklama FROM beklenen WHERE yukleme=? AND ambar=? AND kod=? "
+                "LIMIT 1", (ot["yukleme"], ot["ambar"], k["malzeme"])).fetchone()
+                or {"aciklama": None})["aciklama"]}
+
+
+def _kutu_ac(c, ot, kutu_ad, kod):
+    """Seri takipli kabı açar: malzemeyi KİLİTLER ve sayacı sıfırlar.
+
+    Kilit elle basılmıyor (I2'nin `##KILIT##` kartı), kap açılınca kuruluyor:
+    21 cihazlı bir kapta malzeme kodunu 21 kez okutmak zaten kaldırılmıştı;
+    kap okutulduğunda kodu bir kez daha okutmak da aynı gereksiz adım.
+
+    Sayaç işareti okutma ID'sidir, zaman damgası değil: aynı saniyede iki
+    okutma olabilir, aynı id olamaz.
+
+    Başka bir kap açıksa o KAPANIR — iki kap aynı anda açık olamaz, yoksa
+    sayaç hangisine ait belli olmaz. Kapanan kabın özeti geri döner.
+    """
+    onceki = None
+    if ot["acik_kutu"] and norm(ot["acik_kutu"]) != norm(kutu_ad):
+        onceki = _kutu_kapat(c, ot)
+    ilk = c.execute("SELECT COALESCE(MAX(id),0) n FROM okutma WHERE oturum=?",
+                    (ot["id"],)).fetchone()["n"]
+    c.execute("UPDATE oturum SET acik_kutu=?, acik_kutu_ilk=?, sabit_kod=? WHERE id=?",
+              (norm(kutu_ad), ilk, kod, ot["id"]))
+    return onceki
+
+
+def _kutu_kapat(c, ot, ts=None):
+    """Açık kabı kapatır: kilidi bırakır, kabın son bilinen adedini tazeler.
+
+    Sayılan < beklenen ise UYARIR ama ENGELLEMEZ: "kapta 150 yazıyordu, 12
+    okuttun" bir bulgudur, hata değil — eksik gerçekten eksikse rapor zaten
+    gösterecek. Uygulamanın hiçbir yerinde sayımı örtmüyoruz.
+
+    Kilit yalnızca kabın kendi malzemesindeyse bırakılır: kullanıcı arada
+    başka bir kodu elle kilitlemiş olabilir, o kararı bozmayalım.
+
+    `sayilan == 0` iken kabın adedi GÜNCELLENMEZ. Yanlışlıkla açılıp hemen
+    kapatılan bir kap, son bilinen adedini kaybetmemeli.
+    """
+    d = kutu_sayaci(c, ot)
+    c.execute("UPDATE oturum SET acik_kutu=NULL, acik_kutu_ilk=0 WHERE id=?",
+              (ot["id"],))
+    if d and ot["sabit_kod"] and norm(ot["sabit_kod"]) == norm(d["kod"]):
+        c.execute("UPDATE oturum SET sabit_kod=NULL WHERE id=?", (ot["id"],))
+    if d and d["sayilan"] > 0:
+        kutum.tanimla(c, d["kutu"], d["kod"], d["sayilan"], "seri",
+                      raf=ot["aktif_raf"], oturum=ot["id"], ts=ts)
+    return d
+
+
 def _acik_kutu_kuyrugu(c, oturum, kutu_ad):
     """Bu kap için bu oturumda AÇIK bir kuyruk kaydı var mı?
 
@@ -539,18 +615,25 @@ def grup_coz(c, ot, raf=None):
             # denendikten sonra yazılacak (KUTU_TASARIM.md 9.2, 10).
             #
             # Buradan tek satır bile yazılmaz: kap kodunu okutup ##SONRAKI##
-            # demek "bir cihaz saydım" anlamına gelmemeli.
-            return {"tip": "kutu_seri", "kutu": kutu_ad, "kod": kutu_t["kod"],
+            # demek "bir cihaz saydım" anlamına gelmemeli. Onun yerine KAP
+            # AÇILIR: malzeme kilitlenir ve sayaç başlar, kullanıcı art arda
+            # yalnızca seri numaralarını okutur (##KUTUKAPAT## ile kapatır).
+            onceki = _kutu_ac(c, ot, kutu_ad, kutu_t["kod"])
+            return {"tip": "kutu_acildi", "kutu": kutu_ad, "kod": kutu_t["kod"],
                     "aciklama": kutu_t.get("aciklama"),
                     "adet": kutu_t.get("adet"), "taze": kutu_t.get("taze"),
+                    "sabit_kod": kutu_t["kod"], "onceki_kutu": onceki,
                     # Girilen adet burada uygulanamaz (her cihaz Tiger'da ayrı
                     # satır) ama sessizce yutulmaz — grup_coz'un her yerinde
                     # aynı sözleşme.
                     "adet_yersiz": bekleyen_adet if bekleyen_adet > 1 else None,
-                    "raf": raf, "ses": "uyari"}
+                    "raf": raf, "ses": "ok"}
         elif kutu_t.get("izleme") == "seri" and seri_h:
-            # Kap + gerçek S/N: sayımı seri numarası yapıyor, kap yalnızca
-            # bağlam. Kabın açık sorusu varsa burada kapanır.
+            # Kap + gerçek S/N aynı grupta: sayımı seri numarası yapıyor, ama
+            # kap yine AÇILIR — kullanıcı zaten o kabı saymaya başlamış.
+            # Sayaç işareti bu okutmadan ÖNCE alınır, yani bu cihaz da sayılır.
+            if norm(ot["acik_kutu"] or "") != norm(kutu_ad):
+                _kutu_ac(c, ot, kutu_ad, kutu_t["kod"])
             _kutu_kuyrugu_kapat(c, oturum, kutu_ad)
         elif kutu_kaynak and kutu_t.get("izleme") != "seri" and not bekleyen_adet:
             # "Kapta 150 yazıyor" bir sayım sonucu değil, bir varsayımdır:
@@ -882,6 +965,17 @@ def okut(c, ot, ham, zorla=False):
         c.execute("UPDATE oturum SET sabit_kod=NULL WHERE id=?", (oturum,))
         return {"tip": "kilitac", "ses": "tik"}
 
+    if komut == "kutukapat":
+        # Kabı kapatmak: kilidi bırak, sayacı özetle. Eksik kaldıysa söyle —
+        # engelleme, örtme. Kap zaten kapalıysa sessiz kalmıyoruz: kullanıcı
+        # kapattığını sanıp başka bir ürünü kilitli malzemeye okutabilir.
+        acik = kutu_sayaci(c, ot)
+        if not acik:
+            return {"tip": "kutu_yok", "ses": "uyari"}
+        d = _kutu_kapat(c, ot, ts)
+        return dict(d, tip="kutu_kapandi",
+                    ses="uyari" if d and d["eksik"] else "ok")
+
     if komut in ("yedek", "yedekkapat"):
         acik = 0 if komut == "yedekkapat" else (0 if ot["yedek_parca"] else 1)
         c.execute("UPDATE oturum SET yedek_parca=? WHERE id=?", (acik, oturum))
@@ -1123,6 +1217,10 @@ def durum(c, ot, akis=40):
                 "LIMIT 1", (yukleme, ambar, ot["sabit_kod"])).fetchone() or
                 {"aciklama": None})["aciklama"] if ot["sabit_kod"] else None,
             "yedek_parca": bool(ot["yedek_parca"]),
+            # Açık kap da kilit ve yedek parça gibi KALICI bir kip: ekranda
+            # görünmezse kullanıcı kabı kapattığını sanıp sonraki ürünleri
+            # kilitli malzemeye yazar.
+            "acik_kutu": kutu_sayaci(c, ot),
             "sayac": sayaclar(c, ot), "tampon": tampon, "akis": son}
 
 

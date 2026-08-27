@@ -272,6 +272,23 @@ def sabit_kod_ayarla(oturum_id: int, istek: SabitKod, c=DB):
     return sonuc
 
 
+@router.post("/oturum/{oturum_id}/kutu-kapat")
+def kutu_kapat(oturum_id: int, c=DB):
+    """Açık seri takipli kabı kapat (KUTU_TASARIM.md 5).
+
+    `##KUTUKAPAT##` komut barkodunun ikizi: içeride aynı komutu üretip
+    `matching.okut()`'a verir — `/raf`, `/adet` ve `/sabit-kod` ile aynı desen,
+    iki kod yolu oluşmasın.
+    """
+    o = oturum_getir(oturum_id, c)
+    if o["durum"] != "acik":
+        raise HTTPException(409, "Oturum kapalı")
+    sonuc = matching.okut(c, o, "##KUTUKAPAT##")
+    c.commit()
+    sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
+    return sonuc
+
+
 @router.post("/oturum/{oturum_id}/yedek-parca")
 def yedek_parca_ayarla(oturum_id: int, istek: YedekMod, c=DB):
     """Yedek parça modunu aç / kapat (I4)."""

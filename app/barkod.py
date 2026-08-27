@@ -32,6 +32,11 @@ KOMUTLAR = [
      "okutman yeter — her cihazda kodu tekrar okutma."),
     ("##KILITAC##", "KİLİDİ AÇ",
      "Malzeme kilidini kaldırır, normal sayıma döner."),
+    # KUTU_TASARIM.md 5 — kap kapatma. Kap AÇMAK için komut yok: kabın kendi
+    # etiketi (DK-) zaten o işi yapıyor, malzemeyi kilitleyip sayacı başlatıyor.
+    ("##KUTUKAPAT##", "KABI KAPAT",
+     "Seri takipli kapta işin bittiğinde okut. Kilit açılır, kaç adet "
+     "okuttuğunu söyler; kapta yazan sayıdan azsa uyarır."),
     # I4
     ("##YEDEK##", "YEDEK PARÇA MODU",
      "Açar/kapatır. Açıkken okutulan hiçbir şey Tiger kayıtlarında ARANMAZ, "

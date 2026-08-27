@@ -203,15 +203,45 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
               : "Kapta kaç adet olduğunu yaz."),
         ...SARI,
       };
-    case "kutu_seri":
+    case "kutu_acildi":
       return {
         Ikon: Ik.Kilit,
-        ana: `${r.kutu} — ${r.kod} seri takipli`,
+        ana: `KAP AÇILDI · ${r.kutu} — ${r.kod}`,
         alt:
-          `${r.aciklama ?? ""} · Kap tek başına sayım değildir: her adet Tiger'da ` +
-          "ayrı satır. Cihazların seri numaralarını okut — kodu kilitlersen her " +
-          "cihazda malzemeyi tekrar okutmana gerek kalmaz.",
+          `${r.aciklama ?? ""} · Malzeme kilitlendi: şimdi yalnızca seri numaralarını ` +
+          "okut, her cihazda malzemeyi tekrarlama. Bittiğinde KABI KAPAT." +
+          (r.adet != null ? ` Kapta son bilinen ${r.adet} adet.` : "") +
+          (r.onceki_kutu
+            ? ` · Önceki kap ${r.onceki_kutu.kutu} kapandı (${r.onceki_kutu.sayilan} okutuldu).`
+            : "") +
+          (r.adet_yersiz ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli` : ""),
         ...MAVI,
+      };
+    // Kapanış ENGELLEMEZ, söyler: "kapta 150 yazıyordu, 12 okuttun" bir
+    // bulgudur. Eksik gerçekten eksikse raporda zaten görünecek.
+    case "kutu_kapandi":
+      return r.eksik
+        ? {
+            Ikon: Ik.Uyari,
+            ana: `KAP KAPANDI · ${r.sayilan} / ${r.beklenen} — ${r.eksik} eksik`,
+            alt:
+              `${r.kutu} · ${r.kod} ${r.aciklama ?? ""} — kapta yazan sayıdan az okutuldu. ` +
+              "Kapta yazan sayı son sayımdan kalma bir ipucudur, gerçek değil: " +
+              "eksik gerçekse raporda görünecek.",
+            ...SARI,
+          }
+        : {
+            Ikon: Ik.Onay,
+            ana: `KAP KAPANDI · ${r.sayilan} okutuldu`,
+            alt: `${r.kutu} · ${r.kod} ${r.aciklama ?? ""} — kilit açıldı.`,
+            ...YESIL,
+          };
+    case "kutu_yok":
+      return {
+        Ikon: Ik.Engel,
+        ana: "AÇIK KAP YOK",
+        alt: "Kapatılacak bir kap yok — kap etiketini okutunca kap açılır.",
+        ...SARI,
       };
     case "iptal":
       return { Ikon: Ik.Tekrar, ana: "GRUP İPTAL", alt: "Tampon boşaltıldı.", ...SARI };
@@ -588,6 +618,34 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               </button>
             </div>
           )}
+          {/* Açık kap: kilit ve yedek parça gibi KALICI kip, ekranda durmak
+              zorunda. Sayaç "150'nin 12'si" — 150 son bilinen adet, gerçek
+              değil (KUTU_TASARIM.md 3). */}
+          {durum.acik_kutu && (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 border border-vurgu
+                               bg-vurgu-tint px-2 py-0.5 text-kucuk font-bold text-vurgu">
+                <Ik.Katman boy={14} />
+                <span className="font-mono">{durum.acik_kutu.kutu}</span>
+                <span className="rakam">
+                  {durum.acik_kutu.sayilan}
+                  {durum.acik_kutu.beklenen != null && ` / ${durum.acik_kutu.beklenen}`}
+                </span>
+                <span className="font-normal">
+                  {durum.acik_kutu.beklenen != null ? "okutuldu (son bilinen)" : "okutuldu"}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => void gonder("##KUTUKAPAT##")}
+                disabled={mesgul}
+                className="border-cizgi-kuvvetli text-solgun hover:text-yazi inline-flex
+                  items-center gap-1 rounded-sm border px-2 py-1 text-mikro disabled:opacity-40"
+              >
+                <Ik.Bitti boy={13} /> Kabı kapat
+              </button>
+            </div>
+          )}
           {durum.yedek_parca && (
             <div className="mt-1">
               <span className="inline-flex items-center gap-1 border border-hata
@@ -934,21 +992,6 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
 
         {/* Seri takipli kap: sayımı seri numaraları yapar, kap yalnızca
             malzemeyi getirir. Kilit tam da bu tekrarı kaldırmak için var. */}
-        {son?.tip === "kutu_seri" && son.kod && (
-          <section className="girdi flex flex-wrap items-center gap-3 rounded-sm border
-            border-bilgi bg-bilgi-tint p-3">
-            <p className="min-w-0 flex-1 text-kucuk text-solgun">
-              Şimdi cihazların seri numaralarını okut.
-              {son.adet != null && <> Kayıtta bu kapta <b className="text-yazi">{son.adet}</b> adet yazıyor.</>}
-            </p>
-            <Dugme
-              cocuk={`${son.kod} koduna kilitle`}
-              tur="ana"
-              tikla={() => void gonder(`##KILIT-${son.kod}##`)}
-            />
-          </section>
-        )}
-
         {son?.tip === "kuyruk" && (
           <section className="girdi flex flex-wrap items-center gap-3 rounded-sm border
             border-uyari bg-uyari-tint p-3">

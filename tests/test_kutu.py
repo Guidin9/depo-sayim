@@ -173,15 +173,84 @@ def test_bayat_kap_adet_onermez(c, ot):
     assert s["adet"] == 150                  # son bilinen değer ipucu olarak durur
 
 
-def test_seri_takipli_kap_tek_basina_saymaz(c, ot):
-    """Kap kodunu okutup ##SONRAKI## demek 'bir cihaz saydım' demek değildir."""
+def test_seri_takipli_kap_acilir_ve_kilitlenir(c, ot):
+    """Kap kodunu okutmak 'bir cihaz saydım' değil, 'bu kabı saymaya başladım'.
+
+    Tek satır yazılmaz; malzeme kilitlenir ve sayaç başlar. 21 cihazlı kapta
+    malzeme kodunu her cihazda tekrar okutmak I2'de kaldırılmıştı — kap
+    okutulduğunda kodu bir kez daha okutmak da aynı gereksiz adım.
+    """
     kod = _seri_malzeme(c)
     kap = _kap_bas(c)[0]
     kutum.tanimla(c, kap, kod, 21, "seri")
 
     s = _yaz(c, ot, kap, SONRAKI)
-    assert s["tip"] == "kutu_seri" and s["kod"] == kod
+    assert s["tip"] == "kutu_acildi" and s["kod"] == kod
     assert not c.execute("SELECT 1 FROM okutma WHERE oturum=?", (ot["id"],)).fetchone()
+
+    o = oturum_taze(c, ot)
+    assert o["sabit_kod"] == kod and o["acik_kutu"] == norm(kap)
+    sayac = matching.kutu_sayaci(c, o)
+    assert sayac["sayilan"] == 0 and sayac["beklenen"] == 21
+
+
+def test_acik_kapta_seri_numaralari_sayilir_ve_kapanista_uyarilir(c, ot):
+    """Asıl akış: kabı okut, S/N'leri art arda okut, kabı kapat."""
+    r = c.execute("""SELECT kod, COUNT(*) n FROM beklenen WHERE yukleme=1 AND ambar=?
+                     AND haric=0 AND izleme='seri' AND kirli=0 AND seri<>''
+                     GROUP BY kod HAVING n>=2 ORDER BY n DESC LIMIT 1""",
+                  (AMBAR,)).fetchone()
+    if not r:
+        pytest.skip("test verisinde iki temiz seri kaydı olan malzeme yok")
+    seriler = [x["seri"] for x in c.execute(
+        """SELECT seri FROM beklenen WHERE yukleme=1 AND ambar=? AND kod=?
+           AND kirli=0 AND seri<>'' ORDER BY id LIMIT 2""", (AMBAR, r["kod"]))]
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, r["kod"], 5, "seri")
+
+    _yaz(c, ot, kap, SONRAKI)
+    # Kilit sayesinde yalnızca seri numaraları okutuluyor — malzeme kodu yok.
+    for sn in seriler:
+        assert _yaz(c, ot, sn, SONRAKI)["tip"] == "eslesti"
+    assert matching.kutu_sayaci(c, oturum_taze(c, ot))["sayilan"] == 2
+
+    son = matching.okut(c, oturum_taze(c, ot), "##KUTUKAPAT##")
+    assert son["tip"] == "kutu_kapandi" and son["sayilan"] == 2
+    # Kapta 5 yazıyordu, 2 okutuldu: SÖYLENİR, engellenmez ve örtülmez.
+    assert son["eksik"] == 3 and son["ses"] == "uyari"
+
+    o = oturum_taze(c, ot)
+    assert o["acik_kutu"] is None and o["sabit_kod"] is None
+    # Kabın son bilinen adedi sayılana göre tazelenir.
+    assert kutum.getir(c, kap)["adet"] == 2
+
+
+def test_kap_kapali_iken_kapatmak_sessiz_kalmaz(c, ot):
+    assert matching.okut(c, oturum_taze(c, ot), "##KUTUKAPAT##")["tip"] == "kutu_yok"
+
+
+def test_bos_kapanis_son_bilinen_adedi_silmez(c, ot):
+    """Yanlışlıkla açılıp hemen kapatılan kap, adet ipucunu kaybetmemeli."""
+    kod = _seri_malzeme(c)
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, kod, 21, "seri")
+
+    _yaz(c, ot, kap, SONRAKI)
+    matching.okut(c, oturum_taze(c, ot), "##KUTUKAPAT##")
+    assert kutum.getir(c, kap)["adet"] == 21
+
+
+def test_ikinci_kap_oncekini_kapatir(c, ot):
+    """İki kap aynı anda açık olamaz: sayaç hangisine ait belli olmaz."""
+    kod = _seri_malzeme(c)
+    a, b = _kap_bas(c, 2)
+    kutum.tanimla(c, a, kod, 21, "seri")
+    kutum.tanimla(c, b, kod, 9, "seri")
+
+    _yaz(c, ot, a, SONRAKI)
+    s = _yaz(c, ot, b, SONRAKI)
+    assert s["tip"] == "kutu_acildi" and s["onceki_kutu"]["kutu"] == a
+    assert oturum_taze(c, ot)["acik_kutu"] == norm(b)
 
 
 def test_seri_takipli_kapla_birlikte_seri_okutulursa_sayilir(c, ot):
@@ -474,6 +543,36 @@ def test_api_barkod_oturumsuz_basilir(istemci):
                               "atla": 0}).status_code == 200
     assert istemci.post("/api/komut-karti",
                         json={"raflar": ["A1"]}).status_code == 200
+
+
+def test_api_kutu_kapat_ucu(kurulu):
+    """Uç, komut barkodunun ikizi: iki kod yolu olmasın."""
+    ist, ozet, o = kurulu
+    oid = o["id"]
+    r = ist.post("/api/oturum/%s/kutu-kapat" % oid).json()
+    assert r["tip"] == "kutu_yok"          # açık kap yok
+    assert r["durum"]["acik_kutu"] is None
+
+    seri = ist.get("/api/oturum/%s/ara?izleme=seri&limit=1" % oid).json()["satirlar"]
+    if not seri:
+        pytest.skip("test verisinde seri izlemeli malzeme yok")
+    kod = seri[0]["kod"]
+    ist.post("/api/etiket/basim", json={"tur": "kutu", "adet": 1})
+    kap = ist.get("/api/etiket?tur=kutu").json()[0]["gosterim"]
+    ist.post("/api/kutu/%s" % kap,
+             json={"malzeme": kod, "adet": 4, "yukleme": ozet["yukleme"],
+                   "ambar": "1"})
+
+    ist.post("/api/oturum/%s/okut" % oid, json={"ham": kap})
+    a = ist.post("/api/oturum/%s/okut" % oid, json={"ham": SONRAKI}).json()
+    assert a["tip"] == "kutu_acildi"
+    # Açık kap ekranda GÖRÜNMEK zorunda: kilit gibi kalıcı bir kip.
+    assert a["durum"]["acik_kutu"]["kutu"] == kap
+    assert a["durum"]["sabit_kod"] == kod
+
+    k = ist.post("/api/oturum/%s/kutu-kapat" % oid).json()
+    assert k["tip"] == "kutu_kapandi" and k["sayilan"] == 0
+    assert k["durum"]["acik_kutu"] is None and k["durum"]["sabit_kod"] is None
 
 
 def test_api_kap_tanimlama_ambar_disini_reddeder(kurulu):

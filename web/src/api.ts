@@ -96,10 +96,26 @@ export type Durum = {
   sabit_aciklama: string | null;
   /** Yedek parça modu (I4): okutulan hiçbir şey Tiger'da ARANMAZ. */
   yedek_parca: boolean;
+  /** Açık seri takipli kap (KUTU_TASARIM.md 5). Kilit gibi KALICI bir kip:
+   *  ekranda görünmezse kullanıcı kabı kapattığını sanıp sonraki ürünleri
+   *  kilitli malzemeye yazar. `beklenen` kabın SON BİLİNEN adedi — gerçek
+   *  değil, karşılaştırma için. */
+  acik_kutu: KutuSayaci | null;
   durum: string;
   sayac: Sayac;
   tampon: TamponSatiri[];
   akis: AkisSatiri[];
+};
+
+export type KutuSayaci = {
+  kutu: string;
+  kod: string;
+  aciklama: string | null;
+  sayilan: number;
+  beklenen: number | null;
+  taze: boolean;
+  /** beklenen - sayilan (yalnızca eksikse). Uyarır, ENGELLEMEZ. */
+  eksik: number;
 };
 
 export type Ses = "tik" | "ok" | "uyari" | "kuyruk" | "bitti";
@@ -172,6 +188,11 @@ export type OkutmaSonucu = {
    *  çünkü içerik ayda bir değişiyor (KUTU_TASARIM.md 3, 6). */
   taze?: boolean;
   oneri_adet?: number | null;
+  /** tip="kutu_kapandi": kapanış özeti. */
+  sayilan?: number;
+  eksik?: number;
+  /** tip="kutu_acildi": bu kap açılırken kapanan önceki kap (varsa). */
+  onceki_kutu?: KutuSayaci | null;
 };
 
 /** Karar bekleyen kaydın türü.
@@ -530,6 +551,9 @@ export const api = {
   /** Yedek parça modunu aç/kapat (I4). */
   yedekParca: (id: number, acik: boolean) =>
     gonder<OkutmaSonucu>(`/api/oturum/${id}/yedek-parca`, { acik }),
+  /** Açık seri takipli kabı kapat — `##KUTUKAPAT##` ile aynı yol. */
+  kutuKapat: (id: number) =>
+    gonder<OkutmaSonucu>(`/api/oturum/${id}/kutu-kapat`, {}),
 
   raflar: (id: number) => istek<string[]>(`/api/oturum/${id}/raflar`),
 

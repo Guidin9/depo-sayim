@@ -37,7 +37,11 @@ KOMUT = {"##SONRAKI##": "sonraki", "##IPTAL##": "iptal", "##GERIAL##": "gerial",
          "##KILIT##": "kilit", "##KILITAC##": "kilitac",
          # Yedek parça modu (I4): açıkken okutulan hiçbir şey veritabanında
          # ARANMAZ, doğrudan yedek parça olarak yazılır.
-         "##YEDEK##": "yedek", "##YEDEKKAPAT##": "yedekkapat"}
+         "##YEDEK##": "yedek", "##YEDEKKAPAT##": "yedekkapat",
+         # Seri takipli kabı kapatır (KUTU_TASARIM.md 5). Kap okutulunca
+         # kendiliğinden açılır ve malzeme kilitlenir; bu komut kilidi bırakır,
+         # sayacı kapatır ve eksik kaldıysa UYARIR — örtmez.
+         "##KUTUKAPAT##": "kutukapat"}
 
 RAF_ONEK = "##RAF-"
 ADET_ONEK = "##ADET-"

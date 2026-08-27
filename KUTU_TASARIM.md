@@ -1,10 +1,13 @@
 # Kutu Barkodu ile Toplu Sayım — Tasarım
 
-**Durum: KODLANDI — serisiz yarı** (2026-08-27). Saha cevapları §9, kapsam §10.
-Seri takipli dal, `##KUTUKAPAT##` ve otomatik kilit **bilerek yazılmadı**:
-I2 kilidi sahada denenmeden yazılması gerekip gerekmediği bilinmiyor (§9.2).
+**Durum: TAMAMI KODLANDI** (2026-08-27). Saha cevapları §9, kapsam §10.
 
-**Gerçek depoda HENÜZ DENENMEDİ.** 402 test geçiyor, arayüz derleniyor.
+Seri takipli dal önce ertelenmişti (§9.2: "I2 kilidi zaten yetiyor olabilir"),
+sonra kullanıcı kararıyla saha testi beklenmeden yazıldı. Karar gerekçesi:
+saha testi belirsiz bir tarihe kalıyordu ve dalın yazılması I2'yi bozmuyor —
+kap açılışı zaten I2 kilidini kuruyor, yani ikisi aynı mekanizma.
+
+**Gerçek depoda HENÜZ DENENMEDİ.** 407 test geçiyor, arayüz derleniyor.
 
 Kaynak: `depo_sayim_bugs_improvements.md` I3. Dosya kendi içinde "ayrı bir
 tasarım/akış dokümanı gerektirebilir" diyor; bu o doküman.
@@ -117,12 +120,13 @@ kutu tanımlı, izleme='lot' | 'yok'          <- YAZILDI
     -> mevcut `adet` dalı (_adet_islemi / _adet_dagit) aynen çalışır
     -> sayımdan sonra kabın son bilinen adedi tazelenir
 
-kutu tanımlı, izleme='seri'                 <- ERTELENDİ (§9.2, §10)
-    -> oturum.sabit_kod = kutu.malzeme            (I2 kilidi)
-    -> "kutu açık: 150'nin 0'ı" sayacı gösterilir
+kutu tanımlı, izleme='seri'                 <- YAZILDI
+    -> oturum.sabit_kod = kutu.malzeme            (I2 kilidi, elle basılmaz)
+    -> oturum.acik_kutu / acik_kutu_ilk: "kutu açık: 150'nin 0'ı" sayacı
     -> kullanıcı seri numaralarını art arda okutur — I2'nin tam olarak
        çözdüğü akış
     -> ##KUTUKAPAT## ile kapanır; sayılan < beklenen ise UYARIR, örtmez
+    -> kap + S/N aynı grupta okutulduysa kap yine açılır ve o cihaz sayılır
 
 kutu tanımsız (kutu_bos)                    <- YAZILDI
     -> KUYRUĞA yazılır (tur='kutu'), arayüz paneli hemen açar
@@ -159,10 +163,22 @@ eder: `##KILIT##` elle basılır, seri numaraları okutulur. Kutu kaydı yine de
 malzemeyi getirir — kaybolan tek şey otomatik kilit ve "150'nin 12'si"
 sayacıdır.
 
-Yeni komut `##KUTUKAPAT##` yalnızca seri dalıyla birlikte gelir; o dal
-ertelendiği için **şimdilik eklenmez** (`norm.KOMUT` + `matching.okut` dalı +
-`barkod.KOMUTLAR` üçlüsü bir arada eklenmeli; yarısı eklenirse komut kartına
-basılıp sahada "tanınmayan barkod" olur).
+`##KUTUKAPAT##` üçlüsüyle birlikte eklendi: `norm.KOMUT` + `matching.okut`
+dalı + `barkod.KOMUTLAR` (komut kartına basılır). Yarısı eklenseydi kartta
+duran bir barkod sahada "tanınmayan" olurdu.
+
+**Kap AÇMAK için komut yok:** kabın kendi etiketi o işi yapıyor. Kapatma
+komutu gerekli, çünkü "bu kapla işim bitti" bilgisini uygulama başka hiçbir
+yerden çıkaramaz.
+
+Üç kural, üçü de sahada bozulabilecek yerler:
+
+* **Kapanış engellemez, söyler.** "Kapta 150 yazıyordu, 12 okuttun" bir
+  bulgudur; kaptaki sayı son sayımdan kalma bir ipucudur, gerçek değil.
+* **Sayılan 0 ise kabın adedi güncellenmez.** Yanlışlıkla açılıp hemen
+  kapatılan kap, son bilinen adedini kaybetmemeli.
+* **İki kap aynı anda açık olamaz.** Yeni kap öncekini kapatır ve kapanan
+  kabın özeti yanıtta döner — sessizce kapanmaz.
 
 ## 6. Sahadaki akış ve tazelik kuralı
 
@@ -224,8 +240,10 @@ Tek ek: **Etiketler** sekmesi `DK-` satırlarını "Kutu" olarak göstermeli (§
 
 1. **Kaç kap var? → 100'den fazla.** İş gerekçeli; kalıcı kutu tablosu yazılır.
 2. **I2 kilidi seri takipli kutuyu yeterince hızlandırdı mı? → Henüz sahada
-   denenmedi.** §5'in seri dalı, `##KUTUKAPAT##` ve kutu sayacı **yazılmaz**;
-   I2 depoda denendikten sonra buraya dönülür. Bu tek açık sorudur.
+   denenmedi.** Bu soru bekliyordu ve seri dalı ertelenmişti; kullanıcı
+   kararıyla dal yine de yazıldı (bkz. dosya başı). Soru artık "yazılsın mı"
+   değil: **sahada hangisi hızlı** — kabı okutup açmak mı, yoksa kodu bir kez
+   okutup `##KILIT##` demek mi. İkisi aynı kilidi kuruyor.
 3. **İçerik ne sıklıkla değişiyor? → Ayda bir civarı.** Kalıcı tablo kalır ama
    `adet` alanının anlamı düştü: gerçek değil varsayılan (§3), etikete basılmaz
    (§7), tazelik kuralına tabidir (§6).
@@ -252,17 +270,23 @@ Kodlandı (kap akışının serisiz yarısı):
 - Arayüz: Sayım ekranında kap panelleri (adet cevabı orada verilir), Kuyruk ve
   Telefon ekranlarında malzeme + adet paneli, Barkod ekranında kap basımı ve
   **kap defteri** (hangi kapta ne var, son doğrulama yaşı, Boşalt)
-- `tests/test_kutu.py` — 28 test
+- `tests/test_kutu.py` — 33 test
 
-Kodlanmadı (I2 saha testine kadar):
+Sonradan (yine 2026-08-27, kullanıcı kararıyla) yazılanlar:
 
-- `grup_coz`'un `izleme='seri'` dalı, otomatik `sabit_kod` kurulumu
-- `##KUTUKAPAT##` komutu ve "150'nin 12'si" sayacı
+- `grup_coz`'un `izleme='seri'` dalı: kap açılır, `sabit_kod` kendiliğinden
+  kurulur (`_kutu_ac`)
+- `oturum.acik_kutu` / `acik_kutu_ilk` + `kutu_sayaci()` — sayaç işareti okutma
+  ID'sidir, zaman damgası değil (aynı saniyede iki okutma olabilir)
+- `##KUTUKAPAT##` (`norm.KOMUT` + `matching.okut` + komut kartı) ve
+  `POST /api/oturum/{id}/kutu-kapat`
+- Sayım ve telefon başlıklarında **kalıcı açık kap rozeti** + "Kabı kapat"
+  düğmesi — kilit ve yedek parça modunda olduğu gibi, açık unutulan kip
+  ekranda görünmek zorunda
 
-Seri takipli kap bu sürümde kutusuz akışla sayılır: kap malzemeyi getirir,
-kilit elle basılır. Kap tek başına okutulduğunda **hiçbir satır yazılmaz**
-(`kutu_seri`) — kap kodunu okutup `##SONRAKI##` demek "bir cihaz saydım"
-anlamına gelmemeli. Arayüz o an "şu koda kilitle" düğmesini gösterir.
+Kap tek başına okutulduğunda **hiçbir satır yazılmaz** — kap kodunu okutup
+`##SONRAKI##` demek "bir cihaz saydım" anlamına gelmemeli; yazılan tek şey
+kilit ve sayaçtır.
 
 ## 11. Sahada denenecekler
 
@@ -278,3 +302,9 @@ Aşağıdakiler kodda doğru, depoda doğrulanmadı:
 4. Kap içeriği değişince kullanıcı etiketi yeniden basıyor mu, yoksa eski
    malzeme adı kabın üstünde mi kalıyor? (Kod aynı kalır, yanlış olan yalnızca
    insan okur satırdır.)
+5. **Seri takipli kapta hangisi hızlı:** kabı okutup açmak mı, kodu bir kez
+   okutup `##KILIT##` demek mi? İkisi aynı kilidi kuruyor; kap ayrıca sayaç
+   veriyor ama bir de kapatma adımı istiyor.
+6. Kabı kapatmayı unutan kullanıcı ne yapıyor? Rozet ekranda duruyor ama bir
+   sonraki kap açılınca öncekinin sayacı zaten kapanıyor — sahada bu yeterli
+   mi, yoksa raf değişiminde de kapatmalı mı?

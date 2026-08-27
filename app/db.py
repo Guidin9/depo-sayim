@@ -42,10 +42,16 @@ CREATE TABLE IF NOT EXISTS haric_kural(
 -- yedek_parca: yedek parça modu (I4). Açıkken okutulan grup veritabanında
 --   ARANMAZ, doğrudan `tip='yedek'` yazılır; yedek parçalar Tiger'da kayıtlı
 --   değil ve aranması yalnızca yanlış eşleşme üretiyordu.
+-- acik_kutu / acik_kutu_ilk: SERİ TAKİPLİ AÇIK KAP (KUTU_TASARIM.md 5).
+--   Kap okutulunca malzeme kilitlenir ve kap "açılır"; ardından yalnızca seri
+--   numaraları okutulur. `acik_kutu_ilk` açılış anındaki en büyük okutma
+--   id'sidir — sayaç ("150'nin 12'si") o işaretten sonraki okutmaları sayar.
+--   Zaman damgası yerine id: aynı saniyede iki okutma olabilir, id olamaz.
 CREATE TABLE IF NOT EXISTS oturum(
   id INTEGER PRIMARY KEY, yukleme INT, ambar TEXT, basla TEXT, bitir TEXT,
   aktif_raf TEXT, durum TEXT DEFAULT 'acik', bekleyen_adet INT DEFAULT 0,
-  sabit_kod TEXT, yedek_parca INT DEFAULT 0);
+  sabit_kod TEXT, yedek_parca INT DEFAULT 0,
+  acik_kutu TEXT, acik_kutu_ilk INT DEFAULT 0);
 
 -- ad: kullanıcının elle yazdığı ürün adı. Tiger'da kaydı olmayan bir ürün
 -- fazla işaretlendiğinde `kod` boş kalır ve raporda açıklama üretilemez;
@@ -183,6 +189,9 @@ EK_SUTUNLAR = [
     # `bekleyen_adet` gibi oturuma yazılıyor: okuyucu laptopta, düğme telefonda.
     ("oturum", "sabit_kod", "TEXT"),
     ("oturum", "yedek_parca", "INT DEFAULT 0"),
+    # Seri takipli açık kap ve sayaç işareti (KUTU_TASARIM.md 5).
+    ("oturum", "acik_kutu", "TEXT"),
+    ("oturum", "acik_kutu_ilk", "INT DEFAULT 0"),
 ]
 
 # EK_SUTUNLAR'daki bir sütuna dayanan indeksler. SEMA'ya YAZILAMAZLAR.

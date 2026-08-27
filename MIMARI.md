@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-27 · 402 test geçiyor.
+Son güncelleme: 2026-08-27 · 407 test geçiyor.
 
 ---
 
@@ -66,7 +66,7 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 | `yukleme` | id · ts · dosya_adi · kaynak · satir · not_ |
 | `beklenen` | id · yukleme · kod · **kod_n** · aciklama · tur · ambar · izleme · seri · **seri_n** · **seri_n0** · seri_aciklama · miktar · birim · kirli · kirli_sebep · haric · haric_sebep · kaynak |
 | `haric_kural` | id · tip · desen · aktif · varsayilan · UNIQUE(tip,desen) |
-| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** · **sabit_kod** · **yedek_parca** |
+| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** · **sabit_kod** · **yedek_parca** · **acik_kutu** · **acik_kutu_ilk** |
 | `okutma` | id · oturum · ts · **ham** · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** · **yeni_seri** |
 | `eslesme` | **barkod (PK)** · kod · seri · ts |
 | `tampon` | id · oturum · ts · ham |
@@ -244,6 +244,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | **`DELETE /okutma/{id}`** | `{kapsam?}` — `grup` (varsayılan) \| `satir` | Akıştan sil (I1). Yan etkiler `_yan_etkileri_geri_al` ile geri alınır |
 | `POST /oturum/{id}/sabit-kod` | `{kod}` — null kilidi açar | Malzeme kilidi (I2). İçeride `##KILIT-<kod>##` / `##KILITAC##` üretip `okut()`'a verir |
 | `POST /oturum/{id}/yedek-parca` | `{acik}` | Yedek parça modu (I4), aynı desen |
+| `POST /oturum/{id}/kutu-kapat` | — | Açık seri takipli kabı kapat (`##KUTUKAPAT##` ikizi) |
 | `POST /oturum/{id}/say` | `{beklenen_id, ham?}` | Barkodsuz ürünü listeden seçerek say (I5) |
 | `GET /oturum/{id}/esleme` | — | Sayım sonu: `{fazla, eksik}` |
 | `POST /okutma/{id}/bagla` | `{beklenen_id}` | Fazlayı eksik kayda bağla |
@@ -257,7 +258,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 > **Grup kapatma / komut barkodları için ayrı uç YOKTUR.** `##SONRAKI##`,
 > `##IPTAL##`, `##GERIAL##`, `##FAZLA##`, `##ATLA##`, `##BITIR##`, `##RAF-X##`,
 > `##ADET-N##`, `##KILIT##` / `##KILIT-<kod>##` / `##KILITAC##`,
-> `##YEDEK##` / `##YEDEKKAPAT##`
+> `##YEDEK##` / `##YEDEKKAPAT##`, `##KUTUKAPAT##`
 > hepsi `POST /oturum/{id}/okut` gövdesindeki `ham` alanından geçer ve
 > Raf adı `norm.raf_adi()`den geçer (`ÜST-1` -> `UST-1`): Code128 ASCII dışını
 > taşımıyor ve **basılan değerle elle yazılan değer aynı olmalı**, yoksa iki
@@ -366,11 +367,21 @@ kabın TEK BAŞINA ne anlama geldiğidir:
 ```
 kap tanımsız / malzemesi bu ambarda yok  -> tip="kutu_tanimsiz" | "kutu_yabanci"
                                             (kuyruk tur='kutu', hiçbir şey sayılmaz)
-kap tanımlı, izleme='seri', yalnız kap   -> tip="kutu_seri"  (HİÇBİR SATIR YAZILMAZ)
-kap tanımlı, izleme='seri', S/N de var   -> normal seri dalı (kap yalnızca bağlam)
+kap tanımlı, izleme='seri', yalnız kap   -> tip="kutu_acildi" (SATIR YAZILMAZ)
+                                            malzeme kilitlenir, sayaç başlar
+kap tanımlı, izleme='seri', S/N de var   -> normal seri dalı + kap AÇILIR
 kap tanımlı, lot/yok, ##ADET-N## var     -> tip="adet"  + kap kaydı tazelenir
 kap tanımlı, lot/yok, adet YOK           -> tip="kutu_sor" (kuyruk tur='kutu')
 ```
+
+**Seri takipli kapta kap AÇILIR** (`_kutu_ac`): `oturum.sabit_kod` kabın
+malzemesine kurulur (elle `##KILIT##` gerekmez) ve `acik_kutu_ilk` o anki en
+büyük okutma id'sine yazılır — sayaç ("150'nin 12'si") o işaretten sonraki
+okutmaları sayar. Zaman damgası değil id: aynı saniyede iki okutma olabilir,
+aynı id olamaz. İki kap aynı anda açık olamaz; yeni kap öncekini kapatır.
+`##KUTUKAPAT##` (`_kutu_kapat`) kilidi bırakır, kabın son bilinen adedini
+sayılana göre tazeler (sayılan 0 ise DOKUNMAZ — yanlışlıkla açılıp kapatılan
+kap ipucunu kaybetmesin) ve eksik kaldıysa **uyarır, engellemez**.
 
 **Kap kaydındaki adet sorusuz uygulanmaz.** Saha cevabı: içerik ayda bir
 değişiyor, sayım yılda bir yapılıyor — yani kayıttaki adet sayım anında
@@ -610,7 +621,7 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **402 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **407 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
 
 | Dosya | Kapsam |
@@ -674,12 +685,12 @@ stok ve tutar içerdiği için `.gitignore`'da.
 ## 9. Bilinen sapmalar / açık işler
 
 * `depo_sayim_bugs_improvements.md` — **gerçek** sayım denemesinden çıkan
-  1 bug + 5 feature. B1, I1, I2, I4, I5 çözüldü (2026-08-27); **hiçbiri gerçek
-  sahada denenmedi.** I3 (kap barkodu) **serisiz yarısı kodlandı** —
-  `KUTU_TASARIM.md` §10. Kodlanmayanlar, I2 sahada denenene kadar bilerek
-  bekliyor: kap okutunca otomatik `sabit_kod` kilidi, "150'nin 12'si" sayacı ve
-  `##KUTUKAPAT##` komutu. Seri takipli kap bu sürümde kutusuz akışla sayılıyor —
-  kap malzemeyi getirir, kilit elle basılır.
+  1 bug + 5 feature. **Altısı da çözüldü** (2026-08-27), I3 dahil —
+  `KUTU_TASARIM.md`. Seri takipli dal da yazıldı: kap okutunca otomatik kilit,
+  "150'nin 12'si" sayacı ve `##KUTUKAPAT##`. **Hiçbiri gerçek sahada
+  denenmedi**; kap akışının bekleyen sorusu artık "yazılsın mı" değil, "sahada
+  hangisi hızlı" — I2 kilidi tek başına yetiyor mu, yoksa kap açılışı
+  gerçekten zaman kazandırıyor mu.
 * **Çok depo bir eksiklik değil, karar** (2026-08-27): uygulama sayılan
   ambarın dışına çıkmaz. Ayrıntı `CLAUDE.md` §3.5.
 
