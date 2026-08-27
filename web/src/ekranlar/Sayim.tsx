@@ -629,7 +629,7 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               tur={s.fazla ? "tehlike" : "sade"}
             />
             <Dugme cocuk="Rapor" tikla={() => git("rapor")} />
-            <Dugme cocuk="Etiket" tikla={() => git("etiket")} />
+            <Dugme cocuk="Barkod" tikla={() => git("etiket")} />
             <Dugme cocuk="Ayarlar" tikla={() => git("ayarlar")} />
           </div>
 
