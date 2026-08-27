@@ -137,6 +137,7 @@ def gorunum(c, satir, yukleme=None, ambar=None):
     taze = taze_mi(satir)
     aciklama = None
     bulundu = None
+    izleme = satir["izleme"]
     if satir["malzeme"] and yukleme is not None and ambar is not None:
         r = c.execute("SELECT aciklama, izleme FROM beklenen WHERE yukleme=? AND "
                       "ambar=? AND kod=? LIMIT 1",
@@ -144,9 +145,14 @@ def gorunum(c, satir, yukleme=None, ambar=None):
         bulundu = bool(r)
         if r:
             aciklama = r["aciklama"]
+            # İzleme yöntemi TIGER'DAN gelir, kap kaydından değil: malzemenin
+            # izleme yöntemi yeni bir yüklemede değişmiş olabilir ve kap
+            # kaydındaki kopya bayat kalır. Arayüz buna bakıp "seri takipli"
+            # diyor — yanlış söylerse adet alanını hiç göstermez.
+            izleme = r["izleme"] or izleme
     return {"kod": satir["kod"], "gosterim": satir["gosterim"],
             "malzeme": satir["malzeme"], "aciklama": aciklama,
-            "adet": satir["adet"], "izleme": satir["izleme"], "raf": satir["raf"],
+            "adet": satir["adet"], "izleme": izleme, "raf": satir["raf"],
             "yas_gun": None if y is None else round(y, 1), "taze": taze,
             "tazelik_gun": TAZELIK_GUN,
             "oneri_adet": satir["adet"] if taze else None,

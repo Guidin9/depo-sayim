@@ -206,7 +206,11 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
     case "kutu_acildi":
       return {
         Ikon: Ik.Kilit,
-        ana: `KAP AÇILDI · ${r.kutu} — ${r.kod}`,
+        // Zaten açık kabı yeniden okutmak sayacı SIFIRLAMAZ; ekran da
+        // "açıldı" demez, kaç okutulduğunu söyler.
+        ana: r.zaten_acik
+          ? `KAP ZATEN AÇIK · ${r.kutu} — ${r.sayilan} okutuldu`
+          : `KAP AÇILDI · ${r.kutu} — ${r.kod}`,
         alt:
           `${r.aciklama ?? ""} · Malzeme kilitlendi: şimdi yalnızca seri numaralarını ` +
           "okut, her cihazda malzemeyi tekrarlama. Bittiğinde KABI KAPAT." +
@@ -220,6 +224,15 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
     // Kapanış ENGELLEMEZ, söyler: "kapta 150 yazıyordu, 12 okuttun" bir
     // bulgudur. Eksik gerçekten eksikse raporda zaten görünecek.
     case "kutu_kapandi":
+      if (r.kayit_yok)
+        return {
+          Ikon: Ik.Uyari,
+          ana: `KAP KAPANDI · ${r.kutu}`,
+          alt:
+            "Kabın kaydı bulunamadı — arada boşaltılmış olabilir. Kilit bırakıldı, " +
+            "sayaç okunamadı. Kabı yeniden okutup içeriğini söyleyebilirsin.",
+          ...SARI,
+        };
       return r.eksik
         ? {
             Ikon: Ik.Uyari,

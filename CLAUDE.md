@@ -495,7 +495,7 @@ Excel çıktısı üretiyoruz.
 ## 7. Mevcut durum
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 409 test geçiyor. **Arayüz yeniden
+altında React + Vite + Tailwind arayüz, 413 test geçiyor. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
 kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
 

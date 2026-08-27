@@ -63,8 +63,28 @@ def test_yeni_sutunlar_eklenir(tmp_path):
         assert {"tur", "kod", "ad", "adet"} <= sutunlar("kuyruk")
         assert {"ad", "yeni_seri"} <= sutunlar("okutma")
         assert "okutma" in sutunlar("kuyruk_foto")
-        # I2 kilidi ve I4 yedek parça modu oturuma yazılıyor.
-        assert {"sabit_kod", "yedek_parca"} <= sutunlar("oturum")
+        # I2 kilidi, I4 yedek parça modu ve açık kap oturuma yazılıyor.
+        assert {"sabit_kod", "yedek_parca", "acik_kutu", "acik_kutu_ilk"}             <= sutunlar("oturum")
+    finally:
+        c.close()
+
+
+def test_kutu_tablosu_eski_veritabaninda_olusur(tmp_path):
+    """Yeni TABLO eklemek yeni SÜTUN eklemekten farklı: `CREATE TABLE IF NOT
+    EXISTS` eski dosyada da çalışır. Kap defteri ve indeksi kurulmalı ki
+    yükseltilen bir kurulumda kap akışı çalışsın."""
+    c = dbm.baglan(_eski_db(tmp_path))
+    try:
+        assert {r["name"] for r in c.execute("PRAGMA table_info(kutu)")} >= {
+            "kod", "gosterim", "malzeme", "adet", "izleme", "raf", "ts",
+            "ts_guncelle", "oturum"}
+        adlar = {r["name"] for r in c.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'")}
+        assert "ix_kutu_malzeme" in adlar
+        # Eski veritabanında `etiket` tablosu da yoktu; kap defteri listesi
+        # onun üstüne kurulu, patlamamalı.
+        from app import kutu as kutum
+        assert kutum.liste(c) == []
     finally:
         c.close()
 

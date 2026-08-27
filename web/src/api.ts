@@ -195,6 +195,10 @@ export type OkutmaSonucu = {
   onceki_kutu?: KutuSayaci | null;
   /** tip="kilitac": kilit kabın kilidiyse kap da kapanır, özeti burada. */
   kutu_kapandi?: KutuSayaci | null;
+  /** tip="kutu_acildi": kap zaten açıktı (sayaç sıfırlanmadı). */
+  zaten_acik?: boolean;
+  /** tip="kutu_kapandi": kabın kaydı okunamadı — boşaltılmış olabilir. */
+  kayit_yok?: boolean;
 };
 
 /** Karar bekleyen kaydın türü.

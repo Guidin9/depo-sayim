@@ -240,6 +240,51 @@ def test_bos_kapanis_son_bilinen_adedi_silmez(c, ot):
     assert kutum.getir(c, kap)["adet"] == 21
 
 
+def test_ayni_kap_yeniden_okutulunca_sayac_sifirlanmaz(c, ot):
+    """Sıfırlanırsa o ana kadar sayılan cihazlar görünmez olur ve kapanışta
+    kabın adedi eksik yazılır."""
+    r = c.execute("""SELECT kod, seri FROM beklenen WHERE yukleme=1 AND ambar=?
+                     AND haric=0 AND izleme='seri' AND kirli=0 AND seri<>''
+                     ORDER BY id LIMIT 1""", (AMBAR,)).fetchone()
+    if not r:
+        pytest.skip("test verisinde temiz seri kaydı yok")
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, r["kod"], 21, "seri")
+
+    _yaz(c, ot, kap, SONRAKI)
+    _yaz(c, ot, r["seri"], SONRAKI)
+    assert matching.kutu_sayaci(c, oturum_taze(c, ot))["sayilan"] == 1
+
+    s = _yaz(c, ot, kap, SONRAKI)          # kap yeniden okutuldu
+    assert s["zaten_acik"] is True and s["sayilan"] == 1
+    assert matching.kutu_sayaci(c, oturum_taze(c, ot))["sayilan"] == 1
+
+
+def test_acik_kap_bosaltilirsa_kilit_takili_kalmaz(c, ot):
+    """Kap Barkod ekranından boşaltılırsa oturum bilinmeyen bir malzemeye
+    kilitli kalıyordu ve ##KUTUKAPAT## 'açık kap yok' diyordu."""
+    kod = _seri_malzeme(c)
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, kod, 21, "seri")
+
+    _yaz(c, ot, kap, SONRAKI)
+    kutum.bosalt(c, kap)
+
+    s = matching.okut(c, oturum_taze(c, ot), "##KUTUKAPAT##")
+    assert s["tip"] == "kutu_kapandi" and s["kayit_yok"] is True
+    o = oturum_taze(c, ot)
+    assert o["acik_kutu"] is None and o["sabit_kod"] is None
+
+
+def test_gorunum_izlemeyi_tigerdan_alir(c, ot):
+    """Malzemenin izleme yöntemi yeni yüklemede değişirse kap kaydı bayat kalır."""
+    kod = _lot_malzeme(c)
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, kod, 150, "seri")      # kayıtta yanlış/bayat değer
+    g = kutum.gorunum(c, kutum.getir(c, kap), 1, AMBAR)
+    assert g["izleme"] == "lot"
+
+
 def test_kilidi_acmak_kabi_da_kapatir(c, ot):
     """Kilit kabın kilidiydi: yalnız kilidi açmak sayacı dondururdu."""
     kod = _seri_malzeme(c)

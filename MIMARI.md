@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-27 · 409 test geçiyor.
+Son güncelleme: 2026-08-27 · 413 test geçiyor.
 
 ---
 
@@ -383,6 +383,12 @@ aynı id olamaz. İki kap aynı anda açık olamaz; yeni kap öncekini kapatır.
 sayılana göre tazeler (sayılan 0 ise DOKUNMAZ — yanlışlıkla açılıp kapatılan
 kap ipucunu kaybetmesin) ve eksik kaldıysa **uyarır, engellemez**.
 
+Aynı kap yeniden okutulursa **sayaç işareti korunur** (kap "zaten açık"
+döner): sıfırlamak o ana kadar sayılan cihazları görünmez yapar ve kapanışta
+kabın adedini eksik yazardı. Kap kaydı arada silinmiş/boşaltılmışsa kapanış
+yine de işareti ve kilidi temizler — yoksa oturum adı bile bilinmeyen bir
+malzemeye kilitli kalır ve sonraki her okutma oraya yazılırdı.
+
 Kap üç yoldan daha kapanır ve üçü de sessiz kalmaz: **başka bir kap açılınca**
 (özet yanıtta döner), **`##KILITAC##` ile** (kilit kabın kilidiydi; yalnız
 kilidi açmak sayacı dondururdu) ve **oturum biterken** — sonuncusu
@@ -627,7 +633,7 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **409 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **413 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
 
 | Dosya | Kapsam |

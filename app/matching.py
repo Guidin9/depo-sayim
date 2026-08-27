@@ -400,8 +400,16 @@ def _kutu_ac(c, ot, kutu_ad, kod):
     Başka bir kap açıksa o KAPANIR — iki kap aynı anda açık olamaz, yoksa
     sayaç hangisine ait belli olmaz. Kapanan kabın özeti geri döner.
     """
+    if ot["acik_kutu"] and norm(ot["acik_kutu"]) == norm(kutu_ad):
+        # AYNI kap yeniden okutuldu — kullanıcı ne kadar saydığını görmek için
+        # ya da elindeki kabı yeniden doğrulamak için. Sayaç işareti KORUNUR:
+        # sıfırlamak o ana kadar sayılan cihazları görünmez yapar ve kapanışta
+        # kabın adedini eksik yazardı (5 okutulmuşken 0'dan başlayıp 3 daha
+        # okutulursa kap "3 adet" olarak kaydedilirdi).
+        c.execute("UPDATE oturum SET sabit_kod=? WHERE id=?", (kod, ot["id"]))
+        return None
     onceki = None
-    if ot["acik_kutu"] and norm(ot["acik_kutu"]) != norm(kutu_ad):
+    if ot["acik_kutu"]:
         onceki = _kutu_kapat(c, ot)
     ilk = c.execute("SELECT COALESCE(MAX(id),0) n FROM okutma WHERE oturum=?",
                     (ot["id"],)).fetchone()["n"]
@@ -423,10 +431,17 @@ def _kutu_kapat(c, ot, ts=None):
     `sayilan == 0` iken kabın adedi GÜNCELLENMEZ. Yanlışlıkla açılıp hemen
     kapatılan bir kap, son bilinen adedini kaybetmemeli.
     """
+    if not ot["acik_kutu"]:
+        return None
     d = kutu_sayaci(c, ot)
     c.execute("UPDATE oturum SET acik_kutu=NULL, acik_kutu_ilk=0 WHERE id=?",
               (ot["id"],))
-    if d and ot["sabit_kod"] and norm(ot["sabit_kod"]) == norm(d["kod"]):
+    # Kilidi kap kurmuştu, o yüzden kap kaydı OKUNAMASA DA bırakılır. Kayıt
+    # arada silinmiş / boşaltılmış olabilir (Barkod ekranındaki "Boşalt");
+    # o zaman `kutu_sayaci` None döner ve eski kod işareti hiç temizlemiyordu:
+    # oturum artık adı bile bilinmeyen bir malzemeye kilitli kalıyor, sonraki
+    # her okutma oraya yazılıyordu. ##KUTUKAPAT## de "açık kap yok" diyordu.
+    if ot["sabit_kod"] and (d is None or norm(ot["sabit_kod"]) == norm(d["kod"])):
         c.execute("UPDATE oturum SET sabit_kod=NULL WHERE id=?", (ot["id"],))
     if d and d["sayilan"] > 0:
         kutum.tanimla(c, d["kutu"], d["kod"], d["sayilan"], "seri",
@@ -618,8 +633,13 @@ def grup_coz(c, ot, raf=None):
             # demek "bir cihaz saydım" anlamına gelmemeli. Onun yerine KAP
             # AÇILIR: malzeme kilitlenir ve sayaç başlar, kullanıcı art arda
             # yalnızca seri numaralarını okutur (##KUTUKAPAT## ile kapatır).
+            zaten = norm(ot["acik_kutu"] or "") == norm(kutu_ad)
             onceki = _kutu_ac(c, ot, kutu_ad, kutu_t["kod"])
+            sayac = kutu_sayaci(c, c.execute("SELECT * FROM oturum WHERE id=?",
+                                             (oturum,)).fetchone())
             return {"tip": "kutu_acildi", "kutu": kutu_ad, "kod": kutu_t["kod"],
+                    "zaten_acik": zaten,
+                    "sayilan": sayac["sayilan"] if sayac else 0,
                     "aciklama": kutu_t.get("aciklama"),
                     "adet": kutu_t.get("adet"), "taze": kutu_t.get("taze"),
                     "sabit_kod": kutu_t["kod"], "onceki_kutu": onceki,
@@ -973,12 +993,18 @@ def okut(c, ot, ham, zorla=False):
         # Kabı kapatmak: kilidi bırak, sayacı özetle. Eksik kaldıysa söyle —
         # engelleme, örtme. Kap zaten kapalıysa sessiz kalmıyoruz: kullanıcı
         # kapattığını sanıp başka bir ürünü kilitli malzemeye okutabilir.
-        acik = kutu_sayaci(c, ot)
-        if not acik:
+        if not ot["acik_kutu"]:
             return {"tip": "kutu_yok", "ses": "uyari"}
         d = _kutu_kapat(c, ot, ts)
+        if not d:
+            # İşaret ve kilit temizlendi ama kabın kaydı okunamadı. Sessiz
+            # kalmıyoruz: kullanıcı kaç adet saydığını bekliyordu.
+            return {"tip": "kutu_kapandi", "kutu": ot["acik_kutu"], "kod": "",
+                    "aciklama": "kap kaydı bulunamadı — içeriği boşaltılmış olabilir",
+                    "sayilan": 0, "beklenen": None, "eksik": 0,
+                    "kayit_yok": True, "ses": "uyari"}
         return dict(d, tip="kutu_kapandi",
-                    ses="uyari" if d and d["eksik"] else "ok")
+                    ses="uyari" if d["eksik"] else "ok")
 
     if komut in ("yedek", "yedekkapat"):
         acik = 0 if komut == "yedekkapat" else (0 if ot["yedek_parca"] else 1)
