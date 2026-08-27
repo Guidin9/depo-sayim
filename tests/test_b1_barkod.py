@@ -19,7 +19,12 @@ from app import matching, reports
 from tests.conftest import AMBAR
 
 SONRAKI = "##SONRAKI##"
-UPC = "190017273624"          # Tiger'da karşılığı yok
+UPC = "190017273624"          # Tiger'da karşılığı yok — GEÇERLİ perakende barkodu
+# Cihaza özel, tanınmayan bir üretici seri numarası. UPC'den AYRI tutulması şart:
+# perakende barkodu o malzemenin her adedinde aynıdır, seri numarası tek cihaza
+# aittir. İkisini tek sabitle temsil etmek `slot` dalındaki UPC hatasını
+# (2026-08-27) testlerin göremediği bir kör nokta yapıyordu.
+SERI = "W3S2000G7745"
 
 
 def _temiz_seri(c):
@@ -136,12 +141,47 @@ def test_kirli_oneri_tigera_ulasmaz(c, ot, yaz):
 # ------------------------------------------------------------------ slot dalı
 def test_slot_grubun_butun_barkodlarini_saklar(c, ot, yaz):
     kod = _kirli_malzeme(c)
-    r = yaz(kod, UPC, SONRAKI)
+    r = yaz(kod, SERI, SONRAKI)
     assert r["tip"] == "slot"
 
     x = _son(c, ot)
-    assert kod in x["ham"] and UPC in x["ham"]
-    assert x["yeni_seri"] == UPC, "Tiger'a önerilen numara ayrı sütunda"
+    assert kod in x["ham"] and SERI in x["ham"]
+    assert x["yeni_seri"] == SERI, "Tiger'a önerilen numara ayrı sütunda"
+
+
+def test_slot_upcyi_seri_numarasi_diye_onermez(c, ot, yaz):
+    """UPC perakende barkodudur — o malzemenin HER adedinde aynıdır.
+
+    Regresyon (2026-08-27, gerçek veriyle üretildi): `slot` dalı düpedüz
+    `max(bilinmeyen, key=len)` diyordu ve perakende barkodu çoğu zaman gerçek
+    seri numarasından uzun. Tiger'a `0WGP72SAYIM1 -> 198701689928` yazılıyordu;
+    o malzemenin 21 cihazının hepsi aynı UPC'yi taşıdığı için 21 cihaza aynı
+    "tekil" numara verilmiş olurdu — uygulamanın temizlemeye çalıştığı
+    kirliliğin ta kendisi.
+
+    Aynı eleme `reports._yeni_seri` içinde ZATEN vardı; `slot` dalı tek başına
+    onu kullanmıyordu.
+    """
+    kod = _kirli_malzeme(c)
+    r = yaz(kod, UPC, SERI, SONRAKI)
+    assert r["tip"] == "slot"
+    assert r["yeni"] == SERI, "UPC değil cihazın seri numarası önerilmeli"
+
+    x = _son(c, ot)
+    assert x["yeni_seri"] == SERI
+    for parca in (kod, UPC, SERI):
+        assert parca in x["ham"], "%s denetim izinden düşmüş" % parca
+    # UPC yine de öğrenilir: ürün tipine ait barkod, Barkod Tablosu'nun işi.
+    assert c.execute("SELECT kod FROM eslesme WHERE barkod=?",
+                     (UPC,)).fetchone()["kod"] == kod
+
+
+def test_tek_basina_upc_seri_no_uretmez(c, ot, yaz):
+    """Yalnız UPC okutulduysa Tiger'a öneri YOKTUR — `sn_yok` sözleşmesi."""
+    kod = _kirli_malzeme(c)
+    r = yaz(kod, UPC, SONRAKI)
+    assert r["tip"] == "slot" and r["sn_yok"], "UPC seri numarası değildir"
+    assert _son(c, ot)["yeni_seri"] == ""
 
 
 def test_slot_malzeme_kodunu_tigera_seri_diye_yazmaz(c, ot, yaz):
@@ -167,10 +207,10 @@ def test_slot_uretici_seri_numarasi_kazanir(c, ot, yaz):
     from app import etiketler
     kod = _kirli_malzeme(c)
     etiketler.bas(c, "seri", adet=3)
-    yaz(kod, UPC, "DS-000001", SONRAKI)
+    yaz(kod, SERI, "DS-000001", SONRAKI)
     x = _son(c, ot)
-    assert x["yeni_seri"] == UPC
-    for parca in (kod, UPC, "DS-000001"):
+    assert x["yeni_seri"] == SERI
+    for parca in (kod, SERI, "DS-000001"):
         assert parca in x["ham"], "%s denetim izinden düşmüş" % parca
 
 
@@ -193,3 +233,48 @@ def test_eski_kayitlar_hala_raporlanir(c, ot, yaz):
     c.execute("UPDATE okutma SET yeni_seri=NULL, ham=? WHERE oturum=?", (UPC, ot["id"]))
     duz = _satirlar(reports.rapor_verisi(c, ot["id"]), "Tiger Düzeltme")
     assert [s[3] for s in duz] == [UPC]
+
+
+# ------------------------------------------------- B3: aynı S/N ikinci kez
+def test_ayni_seri_ikinci_kez_ikinci_slotu_doldurmaz(c, ot, yaz):
+    """Regresyon (2026-08-27, gerçek veriyle üretildi).
+
+    Kirli slot doldurulurken okutulan gerçek S/N `eslesme`'ye de öğreniliyor
+    (kutudaki bütün barkodlar kaydedilsin diye — bilinçli karar). Ama o öğrenme,
+    aynı cihazın S/N'i kazara ikinci kez okutulduğunda `coz()`'un 4. adımından
+    `ogrenilmis` olarak geçip malzemenin BİR SONRAKİ kirli slotunu
+    dolduruyordu: tek cihaz iki kez sayılıyor, üstelik hiçbir uyarı çıkmıyordu.
+
+    Temiz kayıtlarda bu korumayı 1. adım zaten veriyordu (`tekrar`); kirli
+    kayıtlarda karşılığı yoktu — yani deponun tam da yarısında.
+    """
+    kod = _kirli_malzeme(c)
+    ilk = yaz(kod, SERI, SONRAKI)
+    assert ilk["tip"] == "slot"
+    dolu = c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=?",
+                     (ot["id"],)).fetchone()["n"]
+
+    r = yaz(SERI, SONRAKI)                 # aynı cihaz, tek başına
+    assert r["tip"] == "tekrar", "aynı seri numarası ikinci kez sayıldı"
+    assert r["seri"] == ilk["eski"], "hangi slota yazıldığı söylenmeli"
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=?",
+                     (ot["id"],)).fetchone()["n"] == dolu, "ikinci slot doldu"
+
+
+def test_geri_alinan_seri_yeniden_okutulabilir(c, ot, yaz):
+    """`##GERIAL##` sonrası tekrar koruması da kalkmalı — kayıt artık yok."""
+    kod = _kirli_malzeme(c)
+    yaz(kod, SERI, SONRAKI)
+    matching.gerial(c, c.execute("SELECT * FROM oturum WHERE id=?",
+                                 (ot["id"],)).fetchone())
+    r = yaz(kod, SERI, SONRAKI)
+    assert r["tip"] == "slot", "geri alınan okutma tekrar sayılabilmeli"
+
+
+def test_farkli_cihazlar_tekrar_sanilmaz(c, ot, yaz):
+    """Aynı malzemenin İKİ AYRI cihazı ayrı slotları doldurmalı."""
+    kod = _kirli_malzeme(c)
+    a = yaz(kod, "SNAAAA1111", SONRAKI)
+    b = yaz(kod, "SNBBBB2222", SONRAKI)
+    assert a["tip"] == "slot" and b["tip"] == "slot"
+    assert a["eski"] != b["eski"], "iki cihaz aynı slota yazıldı"

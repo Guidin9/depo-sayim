@@ -192,6 +192,17 @@ EK_SUTUNLAR = [
     # Seri takipli açık kap ve sayaç işareti (KUTU_TASARIM.md 5).
     ("oturum", "acik_kutu", "TEXT"),
     ("oturum", "acik_kutu_ilk", "INT DEFAULT 0"),
+    # Tiger'a onerilecek seri numarasi BELIRSIZ kaldiginda adaylarin listesi
+    # (JSON). Bir urunde birden cok taninmayan alfanumerik barkod varsa
+    # (P/N + S/N gibi) hangisinin cihaza ozel oldugunu uygulama bilemez;
+    # eskiden en uzunu sessizce secilip Tiger'a yazdiriliyordu. Dolu = "bu
+    # satirda seri no HENUZ SECILMEDI", bos/NULL = karar verildi.
+    ("okutma", "sn_adaylar", "TEXT"),
+    # Ilk ##BITIR## okutmasinin zaman damgasi. Komut karti sahada tasiniyor ve
+    # kazara okutulan tek bir barkod gunlerce suren sayimi kapatiyordu; kapanis
+    # icin 60 sn icinde IKINCI bir ##BITIR## gerekiyor. Araya giren herhangi
+    # bir okutma damgayi siler.
+    ("oturum", "bitir_istegi", "TEXT"),
 ]
 
 # EK_SUTUNLAR'daki bir sütuna dayanan indeksler. SEMA'ya YAZILAMAZLAR.

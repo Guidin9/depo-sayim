@@ -14,16 +14,39 @@ export default function Gecmis({
   tik,
   geri,
   rapora: raporaGit,
+  sayima,
 }: {
   tik: number;
   geri: () => void;
   rapora: (oturum: number) => void;
+  /** Oturum geri açıldıktan sonra sayıma dönüş. Verilmezse düğme çizilmez. */
+  sayima?: () => void;
 }) {
   const [liste, setListe] = useState<OturumOzeti[]>([]);
+  const [hata, setHata] = useState<string | null>(null);
 
   useEffect(() => {
     void api.oturumlar().then(setListe);
   }, [tik]);
+
+  /* Kazara kapanan oturumu geri açar. Yeni oturum açmak çözüm DEĞİL: beklenen
+     kayıtlarla eşleşme oturum bazlı, o ana kadar sayılan her şey "eksik"
+     olurdu. ##BITIR## komut kartında basılı ve depo sayımı günlerce sürüyor. */
+  async function yenidenAc(id: number) {
+    if (!window.confirm(`Oturum #${id} yeniden açılsın mı?
+
+` +
+        "Sayılan her şey korunur, sayıma kaldığı yerden devam edilir."))
+      return;
+    try {
+      setHata(null);
+      await api.oturumYenidenAc(id);
+      setListe(await api.oturumlar());
+      sayima?.();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5 p-5">
@@ -38,6 +61,13 @@ export default function Gecmis({
         />
         <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">Oturum geçmişi</h1>
       </header>
+
+      {hata && (
+        <div className="rounded-sm border border-hata bg-hata-tint px-4 py-3 text-kucuk
+          text-hata">
+          {hata}
+        </div>
+      )}
 
       <Panel
         baslik="Sayımlar"
@@ -77,6 +107,9 @@ export default function Gecmis({
                       <b className={o.kuyruk ? "text-uyari" : ""}>{o.kuyruk}</b> kuyruk
                     </span>
                   </div>
+                  {o.durum !== "acik" && (
+                    <Dugme cocuk="Yeniden aç" tikla={() => void yenidenAc(o.id)} />
+                  )}
                   <Dugme cocuk="Rapor" tikla={() => raporaGit(o.id)} />
                   <a href={api.raporUrl(o.id)} download>
                     <Dugme

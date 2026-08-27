@@ -1,4 +1,6 @@
 """Sayım ekranı: oturum yaşam döngüsü, okutma, durum, arama."""
+import json
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -60,6 +62,11 @@ class OkutmaSil(BaseModel):
 
 class Coz(BaseModel):
     beklenen_id: int
+
+
+class SeriSec(BaseModel):
+    """Belirsiz kalan seri numarası kararı (CLAUDE.md 4.4 — `sn_adaylar`)."""
+    seri: str
 
 
 @router.post("/oturum")
@@ -199,7 +206,66 @@ def bitir(oturum_id: int, zorla: bool = False, c=DB):
     if fotosuz and not zorla:
         raise HTTPException(409, {"mesaj": "%d fazla kaydının fotoğrafı yok."
                                            % len(fotosuz), "fotosuz": fotosuz})
+    # Yumuşak uyarılar — `##BITIR##` komut barkoduyla aynı kapılar, iki yol
+    # aynı şeyi söylesin diye. Sayım doğru; eksik olan bilgi.
+    eksik_lot = matching.eksik_lotlar(c, o)
+    secilmemis = matching.sn_secilmemisler(c, oturum_id)
+    if (eksik_lot or secilmemis) and not zorla:
+        raise HTTPException(409, {
+            "mesaj": "Bitirmeden önce bakın: %s%s%s" % (
+                ("%d lot satırında sayılan < beklenen" % len(eksik_lot))
+                if eksik_lot else "",
+                " · " if (eksik_lot and secilmemis) else "",
+                ("%d kayıtta seri numarası seçilmedi" % len(secilmemis))
+                if secilmemis else ""),
+            "eksik_lot": eksik_lot, "sn_secilmemis": secilmemis})
     return dict(oturumlar.bitir(c, oturum_id))
+
+
+@router.post("/oturum/{oturum_id}/yeniden-ac")
+def yeniden_ac(oturum_id: int, c=DB):
+    """Kazara kapanan oturumu geri aç.
+
+    `##BITIR##` komut kartında basılı ve sayım günlerce sürüyor; kapanan
+    oturumu diriltmenin yolu yoktu, yeni oturum açmak o ana kadar sayılan her
+    şeyi "eksik" yapardı.
+    """
+    oturum_getir(oturum_id, c)
+    ot, hata = oturumlar.yeniden_ac(c, oturum_id)
+    if hata:
+        raise HTTPException(409, hata)
+    c.commit()
+    return matching.durum(c, ot)
+
+
+@router.post("/okutma/{okutma_id}/seri-sec")
+def seri_sec(okutma_id: int, istek: SeriSec, c=DB):
+    """Belirsiz kalan seri numarasını seç (Tiger Düzeltme'ye bu değer gider).
+
+    Üründe birden çok tanınmayan alfanümerik barkod varsa (P/N + S/N gibi)
+    hangisinin cihaza özel olduğu bilinemez; motor geçici olarak en uzunu yazıp
+    adayları `okutma.sn_adaylar`'da bırakır. Burada karar veriliyor.
+
+    Öğrenme (`eslesme`) DEĞİŞMEZ: gruptaki bütün barkodlar zaten malzemeye
+    bağlandı, seçim yalnızca "Tiger'a hangi değer seri no diye önerilecek"
+    sorusunu kapatır.
+    """
+    x = c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone()
+    if not x:
+        raise HTTPException(404, "Okutma #%s bulunamadı" % okutma_id)
+    try:
+        adaylar = json.loads(x["sn_adaylar"] or "[]")
+    except ValueError:
+        adaylar = []
+    secim = (istek.seri or "").strip()
+    # Boş seçim = "hiçbiri seri numarası değil": öneri üretilmez, satır Tiger
+    # Düzeltme'ye hiç girmez (`sn_yok` sözleşmesiyle aynı sonuç).
+    if secim and adaylar and secim not in adaylar:
+        raise HTTPException(400, "Seçilen değer bu okutmanın adayları arasında değil.")
+    c.execute("UPDATE okutma SET yeni_seri=?, sn_adaylar=NULL WHERE id=?",
+              (secim, okutma_id))
+    c.commit()
+    return dict(c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone())
 
 
 @router.post("/oturum/{oturum_id}/raf")

@@ -1,6 +1,6 @@
 """CLAUDE.md 8 — sahada doğrulanmış yedi senaryo. Hepsi geçmek zorunda."""
 from app import matching
-from tests.conftest import oturum_taze
+from tests.conftest import bitir, oturum_taze
 
 SONRAKI = "##SONRAKI##"
 
@@ -255,6 +255,45 @@ def test_sayaclar(c, ot, yaz):
 
 
 def test_bitir_oturumu_kapatir(c, ot, yaz):
+    """##BITIR## İKİ okutma ister: kart sahada taşınıyor, kazara okunabiliyor."""
+    ilk = yaz("##BITIR##")
+    assert ilk["tip"] == "bitir_onay", "tek okutma oturumu kapatmamalı"
+    assert oturum_taze(c, ot)["durum"] == "acik"
+
     r = yaz("##BITIR##")
     assert r["tip"] == "bitti"
     assert oturum_taze(c, ot)["durum"] == "bitti"
+
+
+def test_bitir_onayi_araya_giren_okutmayla_bozulur(c, ot, yaz):
+    """Sabahki kazara okutma öğleden sonraki ##BITIR##'i onaylamamalı."""
+    assert yaz("##BITIR##")["tip"] == "bitir_onay"
+    yaz("5S47WC2", SONRAKI)                    # araya normal bir sayım girdi
+    assert yaz("##BITIR##")["tip"] == "bitir_onay", "damga temizlenmeliydi"
+    assert oturum_taze(c, ot)["durum"] == "acik"
+
+
+def test_kapanan_oturum_yeniden_acilir(c, ot, yaz):
+    """Kazara kapanan sayım geri açılabilmeli — okutmalar korunur.
+
+    Yeni oturum açmak çözüm değil: `beklenen` eşleşmesi oturum bazlı, o ana
+    kadar sayılan her şey "eksik" olurdu.
+    """
+    from app import oturumlar
+    yaz("5S47WC2", SONRAKI)
+    onceki = matching.sayaclar(c, oturum_taze(c, ot))["okutulan"]
+    assert bitir(yaz)["tip"] == "bitti"
+
+    acilan, hata = oturumlar.yeniden_ac(c, ot["id"])
+    assert hata is None and acilan["durum"] == "acik"
+    assert oturumlar.acik(c)["id"] == ot["id"]
+    assert matching.sayaclar(c, acilan)["okutulan"] == onceki, "sayım korunmalı"
+
+
+def test_yeniden_acma_baska_oturum_acikken_reddedilir(c, ot):
+    from app import oturumlar
+    oturumlar.bitir(c, ot["id"])
+    yeni = oturumlar.ac(c, 1, ot["ambar"])
+    assert yeni["id"] != ot["id"]
+    _, hata = oturumlar.yeniden_ac(c, ot["id"])
+    assert hata and "açık bir oturum" in hata

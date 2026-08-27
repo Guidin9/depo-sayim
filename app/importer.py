@@ -179,6 +179,19 @@ def yukle(c, yol, yukleme_id=None, dosya_adi=None):
         mevcut = {(r["kod"], r["ambar"]) for r in c.execute(
             "SELECT DISTINCT kod, ambar FROM beklenen WHERE yukleme=? AND izleme<>'yok'",
             (yukleme_id,))}
+    # AYNI SATIRIN İKİNCİ KEZ YÜKLENMESİ.
+    #
+    # Tekrar koruması eskiden yalnızca `envanter` kaynağı için hesaplanıyordu.
+    # "İkinci rapor ekle" düğmesiyle aynı Seri/Lot dosyası yeniden seçilince
+    # 870 satır sessizce 1740 oluyordu: her fiziksel cihaz yalnızca ilk kopyaya
+    # eşleşiyor, ikinci kopya sonuna kadar "eksik" kalıyor ve sayım asla
+    # tamamlanamıyordu. Kullanıcı bütün depoyu sayıp raporda 870 hayalet eksik
+    # görüyordu (gerçek veriyle üretildi, 2026-08-27).
+    #
+    # Anahtar (kod, ambar, seri): seri/lot raporunda aynı kod çok satır taşır,
+    # yalnız (kod, ambar) bakmak aynı malzemenin farklı cihazlarını elerdi.
+    mevcut_seri = {(r["kod"], r["ambar"], r["seri"]) for r in c.execute(
+        "SELECT kod, ambar, seri FROM beklenen WHERE yukleme=?", (yukleme_id,))}
 
     n = atlanan = 0
     for d in satirlar:
@@ -190,6 +203,10 @@ def yukle(c, yol, yukleme_id=None, dosya_adi=None):
             atlanan += 1
             continue
         seri = _metin(d.get("seri"))
+        if (kod, ambar, seri) in mevcut_seri:
+            atlanan += 1
+            continue
+        mevcut_seri.add((kod, ambar, seri))
         izleme = izleme_coz(d.get("izleme_ham")) if kaynak == "seri_lot" else "yok"
         if kaynak == "seri_lot" and izleme == "yok" and seri:
             izleme = "seri"  # izleme sütunu boş ama seri dolu

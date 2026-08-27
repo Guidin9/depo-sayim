@@ -112,7 +112,9 @@ def liste(oturum_id: int, hepsi: bool = False, c=DB):
 def coz(kuyruk_id: int, istek: Coz, c=DB):
     sonuc = matching.kuyruk_coz(c, kuyruk_id, istek.beklenen_id)
     if "hata" in sonuc:
-        raise HTTPException(404, sonuc["hata"])
+        # Durum çakışması 404 değil 409: kayıt VAR, çözülmüş ya da hedef dolu.
+        # 404 gören arayüz "kayıt silinmiş" diye davranıyordu.
+        raise HTTPException(409 if "zaten" in sonuc["hata"] else 404, sonuc["hata"])
     c.commit()
     return sonuc
 
@@ -178,7 +180,7 @@ def sil(kuyruk_id: int, istek: FazlaKapat | None = None, c=DB):
     if sonuc.get("hata") == "ad_gerekli":
         raise HTTPException(400, {"hata": "ad_gerekli", "mesaj": sonuc["mesaj"]})
     if "hata" in sonuc:
-        raise HTTPException(404, sonuc["hata"])
+        raise HTTPException(409 if "zaten" in sonuc["hata"] else 404, sonuc["hata"])
     c.commit()
     return sonuc
 

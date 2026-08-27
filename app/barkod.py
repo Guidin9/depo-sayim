@@ -24,7 +24,8 @@ KOMUTLAR = [
     ("##ATLA##", "ATLA / SONRA ÇÖZ",
      "Karar veremedin. Kuyruğa atar, sayım sonunda çözersin."),
     ("##BITIR##", "SAYIMI BİTİR",
-     "Oturumu kapatır, rapor hazırlanır."),
+     "İKİ KEZ okut. Oturumu kapatır, rapor hazırlanır. Kazara okutmaya karşı "
+     "tek okutma yetmez; yanlışlıkla kapanırsa Geçmiş ekranından yeniden aç."),
     # I2 — kilit PARAMETRESİZ basılır: malzeme kodlarının bir kısmı boşluk ya
     # da Türkçe karakter taşıyor ve Code128'e girmiyor (CLAUDE.md 2.1).
     ("##KILIT##", "BU MALZEMEYE OKUT",

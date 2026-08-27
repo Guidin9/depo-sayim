@@ -10,7 +10,7 @@ import json
 import pytest
 
 from app import etiketler, matching, reports
-from tests.conftest import AMBAR, oturum_taze
+from tests.conftest import AMBAR, bitir, oturum_taze
 
 SONRAKI = "##SONRAKI##"
 YENI_UPC = "190017273624"          # Tiger'da karşılığı yok — öğrenilecek
@@ -44,7 +44,7 @@ def test_bos_tamponda_fazla_kayit_yaratmaz(c, ot, yaz):
     assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=?",
                      (ot["id"],)).fetchone()["n"] == 0
     assert matching.adsiz_fazlalar(c, ot["id"]) == []
-    assert yaz("##BITIR##")["tip"] == "bitti"
+    assert bitir(yaz)["tip"] == "bitti"
 
 
 def test_dolu_tamponda_fazla_hala_calisir(c, ot, yaz):
@@ -205,3 +205,30 @@ def test_tiger_duzeltmesi_asla_malzeme_kodunu_onermez(c, ot, yaz):
         yaz(kod, SONRAKI)
     for satir in reports.rapor_verisi(c, ot["id"])["Tiger Düzeltme"]["satirlar"]:
         assert norm(satir[3]) != norm(satir[0]), satir
+
+
+# ------------------------------------------------- B7: ##GERIAL## grup kapsamı
+def test_gerial_cok_satirli_adedi_tamamen_geri_alir(c, ot, yaz):
+    """Regresyon (2026-08-27).
+
+    `##ADET-5##` çok lotlu bir malzemede 5 ayrı satır açıyor (`_adet_dagit`).
+    `gerial` son SATIRI siliyordu: kullanıcı geri aldığını sanıyor, 4 adet
+    sayımda kalıyordu. Üstelik `geri` (öğrenme / etiket) yalnızca ilk satırda
+    durduğu için yan etkiler de temizlenmiyordu. `okutma_sil` bunu zaten grup
+    bazlı yapıyordu — iki yol aynı sözleşmede değildi.
+    """
+    kod = c.execute("""SELECT kod FROM beklenen WHERE yukleme=1 AND ambar='1'
+                       AND izleme='lot' GROUP BY kod HAVING COUNT(*)>3
+                       ORDER BY COUNT(*) DESC LIMIT 1""").fetchone()
+    if not kod:
+        pytest.skip("test verisinde çok lotlu malzeme yok")
+
+    r = yaz("##ADET-5##", kod["kod"], "##SONRAKI##")
+    assert r["tip"] == "adet" and r["satir"] > 1, "adet tek satıra yazıldı"
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=?",
+                     (ot["id"],)).fetchone()["n"] == r["satir"]
+
+    g = matching.gerial(c, oturum_taze(c, ot))
+    assert g["silinen"] == r["satir"]
+    assert c.execute("SELECT COALESCE(SUM(miktar),0) s FROM okutma WHERE oturum=?",
+                     (ot["id"],)).fetchone()["s"] == 0, "adet yarım kaldı"

@@ -117,10 +117,27 @@ def test_yeni_kural_eklenebilir(c, ot):
 
 
 def test_haric_kalem_sayaci_sismez(c, ot):
-    """Hariç kalemler 'toplam'a girmez."""
-    tum = c.execute("SELECT COUNT(*) n FROM beklenen WHERE ambar='1'").fetchone()["n"]
+    """Hariç kalemler 'toplam'a girmez.
+
+    `toplam` artık ADET bazında (seri takiplide satır başına 1, lot/izlemesizde
+    satırın miktarı): ekran sayacı ile rapordaki eksik adet aynı gerçeği
+    söylesin diye. `satir` alanı satır sayısını ayrıca taşıyor.
+    """
+    adet = c.execute(
+        """SELECT COALESCE(SUM(CASE WHEN izleme='seri' THEN 1
+                                    ELSE COALESCE(miktar,0) END),0) n
+           FROM beklenen WHERE ambar='1' AND haric=0""").fetchone()["n"]
+    tum_satir = c.execute("SELECT COUNT(*) n FROM beklenen "
+                          "WHERE ambar='1'").fetchone()["n"]
     _, satir, _ = haric_kur(c)
-    assert matching.sayaclar(c, ot)["toplam"] == tum - satir
+    s = matching.sayaclar(c, ot)
+    assert s["satir"] == tum_satir - satir
+    # Hariç edilen satırların adedi de toplamdan düşmeli.
+    dusen = c.execute(
+        """SELECT COALESCE(SUM(CASE WHEN izleme='seri' THEN 1
+                                    ELSE COALESCE(miktar,0) END),0) n
+           FROM beklenen WHERE ambar='1' AND haric=1""").fetchone()["n"]
+    assert s["toplam"] == adet - dusen
 
 
 def test_haric_kalem_okutulunca_uyarir(c, ot, yaz):

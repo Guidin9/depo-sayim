@@ -50,6 +50,9 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
         alt:
           `${r.aciklama ?? ""}` +
           (r.ogrenilen?.length ? ` · öğrenildi: ${r.ogrenilen.join(", ")}` : "") +
+          (r.tekrar_seri
+            ? ` · UYARI: ${r.tekrar_seri} bu grupta ikinci kez okutuldu, sayılmadı`
+            : "") +
           (r.adet_yersiz ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli` : "") +
           (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
         ...YESIL,
@@ -69,13 +72,21 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
             ...SARI,
           }
         : {
-            Ikon: Ik.Onay,
-            ana: `${r.kod} — uydurma kayıt düzeltildi`,
+            // Karar bekleyen kayıt YEŞİL olmamalı: "tamam" rengi kullanıcıyı
+            // sorunun üstünden geçirir. Sayım doğru ama Tiger'a gidecek değer
+            // henüz bir tahmin.
+            Ikon: r.sn_secim?.length ? Ik.Soru : Ik.Onay,
+            ...(r.sn_secim?.length ? SARI : YESIL),
+            ana: r.sn_secim?.length
+              ? `${r.kod} — sayıldı, seri numarası SEÇİLMELİ`
+              : `${r.kod} — uydurma kayıt düzeltildi`,
             alt:
               `${r.eski} → ${r.yeni} · ${r.aciklama ?? ""}` +
+              (r.sn_secim?.length
+                ? " · Üründe birden çok tanınmayan barkod var; hangisinin cihaza ait olduğunu aşağıdan seç."
+                : "") +
               (r.adet_yersiz ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli` : "") +
               (r.etiket ? ` · etiket ${r.etiket} bağlandı` : ""),
-            ...YESIL,
           };
     case "adet":
       // Lot/izlemesiz kalemde boş etiket okutulmuşsa bağlanacak kayıt yok:
@@ -158,7 +169,60 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
       return {
         Ikon: Ik.Tekrar,
         ana: `TEKRAR — ${r.kod}`,
-        alt: `${r.seri} zaten okutuldu, ikinci kez sayılmadı.`,
+        // `not` kirli slot yolundan geliyor: "bu seri numarası az önce
+        // 0WGP72SAYIM1 slotuna yazıldı". Kullanıcı hangi cihazı ikinci kez
+        // elinde tuttuğunu bilmeli.
+        alt: r.not ?? `${r.seri} zaten okutuldu, ikinci kez sayılmadı.`,
+        ...SARI,
+      };
+    /* ##SONRAKI## unutulmuş: tek grupta birden çok cihaz. Hepsi sayıldı —
+       eskiden yalnızca ilki sayılıp gerisi sessizce kayboluyordu. */
+    case "coklu":
+      return {
+        Ikon: Ik.Uyari,
+        ana: `${r.sayi} AYRI CİHAZ SAYILDI`,
+        alt:
+          "SIRADAKİ ÜRÜN okutmayı unutmuş olabilirsin — hepsi ayrı ayrı sayıldı, " +
+          "hiçbiri kaybolmadı. Yanlışsa Ctrl+Z ile son cihazı geri al. " +
+          (r.kayitlar ?? []).map((k) => `${k.kod} ${k.seri}`).join(" · ") +
+          (r.ogrenilmedi?.length
+            ? ` · ÖĞRENİLMEDİ: ${r.ogrenilmedi.join(", ")} (hangi cihaza ait belli değil)`
+            : ""),
+        ...SARI,
+      };
+    /* ##BITIR## komut kartında basılı ve kazara okutulabiliyor: tek okutma
+       günlerce süren bir sayımı kapatmamalı. */
+    case "bitir_onay":
+      return {
+        Ikon: Ik.Uyari,
+        ana: "SAYIMI BİTİRMEK İÇİN BİR KEZ DAHA OKUT",
+        alt:
+          `Kazara okutmaya karşı çift onay. ${r.saniye ?? 60} saniye içinde ` +
+          "SAYIMI BİTİR barkodunu tekrar okut. Araya başka bir okutma girerse iptal olur.",
+        ...SARI,
+      };
+    /* Engel DEĞİL, bilgi: sayım doğru, eksik olan bilgi. */
+    case "bitir_uyari":
+      return {
+        Ikon: Ik.Uyari,
+        ana: "BİTİRMEDEN ÖNCE BAK",
+        alt:
+          [
+            r.eksik_lot?.length
+              ? `${r.eksik_lot.length} lot satırında sayılan < beklenen: ` +
+                r.eksik_lot
+                  .slice(0, 4)
+                  .map((x) => `${x.kod} ${x.sayilan}/${x.beklenen}`)
+                  .join(", ")
+              : "",
+            r.sn_secilmemis?.length
+              ? `${r.sn_secilmemis.length} kayıtta Tiger'a önerilen seri numarası tahmin`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ") +
+          ` · Sayım DOĞRU, bunlar bilgi. Bitirmek için ${r.saniye ?? 60} saniye ` +
+          "içinde SAYIMI BİTİR barkodunu tekrar okut.",
         ...SARI,
       };
     case "kuyruk":
@@ -551,6 +615,24 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
     }
   }
 
+  /* Belirsiz kalan seri numarasının kararı. Sayım ZATEN işlendi; burada
+     yalnızca Tiger Düzeltme sekmesine hangi değerin gideceği kapanıyor.
+     Boş dize = "hiçbiri seri numarası değil" -> öneri üretilmez. */
+  async function seriSec(okutmaId: number, secim: string) {
+    try {
+      await api.seriSec(okutmaId, secim);
+      bip("ok");
+      // Şeritteki soruyu kapat: karar verildi.
+      setSon((o) => (o ? { ...o, sn_secim: [], yeni: secim } : o));
+      setDurum(await api.durum(durum.oturum));
+    } catch (e) {
+      bip("uyari");
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      odakla();
+    }
+  }
+
   async function fazlaAdKaydet() {
     const ad = fazlaAd.trim();
     if (!ad) {
@@ -679,8 +761,15 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
         </div>
 
         <div className="ml-auto flex items-center gap-5">
-          <SayacKutu etiket="okutulan" deger={s.okutulan} vurgu="ok" />
-          <SayacKutu etiket="kalan" deger={s.kalan} />
+          {/* ADET bazında. Lot satırı tek satırda çok adet taşır: satır saymak
+              77 adetlik bir lotu tek okutmayla "bitmiş" gösteriyor, ekran
+              "KALAN 0" derken rapor 202 adet eksik yazıyordu. */}
+          <SayacKutu etiket="okutulan adet" deger={s.okutulan} vurgu="ok" />
+          <SayacKutu
+            etiket="kalan adet"
+            deger={s.kalan}
+            vurgu={s.kalan ? "uyari" : "ok"}
+          />
           <SayacKutu etiket="fazla" deger={s.fazla} vurgu={s.fazla ? "hata" : undefined} />
           <SayacKutu etiket="kuyruk" deger={s.kuyruk} vurgu={s.kuyruk ? "uyari" : undefined} />
         </div>
@@ -961,6 +1050,42 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               aslında eksik listesinde durduğunu orada görebilirsin.
             </p>
             <Dugme cocuk="Eşleştirmeye git" tur="ana" tikla={() => git("esleme")} />
+          </section>
+        )}
+
+        {/* Tiger'a önerilecek seri numarası BELİRSİZ: üründe birden çok
+            tanınmayan barkod var (P/N + S/N gibi) ve hangisinin cihaza özel
+            olduğu bilinemez. Sayım işlendi, akış DURMAZ — bu yalnızca "Tiger
+            Düzeltme sekmesine hangi değer yazılsın" sorusu. Cevaplanmazsa
+            bitirmede uyarı çıkar ve rapor dipnotta "tahmin" der. */}
+        {son?.tip === "slot" && !!son.sn_secim?.length && son.sn_okutma != null && (
+          <section className="girdi rounded-sm border border-uyari bg-uyari-tint p-3">
+            <h2 className="mb-1 text-kucuk font-bold tracking-wider text-uyari uppercase">
+              Hangisi cihazın seri numarası?
+            </h2>
+            <p className="mb-2 text-mikro text-solgun">
+              {son.kod} · Tiger'daki uydurma kayıt <b className="text-yazi">{son.eski}</b>{" "}
+              bunun yerine yazılacak. Seçmezsen en uzunu kullanılır ve raporda
+              "tahmin" olarak işaretlenir.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {son.sn_secim!.map((a) => (
+                <button
+                  key={a}
+                  onClick={() => void seriSec(son.sn_okutma!, a)}
+                  className={`rounded-sm border px-3 py-2 font-mono text-kucuk
+                    ${a === son.yeni
+                      ? "border-vurgu bg-vurgu-tint text-vurgu"
+                      : "border-cizgi-kuvvetli bg-panel text-yazi"}`}
+                >
+                  {a}
+                </button>
+              ))}
+              <Dugme
+                cocuk="Hiçbiri seri no değil"
+                tikla={() => void seriSec(son.sn_okutma!, "")}
+              />
+            </div>
           </section>
         )}
 

@@ -249,6 +249,11 @@ export default function App() {
                 setRaporOturum(o);
                 setEkran("rapor");
               }}
+              /* Oturum geri açıldıktan sonra doğrudan sayıma dön: kullanıcı
+                 kazayı düzeltmek için geldi, kaldığı yerden devam etmeli. */
+              sayima={() => {
+                void tazele().then((d) => setEkran(d ? "sayim" : "kurulum"));
+              }}
             />
           )}
       </main>

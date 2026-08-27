@@ -7,7 +7,7 @@ hangi rafta okutulduğu hatırlanamıyor. Çözüm sırası:
   3. not ve fotoğraf (isteğe bağlı hatırlatıcılar)
 """
 from app import matching
-from tests.conftest import haric_kur, oturum_taze
+from tests.conftest import bitir, haric_kur, oturum_taze
 
 SONRAKI = "##SONRAKI##"
 BILINMEYEN = ("198701689928", "EDBP0153231475674")
@@ -106,7 +106,7 @@ def test_bitir_kapanmamis_eslesen_grubu_kaybetmez(c, ot, yaz):
                      AND haric=0 AND izleme='seri' AND kirli=0 AND seri<>''
                      ORDER BY id LIMIT 1""").fetchone()
     yaz(b["seri"])                         # SONRAKI YOK
-    assert yaz("##BITIR##")["tip"] == "bitti"
+    assert bitir(yaz)["tip"] == "bitti"
     assert oturum_taze(c, ot)["durum"] == "bitti"
     assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='eslesti'",
                      (ot["id"],)).fetchone()["n"] == 1
@@ -309,7 +309,7 @@ def test_kodu_bilinen_fazla_foto_istemez(c, ot, yaz):
     """
     _fazla_yap(c, ot, yaz)                     # 210-BEJO -> kod biliniyor
     assert matching.fotosuz_fazlalar(c, ot["id"]) == []
-    assert yaz("##BITIR##")["tip"] == "bitti"
+    assert bitir(yaz)["tip"] == "bitti"
 
 
 def test_adi_yazilan_kodsuz_fazla_foto_istemez(c, ot, yaz):
@@ -321,7 +321,7 @@ def test_adi_yazilan_kodsuz_fazla_foto_istemez(c, ot, yaz):
     c.execute("UPDATE okutma SET ad=? WHERE id=?", ("Kırmızı HP güç kablosu", oid))
     assert matching.adsiz_fazlalar(c, ot["id"]) == []
     assert matching.fotosuz_fazlalar(c, ot["id"]) == []
-    assert yaz("##BITIR##")["tip"] == "bitti"
+    assert bitir(yaz)["tip"] == "bitti"
 
 
 def test_kimliksiz_fazla_hala_foto_ister(c, ot, yaz):
@@ -360,3 +360,32 @@ def test_kuyrukta_cekilen_foto_fazla_kaydina_tasinir(c, ot, yaz):
               "VALUES(?,'','image/jpeg',3,?)", (r["kuyruk_id"], b"jpg"))
     matching.kuyruk_fazla(c, r["kuyruk_id"])
     assert matching.fotosuz_fazlalar(c, ot["id"]) == []
+
+
+# ------------------------------------------- B6: kuyruk kaydı iki kez çözülmez
+def test_kuyruk_fazla_iki_kez_yazilmaz(c, ot, yaz):
+    """Telefonda çift dokunuş tek üründen İKİ fazla satırı üretiyordu."""
+    r = yaz("KAYITSIZ-URUN-9911", "##ATLA##")
+    kid = r["kuyruk_id"]
+    assert matching.kuyruk_fazla(c, kid, ad="Kırmızı kablo")["tip"] == "fazla"
+
+    ikinci = matching.kuyruk_fazla(c, kid, ad="Kırmızı kablo")
+    assert ikinci.get("hata") == "bu kayıt zaten çözüldü"
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='fazla'",
+                     (ot["id"],)).fetchone()["n"] == 1
+
+
+def test_kuyruk_coz_iki_kez_lot_adedini_ikilemez(c, ot, yaz):
+    """Lot satırında kapasite kaldığı sürece ikinci çözüm adedi iki katlıyordu."""
+    r = yaz("KAYITSIZ-URUN-9911", "##ATLA##")
+    kid = r["kuyruk_id"]
+    b = c.execute("""SELECT * FROM beklenen WHERE yukleme=1 AND ambar='1'
+                     AND izleme='lot' AND miktar>5 ORDER BY id LIMIT 1""").fetchone()
+    if not b:
+        pytest.skip("test verisinde çok adetli lot yok")
+
+    assert matching.kuyruk_coz(c, kid, b["id"])["tip"] == "eslesti"
+    ikinci = matching.kuyruk_coz(c, kid, b["id"])
+    assert ikinci.get("hata") == "bu kayıt zaten çözüldü"
+    assert c.execute("SELECT COUNT(*) n FROM okutma WHERE beklenen_id=?",
+                     (b["id"],)).fetchone()["n"] == 1

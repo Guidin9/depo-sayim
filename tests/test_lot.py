@@ -17,6 +17,7 @@ eksik görünüyordu.
 import pytest
 
 from app import matching, reports
+from tests.conftest import oturum_taze
 
 SONRAKI = "##SONRAKI##"
 
@@ -263,3 +264,70 @@ def test_adet_ucu_komut_barkoduyla_ayni(c, ot):
                         json={"adet": -1}).status_code == 400
     finally:
         app.dependency_overrides.clear()
+
+
+# -------------------------------------------- B4: sayaç lot adedini saymalı
+def test_sayac_lot_adedini_sayar(c, ot, yaz):
+    """Regresyon (2026-08-27, gerçek veriyle üretildi).
+
+    Sayaç satır bazındaydı: 77 adetlik bir lot BİR kez okutulunca
+    `COUNT(DISTINCT beklenen_id)` onu "okutulmuş" sayıyordu. 870 satırın hepsi
+    birer kez okutulduğunda ekran "OKUTULAN 870 / KALAN 0" diyor, rapor ise
+    202 adet eksik gösteriyordu — ekranla rapor iki ayrı gerçek söylüyordu ve
+    kullanıcı depodan "bitti" diye çıkıyordu.
+    """
+    rows = c.execute("""SELECT * FROM beklenen WHERE yukleme=1 AND ambar='1'
+                        AND haric=0 ORDER BY id""").fetchall()
+    for r in rows:
+        yaz(r["seri"], "##SONRAKI##")          # lotlarda ADET GİRİLMEDEN
+
+    sayac = matching.sayaclar(c, oturum_taze(c, ot))
+    eksik, _, _ = reports.eksik_kayitlar(c, ot["id"])
+    rapor_eksik = sum(e["miktar"] for e in eksik)
+
+    assert rapor_eksik > 0, "test verisi çok adetli lot içermiyor"
+    assert sayac["kalan"] == rapor_eksik, "ekran ile rapor aynı sayıyı söylemeli"
+    assert sayac["satir"] == len(rows), "satır sayısı ayrı alanda korunmalı"
+
+
+def test_eksik_lot_bitirmede_uyarir(c, ot, yaz):
+    """77 adetlik lotu bir kez okutmak onu bitirmez — kullanıcı uyarılmalı."""
+    b = c.execute("""SELECT * FROM beklenen WHERE yukleme=1 AND ambar='1'
+                     AND izleme='lot' AND miktar>5 ORDER BY id LIMIT 1""").fetchone()
+    if not b:
+        pytest.skip("test verisinde çok adetli lot yok")
+    yaz(b["seri"], "##SONRAKI##")
+
+    eksikler = matching.eksik_lotlar(c, oturum_taze(c, ot))
+    assert any(x["kod"] == b["kod"] for x in eksikler)
+
+    r = yaz("##BITIR##")
+    assert r["tip"] == "bitir_uyari", "eksik lot sessizce geçilmemeli"
+    assert any(x["kod"] == b["kod"] for x in r["eksik_lot"])
+
+
+def test_tamamlanan_lot_uyarmaz(c, ot, yaz):
+    b = c.execute("""SELECT * FROM beklenen WHERE yukleme=1 AND ambar='1'
+                     AND izleme='lot' AND miktar>5 ORDER BY id LIMIT 1""").fetchone()
+    if not b:
+        pytest.skip("test verisinde çok adetli lot yok")
+    yaz("##ADET-%d##" % int(b["miktar"]), b["seri"], "##SONRAKI##")
+    assert not [x for x in matching.eksik_lotlar(c, oturum_taze(c, ot))
+                if x["kod"] == b["kod"]]
+
+
+def test_eksik_lot_uyarisi_engel_degil(c, ot, yaz):
+    """Uyarı bilgi verir, kapatmayı ENGELLEMEZ: sayımın kendisi doğru.
+
+    İki kapı (yumuşak uyarı + çift onay) ayrı olsaydı ikinci ##BITIR## de
+    uyarıya takılır ve oturum hiç kapanmazdı.
+    """
+    from tests.conftest import bitir
+    b = c.execute("""SELECT * FROM beklenen WHERE yukleme=1 AND ambar='1'
+                     AND izleme='lot' AND miktar>5 ORDER BY id LIMIT 1""").fetchone()
+    if not b:
+        pytest.skip("test verisinde çok adetli lot yok")
+    yaz(b["seri"], "##SONRAKI##")
+    assert yaz("##BITIR##")["tip"] == "bitir_uyari"
+    assert yaz("##BITIR##")["tip"] == "bitti", "ikinci okutma kapatmalı"
+    assert oturum_taze(c, ot)["durum"] == "bitti"

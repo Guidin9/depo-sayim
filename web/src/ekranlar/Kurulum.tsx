@@ -180,6 +180,21 @@ export default function Kurulum({ basla }: { basla: (oturumId: number) => void }
                   <SayacKutu etiket="kirli seri kaydı" deger={ozet.kirli} vurgu="uyari" buyuk />
                 </div>
 
+                {/* Aynı satırlar ikinci kez yüklenmek istendi ve ATLANDI.
+                    Sessiz kalırsa kullanıcı raporu ikilediğini bilmez; eskiden
+                    eleme hiç yoktu ve 870 satır 1740 oluyordu — her fiziksel
+                    cihaz yalnızca ilk kopyaya eşleşiyor, ikinci kopya sonuna
+                    kadar "eksik" kalıyordu. */}
+                {!!ozet.atlanan && (
+                  <div className="rounded-sm border border-bilgi bg-bilgi-tint p-4">
+                    <p className="text-kucuk font-semibold text-bilgi">
+                      <b className="rakam">{ozet.atlanan}</b> satır zaten bu yüklemede
+                      vardı, atlandı. Aynı raporu ikinci kez eklediyseniz bu beklenen
+                      sonuçtur — satırlar ikilenmedi.
+                    </p>
+                  </div>
+                )}
+
                 {ozet.kirli > 0 && (
                   <div className="rounded-sm border border-uyari bg-uyari-tint p-4">
                     <p className="text-kucuk font-semibold text-uyari">

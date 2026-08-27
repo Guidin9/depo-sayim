@@ -96,6 +96,26 @@ def haric_kur(c, yukleme=1, tip="tur", desen="TK"):
     return kid, sayim[kid]["satir"], kod
 
 
+def bitir(yaz):
+    """##BITIR##'i İKİ KEZ okutur — komut kartı için çift onay kuralı.
+
+    Kart sahada taşınıyor ve kazara okutulan tek bir barkod günlerce süren bir
+    sayımı kapatabiliyordu (üstelik kapanan oturumu geri açan yol da yoktu).
+    İlk okutma `bitir_onay` döner, 60 sn içindeki ikincisi kapatır.
+
+    `bitir_uyari` de aynı damgayı kurar (eksik lot / seçilmemiş seri no):
+    uyarı ENGEL değil, "bir kez daha okut" demek. İkisi ayrı kapı olsaydı
+    ikinci okutma da uyarıya takılır, oturum hiç kapanmazdı.
+
+    SERT kapılara (`bitir_engel` / `ad_engel` / `foto_engel`) takılırsa İLK
+    sonucu döner: onlar onaydan ÖNCE bakıyor ve gerçekten engelliyor.
+    """
+    r = yaz("##BITIR##")
+    if r.get("tip") not in ("bitir_onay", "bitir_uyari"):
+        return r
+    return yaz("##BITIR##")
+
+
 def oturum_taze(c, ot):
     """aktif_raf gibi alanlar değişebildiği için oturum satırını tazeler."""
     return c.execute("SELECT * FROM oturum WHERE id=?", (ot["id"],)).fetchone()

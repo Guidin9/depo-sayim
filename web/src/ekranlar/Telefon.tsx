@@ -31,20 +31,34 @@ type Props = {
   tazele: () => void;          // App'in durumu yeniden çekmesi
 };
 
+/* Kayıt "sayıldı ama bir şey söylenmeli" durumunda mı? Motor bunu `not_`
+   alanına yazıyor; telefon `OkutmaSonucu` değil AKIŞ SATIRI görüyor (laptopta
+   okutuluyor, telefon izliyor), o yüzden karar nottan okunuyor.
+
+   İkisi de sessiz kalmamalı:
+     * çelişkili grup — ##SONRAKI## unutulmuş, cihazlar ayrı ayrı sayıldı
+     * seri no seçilmedi — Tiger'a önerilen değer bir tahmin */
+const DIKKAT_NOT = ["çelişkili grup", "seri no seçilmedi"];
+
+function dikkatMi(not_: string | null) {
+  return DIKKAT_NOT.some((x) => (not_ ?? "").includes(x));
+}
+
 /** Akış satırını renkli şeride çevirir (laptoptaki okutmanın özeti). */
-function seritSinifi(tip: string) {
+function seritSinifi(tip: string, not_: string | null = null) {
   if (tip === "fazla" || tip === "bilinmiyor") return "border-hata bg-hata-tint text-hata";
   // Yedek parça SAYILMIŞ bir kayıt değil: Tiger'da aranmadı, eksik/fazla
   // sayaçlarına girmiyor. Yeşil göstermek "eşleşti" yalanı olurdu.
   if (tip === "yedek") return "border-uyari bg-uyari-tint text-uyari";
+  if (dikkatMi(not_)) return "border-uyari bg-uyari-tint text-uyari";
   if (tip === "kod") return "border-bilgi bg-bilgi-tint text-bilgi";
   return "border-ok bg-ok-tint text-ok";
 }
 
 /** Aynı sonucun ambiyans ışıması rengi — şeritle ayrışmasın. */
-function seritRengi(tip: string): IsimaRenk {
+function seritRengi(tip: string, not_: string | null = null): IsimaRenk {
   if (tip === "fazla" || tip === "bilinmiyor") return "hata";
-  if (tip === "yedek") return "uyari";
+  if (tip === "yedek" || dikkatMi(not_)) return "uyari";
   if (tip === "kod") return "bilgi";
   return "ok";
 }
@@ -95,7 +109,7 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
     const ilk = sonTsRef.current === null;
     sonTsRef.current = a.ts;
     if (ilk) return;
-    setIsikRenk(seritRengi(a.tip));
+    setIsikRenk(seritRengi(a.tip, a.not_));
     setIsik((n) => n + 1);
   }, [durum]);
 
@@ -1107,8 +1121,13 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
 
       <div className="grid grid-cols-4 gap-2">
         {[
-          { e: "okutulan", d: durum.sayac.okutulan, s: "text-ok" },
-          { e: "kalan", d: durum.sayac.kalan, s: "text-yazi" },
+          // ADET bazında (lot satırı tek satırda çok adet taşır).
+          { e: "okutulan adet", d: durum.sayac.okutulan, s: "text-ok" },
+          {
+            e: "kalan adet",
+            d: durum.sayac.kalan,
+            s: durum.sayac.kalan ? "text-uyari" : "text-ok",
+          },
           { e: "fazla", d: durum.sayac.fazla, s: durum.sayac.fazla ? "text-hata" : "text-yazi" },
           { e: "kuyruk", d: durum.sayac.kuyruk, s: durum.sayac.kuyruk ? "text-uyari" : "text-yazi" },
         ].map((x) => (
@@ -1336,7 +1355,7 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
       )}
 
       {son && (
-        <div className={`girdi rounded-sm border px-4 py-3 ${seritSinifi(son.tip)}`}>
+        <div className={`girdi rounded-sm border px-4 py-3 ${seritSinifi(son.tip, son.not_)}`}>
           <div className="text-mikro font-semibold tracking-wider uppercase">
             son okutma · {son.ts.slice(11, 19)}
             {son.raf ? ` · raf ${son.raf}` : ""}

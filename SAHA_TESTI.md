@@ -2,11 +2,18 @@
 
 **Bu dosyanın tek işi şu soruya cevap vermek: "sırada ne var?"**
 
-Durum (2026-08-27): kod tarafında bilinen açık hata **yok**. 413 test geçiyor,
-arayüz derleniyor, `depo_sayim_bugs_improvements.md` ve `DEMO_FEEDBACK.md`
-maddelerinin hepsi kapalı. Geriye kalan iş **kodda değil, depoda**: yazılanların
-hiçbiri gerçek okuyucu, gerçek yazıcı, gerçek telefon ve gerçek raf ile
-denenmedi.
+Durum (2026-08-27, denetim sonrası): 443 test geçiyor, arayüz derleniyor.
+`depo_sayim_bugs_improvements.md` ve `DEMO_FEEDBACK.md` maddelerinin hepsi
+kapalı.
+
+**Bu dosya bir gün önce "kodda bilinen açık hata yok" diyordu ve yanlıştı.**
+Bağımsız denetim, 413 test geçerken sekiz hata buldu (CLAUDE.md §7'deki tablo);
+beşi sessiz yanlış sayım üretiyordu. Hepsi kapatıldı, hepsinin regresyon testi
+var ve hepsi gerçek Tiger verisiyle uçtan uca doğrulandı. Yine de aşağıdaki
+listeyi "kod hazır" diye değil, **"kod sahada sınanmadı"** diye okuyun.
+
+Geriye kalan iş büyük ölçüde **kodda değil, depoda**: yazılanların hiçbiri
+gerçek okuyucu, gerçek yazıcı, gerçek telefon ve gerçek raf ile denenmedi.
 
 Bir madde sahada denendiğinde **bu dosyada işaretleyin ve sonucu yazın** —
 "çalıştı" da bir bulgudur, bir daha denenmesin.
@@ -24,8 +31,25 @@ görmek.
 - [ ] **Barkod ekranından** komut kartını ve bir sayfa raf etiketini bastır
       (bu ekran artık Excel yüklemeden de açılıyor — onu da bir kez deneyin)
 - [ ] Bir rafta 10-15 ürün say, `##SONRAKI##` ile ilerle
-- [ ] Sayımı bitir, Excel raporunu aç: Eksik / Fazla / Eşleşen sayıları
-      beklediğiniz gibi mi?
+- [ ] Sayımı bitir (**`##BITIR##` artık İKİ kez okutuluyor**), Excel raporunu
+      aç: Eksik / Fazla / Eşleşen sayıları beklediğiniz gibi mi?
+
+Denetimde kapatılan sekiz hatanın sahada da doğru davrandığını görün:
+
+- [ ] **B1** — `##SONRAKI##`'yi bilerek unutun, iki cihazın S/N'ini arka arkaya
+      okutun: "2 AYRI CİHAZ SAYILDI" sarı uyarısı çıkmalı ve sayaç 2 artmalı.
+- [ ] **B2** — üstünde hem UPC hem seri numarası olan bir ürün okutun: Tiger
+      Düzeltme'ye **seri numarası**, Barkod Tablosu'na **UPC** düşmeli.
+      İki tanınmayan alfanümerik barkod varsa ekran hangisinin S/N olduğunu
+      SORMALI.
+- [ ] **B3** — aynı cihazın seri numarasını iki kez okutun: ikincisi "TEKRAR"
+      demeli ve ikinci bir slot DOLMAMALI.
+- [ ] **B4** — bir lot kalemini adet girmeden okutun: sayaç "KALAN ADET"i
+      düşürmemeli, `##BITIR##` eksik lotu listelemeli.
+- [ ] **B7** — `##ADET-5##` + çok lotlu malzeme + `##GERIAL##`: beş satırın
+      **hepsi** geri alınmalı, sayaç sıfırlanmalı.
+- [ ] **B8** — `##BITIR##`'i bir kez okutun (kapanmamalı), sonra Geçmiş
+      ekranından "Yeniden aç" ile oturumu geri açın: sayım korunmalı.
 
 Buraya kadar sorunsuzsa gerisi ayrıntı. Takılırsanız durun, notunu alın.
 

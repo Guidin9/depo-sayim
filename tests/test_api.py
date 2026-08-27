@@ -687,3 +687,87 @@ def test_telefondan_raf_degistirmek_de_kuyrukta_engellenir(kurulu):
     assert r["tip"] == "raf_engel"
     r = ist.post("/api/oturum/%s/raf" % o["id"], json={"raf": "B2", "zorla": True}).json()
     assert r["tip"] == "raf"
+
+
+# ------------------------------------------ B8: oturumu geri açma / çift onay
+def test_yeniden_ac_sayimi_korur(kurulu):
+    """Kazara kapanan oturum geri açılır ve o ana kadarki sayım durur."""
+    ist, _, ot = kurulu
+    oid = ot["id"]
+    b = ist.get("/api/oturum/%s/ara?sadece_acik=true&izleme=seri" % oid).json()
+    seri = next(x["seri"] for x in b["satirlar"] if x["seri"] and not x["kirli"])
+    okut(ist, oid, seri, "##SONRAKI##")
+    onceki = ist.get("/api/oturum/%s/durum" % oid).json()["sayac"]["okutulan"]
+
+    assert ist.post("/api/oturum/%s/bitir?zorla=true" % oid).status_code == 200
+    assert ist.get("/api/oturum/acik").json() is None
+
+    r = ist.post("/api/oturum/%s/yeniden-ac" % oid)
+    assert r.status_code == 200, r.text
+    assert r.json()["durum"] == "acik"
+    assert r.json()["sayac"]["okutulan"] == onceki
+    assert ist.get("/api/oturum/acik").json()["oturum"] == oid
+
+
+def test_yeniden_ac_acik_oturum_varken_reddeder(kurulu):
+    ist, _, ot = kurulu
+    r = ist.post("/api/oturum/%s/yeniden-ac" % ot["id"])
+    assert r.status_code == 200          # zaten açık, işlem gereksiz
+
+    ist.post("/api/oturum/%s/bitir?zorla=true" % ot["id"])
+    ozet = ist.get("/api/yukleme").json()[0]
+    yeni = ist.post("/api/oturum", json={"yukleme": ozet["id"], "ambar": "1"}).json()
+    assert yeni["id"] != ot["id"]
+    r = ist.post("/api/oturum/%s/yeniden-ac" % ot["id"])
+    assert r.status_code == 409
+
+
+def test_bitir_komutu_iki_okutma_ister(kurulu):
+    """##BITIR## komut kartında basılı; tek okutma sayımı kapatmamalı."""
+    ist, _, ot = kurulu
+    oid = ot["id"]
+    assert okut(ist, oid, "##BITIR##")["tip"] == "bitir_onay"
+    assert ist.get("/api/oturum/acik").json() is not None
+    assert okut(ist, oid, "##BITIR##")["tip"] == "bitti"
+    assert ist.get("/api/oturum/acik").json() is None
+
+
+# ------------------------------------------------ B2: belirsiz seri numarası
+def test_seri_sec_ucu_tiger_onerisini_gunceller(kurulu):
+    """İki tanınmayan alfanümerik barkod: uygulama tahmin eder, kullanıcı seçer."""
+    ist, _, ot = kurulu
+    oid = ot["id"]
+    kod = next(x["kod"] for x in ist.get(
+        "/api/oturum/%s/ara?kirli=true&izleme=seri" % oid).json()["satirlar"])
+    r = okut(ist, oid, kod, "PN-ABCDEF-01", "SN-9911-XYZ-7745", "##SONRAKI##")
+
+    assert r["tip"] == "slot"
+    assert set(r["sn_secim"]) == {"PN-ABCDEF-01", "SN-9911-XYZ-7745"}
+    assert r["yeni"] == "SN-9911-XYZ-7745", "geçici olarak en uzunu"
+
+    s = ist.post("/api/okutma/%s/seri-sec" % r["sn_okutma"],
+                 json={"seri": "PN-ABCDEF-01"})
+    assert s.status_code == 200, s.text
+    assert s.json()["yeni_seri"] == "PN-ABCDEF-01"
+    assert not s.json()["sn_adaylar"], "karar verildi, soru kapanmalı"
+
+
+def test_seri_sec_aday_disi_degeri_reddeder(kurulu):
+    ist, _, ot = kurulu
+    oid = ot["id"]
+    kod = next(x["kod"] for x in ist.get(
+        "/api/oturum/%s/ara?kirli=true&izleme=seri" % oid).json()["satirlar"])
+    r = okut(ist, oid, kod, "PN-ABCDEF-01", "SN-9911-XYZ-7745", "##SONRAKI##")
+    s = ist.post("/api/okutma/%s/seri-sec" % r["sn_okutma"], json={"seri": "UYDURMA"})
+    assert s.status_code == 400
+
+
+def test_secilmemis_seri_bitirmede_uyarir(kurulu):
+    ist, _, ot = kurulu
+    oid = ot["id"]
+    kod = next(x["kod"] for x in ist.get(
+        "/api/oturum/%s/ara?kirli=true&izleme=seri" % oid).json()["satirlar"])
+    okut(ist, oid, kod, "PN-ABCDEF-01", "SN-9911-XYZ-7745", "##SONRAKI##")
+    r = ist.post("/api/oturum/%s/bitir" % oid)
+    assert r.status_code == 409
+    assert r.json()["detail"]["sn_secilmemis"], "tahmin sessizce rapora girmemeli"

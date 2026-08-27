@@ -52,7 +52,15 @@ DIPNOT = {
                        "alanına yazın.", "Yazdıktan sonra bu ürünler sorusuz eşleşir.",
                        "Liste bu raporun ambarındaki malzemelerle sınırlıdır; "
                        "önceki oturumlarda öğrenilenler de burada — Tiger'a "
-                       "girilmemiş olabilirler."],
+                       "girilmemiş olabilirler.",
+                       "DİKKAT: bu listede CİHAZA ÖZEL seri numaraları da "
+                       "bulunabilir. Kirli bir kaydı düzeltmek için okutulan "
+                       "gerçek S/N de öğrenilir (kutudaki bütün barkodlar "
+                       "kaydedilsin diye). Malzeme kartına yazılacak barkod "
+                       "ÜRÜN TİPİNE ait olmalı — o malzemenin her adedinde "
+                       "aynı olan barkod (UPC / üretici P/N). Tek bir cihazda "
+                       "bulunan numarayı yazmayın; Tiger Düzeltme sekmesinde "
+                       "zaten seri no olarak duruyor."],
     "Etiketler": ["Kendi bastığımız etiketlerin defteri: hangi numara neye yapıştı.",
                   "Tiger'a yazılacak değerler Tiger Düzeltme ve Barkod Tablosu "
                   "sekmelerinde; bu sayfa fiziksel etiketi bulmak içindir.",
@@ -205,7 +213,9 @@ def rapor_verisi(c, oturum_id):
 
     duzeltme = []
     duzeltme_elenen = 0
-    for r in c.execute("""SELECT o.ham, o.ts, o.raf, o.yeni_seri, b.kod, b.aciklama,
+    duzeltme_tahmin = 0
+    for r in c.execute("""SELECT o.ham, o.ts, o.raf, o.yeni_seri, o.sn_adaylar,
+                          b.kod, b.aciklama,
                           b.seri FROM okutma o
                           JOIN beklenen b ON b.id=o.beklenen_id
                           WHERE o.oturum=? AND b.kirli=1
@@ -227,6 +237,9 @@ def rapor_verisi(c, oturum_id):
         if kirli_mi(yeni, r["kod"])[0]:
             duzeltme_elenen += 1
             continue
+        # `sn_adaylar` hâlâ dolu = kullanıcı seçmedi, değer uygulamanın tahmini.
+        if r["sn_adaylar"]:
+            duzeltme_tahmin += 1
         duzeltme.append([r["kod"], r["aciklama"], r["seri"], yeni,
                          r["raf"] or "", _kisa(r["ts"])])
 
@@ -279,6 +292,12 @@ def rapor_verisi(c, oturum_id):
             "uyuyordu (malzeme koduyla başlıyor, boşluk içeriyor vb.). Bu "
             "kayıtlar Tiger'da düzeltilmeden kaldı — sayımları işlendi."
             % duzeltme_elenen)
+    if duzeltme_tahmin:
+        veri["Tiger Düzeltme"]["dipnot"].append(
+            "%d satırda seri numarası UYGULAMA TARAFINDAN SEÇİLDİ: üründe birden "
+            "çok tanınmayan barkod vardı ve hangisinin cihaza özel olduğu "
+            "sorulmadan en uzunu alındı. Tiger'a girmeden önce bu satırlara "
+            "bakın." % duzeltme_tahmin)
     if haric_sayisi:
         veri["Eksik"]["dipnot"].append(
             "%d kalem sayım dışı filtresiyle çıkarıldı (lisans / hizmet / nakliye "

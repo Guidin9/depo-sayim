@@ -14,7 +14,8 @@ from tests.conftest import AMBAR, oturum_taze
 
 SONRAKI = "##SONRAKI##"
 KILIT = "##KILIT##"
-UPC = "190017273624"          # Tiger'da karşılığı yok
+UPC = "190017273624"          # Tiger'da karşılığı yok — perakende barkodu
+SERI = "W3S2000G7745"         # cihaza özel, tanınmayan üretici S/N
 
 
 def _kirli_malzeme(c):
@@ -72,9 +73,11 @@ def test_kilit_acilir(c, ot, yaz):
 def test_kilitliyken_yalniz_seri_okutmak_slot_doldurur(c, ot, yaz):
     kod = _kirli_malzeme(c)
     yaz(kod, KILIT)
-    r = yaz(UPC, SONRAKI)
+    # Cihaza özel bir seri numarası — UPC DEĞİL. Perakende barkodu o malzemenin
+    # her adedinde aynıdır ve Tiger'a seri no diye önerilmez (test_b1_barkod).
+    r = yaz(SERI, SONRAKI)
     assert r["tip"] == "slot", "kilit devreye girmedi"
-    assert r["kod"] == kod and r["yeni"] == UPC and r["sabit_kod"] == kod
+    assert r["kod"] == kod and r["yeni"] == SERI and r["sabit_kod"] == kod
 
 
 def test_kilitsizken_ayni_okutma_kuyruga_duser(c, ot, yaz):

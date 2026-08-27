@@ -118,3 +118,23 @@ def test_bozuk_dosya_reddedilir(tmp_path):
 def test_dosya_adi_kaydedilir(c):
     assert os.path.basename(VERI_DOSYA) == c.execute(
         "SELECT dosya_adi FROM yukleme WHERE id=1").fetchone()["dosya_adi"]
+
+
+# ------------------------------------------- B5: aynı raporun ikinci yüklemesi
+def test_ayni_rapor_ikinci_kez_satir_ikilemez(c):
+    """Regresyon (2026-08-27, gerçek veriyle üretildi).
+
+    Tekrar koruması yalnızca `envanter` kaynağı için hesaplanıyordu. Kurulum
+    ekranındaki "İkinci rapor ekle" düğmesiyle aynı Seri/Lot dosyası yeniden
+    seçilince 870 satır sessizce 1740 oluyordu: her fiziksel cihaz yalnızca ilk
+    kopyaya eşleşiyor, ikinci kopya sonuna kadar "eksik" kalıyordu. Kullanıcı
+    bütün depoyu sayıp raporda 870 hayalet eksik görüyordu.
+    """
+    from tests.conftest import VERI_DOSYA
+    onceki = c.execute("SELECT COUNT(*) n FROM beklenen WHERE yukleme=1").fetchone()["n"]
+    ozet = importer.yukle(c, VERI_DOSYA, yukleme_id=1)
+
+    assert ozet["eklenen"] == 0, "aynı satırlar yeniden eklendi"
+    assert ozet["atlanan"] == onceki
+    assert c.execute("SELECT COUNT(*) n FROM beklenen "
+                     "WHERE yukleme=1").fetchone()["n"] == onceki

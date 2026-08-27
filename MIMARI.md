@@ -66,8 +66,8 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 | `yukleme` | id · ts · dosya_adi · kaynak · satir · not_ |
 | `beklenen` | id · yukleme · kod · **kod_n** · aciklama · tur · ambar · izleme · seri · **seri_n** · **seri_n0** · seri_aciklama · miktar · birim · kirli · kirli_sebep · haric · haric_sebep · kaynak |
 | `haric_kural` | id · tip · desen · aktif · varsayilan · UNIQUE(tip,desen) |
-| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** · **sabit_kod** · **yedek_parca** · **acik_kutu** · **acik_kutu_ilk** |
-| `okutma` | id · oturum · ts · **ham** · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** · **yeni_seri** |
+| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** · **sabit_kod** · **yedek_parca** · **acik_kutu** · **acik_kutu_ilk** · **bitir_istegi** |
+| `okutma` | id · oturum · ts · **ham** · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** · **yeni_seri** · **sn_adaylar** |
 | `eslesme` | **barkod (PK)** · kod · seri · ts |
 | `tampon` | id · oturum · ts · ham |
 | `kuyruk` | id · oturum · ts · barkodlar (JSON) · raf · cozuldu · not_ · beklet · **tur** · kod · ad · **adet** |
@@ -248,6 +248,8 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `POST /oturum/{id}/say` | `{beklenen_id, ham?}` | Barkodsuz ürünü listeden seçerek say (I5) |
 | `GET /oturum/{id}/esleme` | — | Sayım sonu: `{fazla, eksik}` |
 | `POST /okutma/{id}/bagla` | `{beklenen_id}` | Fazlayı eksik kayda bağla |
+| **`POST /okutma/{id}/seri-sec`** | `{seri}` — boş dize = "hiçbiri" | Belirsiz kalan seri numarası kararı. `okutma.yeni_seri` güncellenir, `sn_adaylar` temizlenir; `eslesme` DEĞİŞMEZ |
+| **`POST /oturum/{id}/yeniden-ac`** | — | Kazara kapanan oturumu geri aç. Başka açık oturum ya da daha yeni oturum varsa 409 |
 | `POST /okutma/{id}/coz-ayir` | — | Eşleştirmeyi geri al |
 | `POST /oturum/{id}/bitir` | `?zorla=` | Çözülmemiş kuyruk, **adsız fazla** veya fotoğrafsız fazla varsa 409 |
 | `POST /oturum/{id}/raf` | `{raf, zorla}` | Adı `norm.raf_adi()` ile temizler, `##RAF-X##` üretip `okut()`'a verir. Temizlikten sonra boş kalırsa **400** |
@@ -324,6 +326,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | 1d | `n` DK- deseni (kap etiketi) | tanımlı `kutu` · tanımsız **`kutu_bos`** · malzemesi bu ambarda yok **`kutu_yabanci`** |
 | 2 | `beklenen.kod_n = n` | `kod` |
 | 3 | `len(n)>=8`, iki yönlü önek eşleşmesi (her iki taraf en az 8) | `kod` |
+| 3b | bu oturumda `okutma.yeni_seri` olarak yazılmış | **`tekrar`** |
 | 4 | `eslesme.barkod = n` (öğrenilmiş) | `ogrenilmis` |
 | 5 | `len(n)>=6`, kirli seri kaydının **içine gömülü** ve bu oturumda sayılmamış | `seri` |
 | 6/7 | hiçbiri | `upc` ya da `bilinmiyor` |
@@ -334,6 +337,12 @@ seri takiplide "bu oturumda zaten okutulmuş", lot/izlemesizde
 okutmayla kapanmaz — 77 adetlik lot 77 okutma kabul eder. Ölçüt tek yerde
 durur; `ara(sadece_acik=True)` ve `kuyruk_coz()` de aynı işlevi kullanır.
 
+**3b adımı 4'ten ÖNCE gelmek zorunda.** Kirli slota yazılan gerçek S/N
+`eslesme`'ye de öğreniliyor (bilinçli karar, CLAUDE.md §4.4); o öğrenme olmadan
+aynı cihazın S/N'i ikinci kez okutulunca 4. adımdan geçip malzemenin bir
+sonraki kirli slotunu dolduruyor ve cihaz iki kez sayılıyordu. Temiz kayıtlarda
+korumayı 1. adım veriyor, kirli kayıtlarda karşılığı yoktu.
+
 **`coz()` asla "fazla" döndürmez** — fazla kararı yalnızca `grup_coz()`'da alınır.
 
 ### `grup_coz(c, ot, raf)` — `##SONRAKI##`
@@ -342,6 +351,9 @@ Tampondaki barkodların hepsi **tek ürün** kabul edilir.
 
 ```
 YEDEK PARÇA MODU açık                    -> tip="yedek"    (coz() HİÇ çağrılmaz)
+İKİ FARKLI beklenen seri kaydı eşleşti   -> tip="coklu"    (##SONRAKI## unutulmuş:
+                                                            HEPSİ ayrı grup olarak
+                                                            sayılır, öğrenme YOK)
 tekrar var, seri yok                     -> tip="tekrar"   (hiçbir şey yazılmaz)
 kaynak SAYIM DIŞI kalem                  -> tip="haric"    (hiçbir şey yazılmaz)
 KAP okutuldu (bkz. aşağıdaki kap dalı)   -> tip="kutu_*"   (kap kodu = malzeme kodu)
@@ -465,8 +477,23 @@ Komut barkodu mu diye bakar; değilse `tampon`'a yazıp anlık çözümlemeyi d�
 İki kapı, `zorla=True` ile bilinçli aşılır:
 * **raf kapısı** — o rafta çözülmemiş kuyruk varsa raf değiştirilemez
   (`beklet=1` işaretliler sayılmaz)
-* **bitir kapısı** — çözülmemiş kuyruk varsa oturum kapatılamaz
-  (`beklet` dahil hepsi sayılır)
+* **bitir kapısı** — çözülmemiş kuyruk / adsız fazla / fotoğrafsız fazla varsa
+  oturum kapatılamaz (`beklet` dahil hepsi sayılır)
+
+`##BITIR##`'in SON kapısı ikisini birden yapar (`bitir_istegi` damgası):
+
+```
+1. okutma -> damga kurulur, sonuç:
+     uyarı varsa  tip="bitir_uyari"  (eksik adetli lot · seçilmemiş seri no)
+     yoksa        tip="bitir_onay"
+2. okutma (60 sn içinde) -> tip="bitti"
+araya BAŞKA bir okutma girerse damga silinir
+```
+
+İkisi ayrı kapı olsaydı ikinci `##BITIR##` de uyarıya takılır, oturum hiç
+kapanmazdı. Uyarılar ENGEL değil bilgi: sayımın kendisi doğru. Çift okutma
+şart, çünkü kart sahada taşınıyor ve kazara okutulan tek bir barkod günlerce
+süren bir sayımı kapatıyordu — `oturumlar.yeniden_ac()` o kazayı geri alır.
 
 ### Diğer
 
@@ -698,6 +725,22 @@ stok ve tutar içerdiği için `.gitignore`'da.
 
 **Sahada yapılacakların tek listesi `SAHA_TESTI.md`'dedir.** Aşağıdakiler
 "nerede duruyoruz" kaydı; "sırada ne var" sorusunun cevabı orada.
+
+* **2026-08-27 denetimi — 8 hata** (CLAUDE.md §7'deki tablo). Hepsi kapatıldı,
+  hepsinin regresyon testi ve gerçek Tiger verisiyle uçtan uca doğrulaması var.
+  Kalıcı ders: **413 test geçerken beş sessiz yanlış sayım vardı.** İkisini
+  testlerin kendisi kilitlemişti — "tanınmayan üretici barkodu" sabiti olarak
+  geçerli bir UPC kullanılıyordu ve `slot` dalının UPC'yi seri numarası diye
+  Tiger'a önermesi doğru davranış sanılıyordu.
+* **Arayüzde hiç test yok** (~13k satır TS/TSX). `npx tsc --noEmit` tip
+  hatalarını yakalıyor, davranışı kimse yakalamıyor. Denetimdeki UI
+  doğrulaması elle tarayıcıda yapıldı.
+* `PUT /yukleme/{id}/kurallar` açık oturum sırasında `haric_uygula()`
+  çalıştırıyor: sayılmış bir satır sayım dışına çıkarsa sayaç ve mutabakat
+  kayar. Kural değiştirmek sayım öncesi bir iştir; arayüz uyarmıyor.
+* `SAYIM_DB` ortam değişkeni veritabanını taşıyor ama `data/yuklenen` ve
+  `data/rapor` klasörlerini taşımıyor (`db.VERI` sabit). Testler
+  `monkeypatch` ile aşıyor; sahada etkisi yok.
 
 * `depo_sayim_bugs_improvements.md` — **gerçek** sayım denemesinden çıkan
   1 bug + 5 feature. **Altısı da çözüldü** (2026-08-27), I3 dahil —

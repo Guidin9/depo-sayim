@@ -45,6 +45,41 @@ def bitir(c, oturum_id):
     return getir(c, oturum_id)
 
 
+def yeniden_ac(c, oturum_id):
+    """Kapanmış oturumu geri açar. `(oturum, hata)` döner.
+
+    Depo sayımı günlerce sürüyor ve `##BITIR##` komut kartında basılı: kazara
+    okutulan tek bir barkod bütün işi kapatabiliyordu ve geri dönüş YOKTU —
+    yeni oturum açmak, o ana kadar sayılan her şeyi "eksik" yapardı
+    (`beklenen` ile eşleşme oturum bazlı).
+
+    İki koşul:
+      * başka AÇIK oturum olmamalı — iki açık oturum `oturumlar.acik()`
+        sözleşmesini bozar ve okutmalar hangisine gideceği belirsiz kalır
+      * o ambar için daha yeni bir oturum açılmış olmamalı; açılmışsa sayım
+        oradan devam ediyordur, eskisini diriltmek iki ayrı gerçek yaratır
+    """
+    ot = getir(c, oturum_id)
+    if not ot:
+        return None, "oturum yok"
+    if ot["bitir"] is None:
+        return ot, None                      # zaten açık, işlem gereksiz
+    var = acik(c)
+    if var:
+        return None, ("Zaten açık bir oturum var (#%s). Önce onu bitirin."
+                      % var["id"])
+    daha_yeni = c.execute(
+        "SELECT id FROM oturum WHERE ambar=? AND yukleme=? AND id>? ORDER BY id LIMIT 1",
+        (ot["ambar"], ot["yukleme"], oturum_id)).fetchone()
+    if daha_yeni:
+        return None, ("Bu ambar için daha yeni bir oturum var (#%s); sayım "
+                      "oradan devam ediyor." % daha_yeni["id"])
+    c.execute("UPDATE oturum SET bitir=NULL, durum='acik', bitir_istegi=NULL "
+              "WHERE id=?", (oturum_id,))
+    c.commit()
+    return getir(c, oturum_id), None
+
+
 def gecmis(c):
     rs = c.execute("""SELECT o.*, y.dosya_adi,
                       (SELECT COUNT(DISTINCT beklenen_id) FROM okutma

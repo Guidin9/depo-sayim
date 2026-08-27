@@ -139,6 +139,14 @@ Birim · Ortalama Değer · Envanter Tutarı
 Tiger ayrıca **JSON** çıktısı da verebiliyor (rapor ekranının üst barında).
 İleride Excel yerine JSON tercih edilebilir — daha temiz parse edilir.
 
+**Aynı rapor ikinci kez yüklenirse satırlar İKİLENMEZ.** Kurulum ekranındaki
+"İkinci rapor ekle" düğmesi ikinci dosyayı aynı yüklemeye ekler; oraya yanlışlıkla
+aynı Seri/Lot dosyası seçilirse 870 satır sessizce 1740 oluyordu. Her fiziksel
+cihaz yalnızca ilk kopyaya eşleştiği için ikinci kopya sonuna kadar "eksik"
+kalıyor ve sayım asla tamamlanamıyordu — kullanıcı bütün depoyu sayıp raporda
+870 hayalet eksik görüyordu (2026-08-27). Tekrar ölçütü `(kod, ambar, seri)`;
+atlanan satır sayısı yükleme özetinde gösterilir.
+
 ### 3.2 Envanter Raporu (ikincil, adet bazlı)
 
 Seri takipsiz kalemler bu raporda. Aynı sütunlar, `Seri/Lot No.` yok.
@@ -275,6 +283,55 @@ hiçbiri eşleşmedi:
 Öğrenme döngüsü budur: bir ürünün P/N'i ve UPC'si aynı grupta okutulduğunda,
 tanınmayan UPC tanınan P/N'in malzemesine bağlanır ve kalıcı kaydedilir.
 
+**Grupta İKİ FARKLI beklenen seri kaydı eşleşirse bu bir çelişkidir.** Tek
+cihazın üstünde Tiger'daki iki ayrı seri kaydına eşleşen iki barkod olamaz;
+bu ancak `##SONRAKI##` unutulduğunda olur — sahadaki en olası hata.
+
+Eskiden ilk eşleşme alınıp **gerisi sessizce atılıyordu**: üç cihaz okutuluyor,
+sayaç 1 artıyor, ekran yeşil yanıyor, ses normal. Kalan iki cihaz raporda
+"eksik" çıkıyor ve gerçekten depoda olmayan bir üründen ayırt edilemiyordu
+(2026-08-27, çalışan uygulamada üretildi).
+
+Artık **hepsi sayılır** — her cihaz kendi grup numarasıyla ayrı satır olur —
+ve ekran sarı uyarı verir. Tanınmayan barkodlar bu dalda **öğrenilmez**:
+hangi cihaza ait oldukları belirsiz ve yanlış malzemeye bağlanan bir barkod
+gelecek yılın sayımına taşınır (§12.6 ile aynı gerekçe).
+
+Ölçüt "iki seri eşleşmesi" değil **iki FARKLI `beklenen.id`**: aynı kaydın iki
+barkodu (büyük/küçük harf, baştaki sıfır varyantı) tek cihazdır.
+
+**Tiger'a önerilecek seri numarası UPC OLAMAZ.** Perakende barkodu o malzemenin
+her adedinde aynıdır; seri numarası tek cihaza aittir. `slot` dalı eskiden
+düpedüz `max(bilinmeyen, key=len)` diyordu ve UPC çoğu zaman gerçek S/N'den
+uzun: `0WGP72 + 198701689928 + W3S2000G7745` grubunda Tiger'a
+`0WGP72SAYIM1 -> 198701689928` yazılıyordu — o malzemenin 21 cihazına aynı
+"tekil" numara. Aynı eleme `reports._yeni_seri` içinde zaten vardı, `slot`
+dalı tek başına onu kullanmıyordu.
+
+Karar `matching._sn_karar`'da, tek yerde:
+
+```
+UPC'ler elenir
+0 aday  -> öneri yok (`sn_yok`), sayım yine işlenir
+1 aday  -> sorusuz kullanılır          <- sahadaki en sık akış
+2+ aday -> geçici olarak en uzunu yazılır ve KULLANICIYA SORULUR
+```
+
+Soru sayımı **durdurmaz**: kayıt zaten yazılmıştır, belirsiz olan yalnızca
+Tiger'a hangi değerin önerileceği. Adaylar `okutma.sn_adaylar`'da bekler,
+`##BITIR##` cevaplanmayanları uyarı olarak listeler ve Tiger Düzeltme sekmesi
+dipnotta "bu satırlarda değer uygulama tarafından seçildi" der.
+
+**Aynı seri numarası bu oturumda ikinci kez okutulamaz.** Kirli slot doldurulan
+gerçek S/N `eslesme`'ye de öğreniliyor (kutudaki bütün barkodlar kaydedilsin
+diye — bilinçli karar, kullanıcı isteği). Ama o öğrenme, aynı cihazın S/N'i
+kazara ikinci kez okutulduğunda 4. adımdan `ogrenilmis` olarak geçip
+malzemenin **bir sonraki** kirli slotunu dolduruyordu: tek cihaz iki kez
+sayılıyor, hiçbir uyarı çıkmıyordu. Temiz kayıtlarda bu korumayı 1. adım zaten
+veriyordu (`tekrar`); kirli kayıtlarda karşılığı yoktu — yani deponun tam da
+yarısında. `coz()` 3b adımı bu oturumun `okutma.yeni_seri` değerlerine bakıp
+`tekrar` döner ve hangi slota yazıldığını söyler.
+
 **Fazla, onaydan geçmeden oluşmaz.** Kirli slot bulunamayan dal eskiden sessizce
 "fazla" yazıyordu; demo sayımında bunun yanlış olduğu görüldü
 (`DEMO_FEEDBACK.md` §5). O dala düşmek "stokta yok" demek değil, **"Tiger'daki
@@ -327,10 +384,10 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 |---|---|
 | `##SONRAKI##` | Grubu kapat ve çözümle |
 | `##IPTAL##` | Mevcut grubu sil |
-| `##GERIAL##` | Son okutmayı geri al (öğrenilen barkodu unutur, etiketi çözer) |
+| `##GERIAL##` | Son GRUBU geri al (öğrenilen barkodu unutur, etiketi çözer) |
 | `##FAZLA##` | Grubu fazla olarak işaretle |
 | `##ATLA##` | Grubu kuyruğa at |
-| `##BITIR##` | Oturumu kapat |
+| `##BITIR##` | Oturumu kapat — **iki kez okut** (aşağıya bakın) |
 | `##RAF-A1##` | Aktif rafı ayarla (sonraki okutmalar bu rafa yazılır) |
 | `##RAF-UST-1##` | Raf adı ASCII'ye katlanır — aşağıya bakın |
 | `##ADET-25##` | Sıradaki grubun miktarı — lot / dökme kalemde (§2.4) |
@@ -431,6 +488,26 @@ Sessizce boş rafa geçmek raf bilgisini yok ederdi.
 | Barkod Tablosu | `öğrenilen barkod -> malzeme kodu` | Tiger malzeme kartı Barkod alanına yazılır |
 | Etiketler | Kendi bastığımız etiketlerin defteri (§12) | Fiziksel etiketi bulmak |
 
+**Ekran sayacı ADET bazındadır, satır değil.** Lot satırı tek satırda çok adet
+taşır (§2.4): 77 adetlik bir lotu bir kez okutmak onu bitirmez. Sayaç eskiden
+`COUNT(DISTINCT beklenen_id)` kullanıyordu ve o satırı "okutulmuş" sayıyordu —
+870 satırın hepsi birer kez okutulduğunda ekran **"OKUTULAN 870 / KALAN 0"**
+diyor, rapor ise **202 adet eksik** gösteriyordu. Kullanıcı depodan "bitti"
+diye çıkıyor, farkı ancak Excel'i açınca görüyordu (2026-08-27, gerçek veriyle
+üretildi). Ölçüt artık `kapasite_kaldi()` ve `ara(sadece_acik=True)` ile aynı;
+`sayac.satir` beklenen satır sayısını ayrıca taşır.
+
+`##BITIR##` eksik adetli lot satırlarını ve seri numarası seçilmemiş kayıtları
+**yumuşak uyarı** olarak listeler — engellemez, çünkü sayımın kendisi doğru.
+Aynı kapı `##BITIR##`'in çift okutma onayıdır: ilk okutma ne olduğunu söyler,
+60 saniye içindeki ikincisi kapatır. Komut kartı sahada taşınıyor ve kazara
+okutulan tek bir barkod günlerce süren bir sayımı kapatabiliyordu.
+
+**Kapanan oturum geri açılabilir** (`POST /oturum/{id}/yeniden-ac`, Geçmiş
+ekranındaki "Yeniden aç"). Yeni oturum açmak çözüm değildir: `beklenen` ile
+eşleşme oturum bazlıdır, o ana kadar sayılan her şey "eksik" olurdu. Başka
+açık oturum varken ya da o ambar için daha yeni bir oturum açılmışsa reddedilir.
+
 **Rapordan önce eşleştirme adımı var.** Fazla çıkan ürün çoğu zaman eksik
 görünen kaydın ta kendisidir, sadece seri numarası tutmamıştır. Eşleştirme
 ekranı ikisini yan yana koyar, kararı kullanıcı verir; sistem tahmin yürütmez.
@@ -494,11 +571,33 @@ Excel çıktısı üretiyoruz.
 
 ## 7. Mevcut durum
 
-**Sahada yapılacaklar `SAHA_TESTI.md`'dedir** — kodda bilinen açık hata yok,
-kalan iş depoda. "Ne yapmamız lazım?" sorusunun cevabı o dosyadır.
+**Sahada yapılacaklar `SAHA_TESTI.md`'dedir** — "ne yapmamız lazım?" sorusunun
+cevabı o dosyadır.
+
+**"Kodda bilinen açık hata yok" cümlesine güvenmeyin.** 2026-08-27'de yapılan
+bağımsız denetim, 413 testin hepsi geçerken **sekiz hata** buldu; beşi sessiz
+yanlış sayım üretiyordu (ekranda doğru sonuç, hata ancak Excel'de ya da hiç).
+Hepsi kapatıldı ve regresyon testleri yazıldı:
+
+| # | Neydi | Nerede |
+|---|---|---|
+| B1 | `##SONRAKI##` unutulunca fazla cihazlar sessizce kayboluyordu | §4.4 |
+| B2 | UPC, Tiger'a seri numarası diye öneriliyordu | §4.4 |
+| B3 | Aynı S/N ikinci kez okutulunca ikinci slotu doldurup çift sayıyordu | §4.4 |
+| B4 | Sayaç lot adedini saymıyor, "KALAN 0" derken 202 adet eksik çıkıyordu | §5 |
+| B5 | Aynı Tiger raporu ikinci kez yüklenince 870 satır 1740 oluyordu | §3.1 |
+| B6 | Kuyruk kaydı çift dokunuşla iki kez çözülüyordu | — |
+| B7 | `##GERIAL##` çok satırlı adet grubunu yarım geri alıyordu | §4.5 |
+| B8 | Kapanan oturum geri açılamıyordu, `##BITIR##` onay sormuyordu | §5 |
+
+Ders testlerin kendisindeydi: `test_5_kirli_slot_doldurma` ve
+`test_kilitliyken_yalniz_seri_okutmak_slot_doldurur` "tanınmayan üretici
+barkodu" için sabit olarak GEÇERLİ BİR UPC kullanıyordu ve B2'yi doğru davranış
+diye kilitlemişti — `conftest.haric_kur`'daki `LIC` dersinin aynısı. Test
+verisi seçerken "bu sabit gerçekte ne demek?" diye sorun.
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 413 test geçiyor. **Arayüz yeniden
+altında React + Vite + Tailwind arayüz, 443 test geçiyor. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
 kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
 
@@ -519,6 +618,11 @@ olmalıdır. Bilinçli sapmalar burada listelenir, sessizce ayrılmaz:
 | **Sabit malzeme kodu kilidi** (`##KILIT##`, §4.5) | Prototipte yok. 21 cihazlı malzemede kod 21 kez okutuluyordu |
 | **Yedek parça modu** (`##YEDEK##`, §4.5) | Prototipte yok. Yedek parçalar Tiger'da kayıtlı değil; aranmaları yanlış eşleşme üretiyordu |
 | **`okutma.ham` grubun tamamını taşır**, tek değeri değil (§4.4) | Prototipte eşleşen satır yalnızca seri numarasını yazıyordu; okutulan fabrika barkodu kayıttan düşüyordu |
+| **Çelişkili grup hepsini sayar** (`tip="coklu"`, §4.4) | Prototip ilk seri eşleşmesini alıp gerisini sessizce atıyordu; `##SONRAKI##` unutulunca cihazlar kayboluyordu |
+| **UPC seri numarası adayı değildir** (`_sn_karar`, §4.4) | Prototip en uzun tanınmayan barkodu seçiyordu; perakende barkodu çoğu zaman gerçek S/N'den uzun |
+| **Aynı S/N bu oturumda ikinci kez sayılmaz** (`coz()` 3b, §4.4) | Prototipte öğrenilmiş S/N ikinci okutmada bir sonraki kirli slotu dolduruyordu |
+| **Sayaç adet bazlı**, satır değil (§5) | Prototipte lot satırı tek okutmayla "bitmiş" sayılıyordu |
+| **`##BITIR##` iki okutma ister** (§5) | Prototipte tek okutma kapatıyordu ve kapanan oturum geri açılamıyordu |
 
 `komut_karti.py` Code128 komut barkodu kartı üretir (python-barcode gerektirir).
 
@@ -848,8 +952,12 @@ sonra ortaya çıkar.
 Bu yüzden ekran karar vermez, öneri yapar; adedi kullanıcı seçer. Doğru kullanım
 az basıp devam etmektir: numaralar tükenmez, sonraki basım kaldığı yerden sürer.
 
-Örnek veride Ambar 1: 160 tekil malzeme (6'sı barkod olamayan kod), 393 kirli
-seri kaydı → seri etiketi tavanı 393. Gerçekte gereken bunun çok altındadır.
+Örnek veride Ambar 1: 161 tekil malzeme (6'sı barkod olamayan kod), 394 kirli
+seri kaydı → seri etiketi tavanı 394. Gerçekte gereken bunun çok altındadır.
+
+(Bu sayılar bir dönem 160 / 393 yazıyordu: fazla geniş `LIC` kuralı bir ağ
+kartını sayım dışı bırakıyordu. Kural `LICENSE`'a çevrilince o satır geri
+geldi — §3.4.)
 
 Arayüzde her iki tür için de adet elle girilir; hızlı düğmeler bir sayfa (24),
 dört sayfa (96), barkodsuz kod sayısı ve tavan değerini doldurur.
@@ -923,6 +1031,14 @@ Eskiden oraya malzeme kodunun kendisi yazılıyordu: `kirli_mi(kod, kod)` KİRL�
 döner, yani uygulama Tiger'a tam da temizlemeye çalıştığı deseni yazdırıyordu,
 üstelik aynı malzemenin birden çok slotu bu yoldan dolarsa aynı numaradan
 birden çok tane.
+
+**`##GERIAL##` son SATIRI değil son GRUBU alır.** Bir grup bir üründür (§4.4)
+ve adet dalı tek grubu birden çok satıra yazabilir (`matching._adet_dagit`):
+`##ADET-5##` çok lotlu bir malzemede 5 ayrı satır açıyor. Satır bazlı geri alma
+bunun 4'ünü sayılmış bırakıyordu — kullanıcı geri aldığını sanıyor, 4 adet
+sayımda kalıyordu; üstelik `geri` (öğrenme / etiket) yalnızca ilk satırda
+durduğu için yan etkiler de temizlenmiyordu. `okutma_sil` bunu zaten grup
+bazlı yapıyordu, iki yol aynı sözleşmede değildi (2026-08-27).
 
 **`##GERIAL##` yan etkileri de geri alır.** Okutmanın `eslesme`'ye yazdığı
 öğrenme silinir, bağladığı etiket havuza döner (numara tüketilmez, defter

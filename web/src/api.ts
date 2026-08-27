@@ -39,11 +39,37 @@ export type Ambar = {
 };
 
 export type Sayac = {
+  /** ADET bazında (seri takiplide satır başına 1, lot/izlemesizde miktar).
+   *  Eskiden satır bazındaydı ve 77 adetlik bir lot bir okutmayla "bitmiş"
+   *  sayılıyordu: ekran "KALAN 0" derken rapor 202 adet eksik gösteriyordu. */
   okutulan: number;
   kalan: number;
   fazla: number;
   kuyruk: number;
   toplam: number;
+  /** Beklenen SATIR sayısı — adetten ayrı; "870 satır" hâlâ anlamlı bilgi. */
+  satir: number;
+};
+
+/** Sayılan < beklenen kalan lot / izlemesiz satır (bitirme uyarısı). */
+export type EksikLot = {
+  kod: string;
+  seri: string;
+  aciklama: string | null;
+  izleme: string;
+  beklenen: number;
+  sayilan: number;
+};
+
+/** Tiger'a önerilen seri numarası TAHMİN olan kayıt — kullanıcı seçmeli. */
+export type SeriSecimi = {
+  id: number;
+  kod: string | null;
+  seri: string | null;
+  aciklama: string | null;
+  raf: string | null;
+  secili: string | null;
+  adaylar: string[];
 };
 
 export type CozTipi =
@@ -148,6 +174,26 @@ export type OkutmaSonucu = {
   sebep?: string;
   /** tip="slot": sayıldı ama Tiger'a yazılacak seri numarası verilmedi. */
   sn_yok?: boolean;
+  /** tip="slot"/"onay": üründe birden çok tanınmayan barkod vardı, hangisinin
+   *  cihaza özel olduğu BELİRSİZ. Geçici olarak en uzunu yazıldı; kullanıcı
+   *  seçene kadar Tiger Düzeltme'deki değer bir tahmindir. */
+  sn_secim?: string[];
+  /** Seri numarası belirsiz kalan okutma satırının id'si (tek satır). */
+  sn_okutma?: number;
+  /** tip="coklu": ##SONRAKI## unutulmuş — tek grupta birden çok cihaz.
+   *  Hepsi sayıldı (hiçbir okutma kaybolmaz), kullanıcı uyarılır. */
+  sayi?: number;
+  kayitlar?: { okutma: number; kod: string; seri: string;
+               aciklama: string | null; ham: string }[];
+  /** Çelişkili grupta tanınmayan barkodlar öğrenilmez — hangi cihaza ait belirsiz. */
+  ogrenilmedi?: string[];
+  /** Grupta hem yeni bir seri hem DAHA ÖNCE okutulmuş bir barkod vardı. */
+  tekrar_seri?: string | null;
+  /** tip="bitir_uyari": engel değil, bilgi. Sayım doğru; eksik olan bilgi. */
+  eksik_lot?: EksikLot[];
+  sn_secilmemis?: SeriSecimi[];
+  /** tip="bitir_onay": komut kartı için çift okutma penceresi (saniye). */
+  saniye?: number;
   /** Kilitli malzeme koduyla sayıldıysa hangi kodla (I2). */
   sabit_kod?: string | null;
   /** tip="yedek_mod": mod açık mı. */
@@ -560,6 +606,15 @@ export const api = {
   /** Açık seri takipli kabı kapat — `##KUTUKAPAT##` ile aynı yol. */
   kutuKapat: (id: number) =>
     gonder<OkutmaSonucu>(`/api/oturum/${id}/kutu-kapat`, {}),
+  /** Belirsiz kalan seri numarasını seç. Boş dize = "hiçbiri seri no değil":
+      Tiger Düzeltme satırı üretilmez. Öğrenme (`eslesme`) DEĞİŞMEZ. */
+  seriSec: (okutmaId: number, seri: string) =>
+    gonder<{ id: number; yeni_seri: string; sn_adaylar: string | null }>(
+      `/api/okutma/${okutmaId}/seri-sec`, { seri }),
+  /** Kazara kapanan oturumu geri aç — okutmalar korunur. Yeni oturum açmak
+      çözüm değil: eşleşme oturum bazlı, sayılan her şey "eksik" olurdu. */
+  oturumYenidenAc: (id: number) =>
+    gonder<Durum>(`/api/oturum/${id}/yeniden-ac`, {}),
 
   raflar: (id: number) => istek<string[]>(`/api/oturum/${id}/raflar`),
 
