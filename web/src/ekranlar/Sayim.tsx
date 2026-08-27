@@ -1,6 +1,6 @@
 /** 2. ekran — asıl sayım. Tek input sürekli odaklı, geri bildirim sesli. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Durum, type OkutmaSonucu } from "../api";
+import { api, type AkisSatiri, type Durum, type OkutmaSonucu } from "../api";
 import { Dugme, Kod, Marka, Nokta, Rozet, SayacKutu } from "../bilesenler";
 import * as Ik from "../ikonlar";
 import Isima, { type IsimaRenk } from "../Isima";
@@ -184,6 +184,66 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
           (r.etiket_cozuldu ? ` · ${r.etiket_cozuldu} havuza döndü` : ""),
         ...SARI,
       };
+    case "kilit":
+      return {
+        Ikon: Ik.Kilit,
+        ana: `KİLİTLENDİ · ${r.kod}`,
+        alt:
+          (r.aciklama ?? "") +
+          " — artık yalnız seri numaralarını okut, malzeme kodunu her cihazda tekrarlama.",
+        ...MAVI,
+      };
+    case "kilitac":
+      return { Ikon: Ik.KilitAcik, ana: "KİLİT AÇILDI", alt: "Normal sayıma dönüldü.", ...MAVI };
+    case "kilit_yok":
+      return {
+        Ikon: Ik.Engel,
+        ana: "KİLİTLENECEK MALZEME YOK",
+        // Sessizce kilitlememek şart: kullanıcı kilitlendiğini sanıp onlarca
+        // seri numarası okutur, hepsi kuyruğa düşerdi.
+        alt: "Önce malzeme kodunu okut, sonra kilit barkodunu.",
+        ...KIRMIZI,
+      };
+    case "yedek_mod":
+      return r.acik
+        ? {
+            Ikon: Ik.Vida,
+            ana: "YEDEK PARÇA MODU AÇIK",
+            alt: "Okutulanlar Tiger kayıtlarında ARANMAZ, doğrudan yedek parça yazılır.",
+            ...KIRMIZI,
+          }
+        : { Ikon: Ik.Vida, ana: "YEDEK PARÇA MODU KAPALI", alt: "Normal sayıma dönüldü.", ...MAVI };
+    case "yedek_modda_gecersiz":
+      return {
+        Ikon: Ik.Engel,
+        ana: "YEDEK PARÇA MODUNDA GEÇERSİZ",
+        alt: "Fazla / Atla burada anlamsız — kayıt zaten aranmıyor. Önce modu kapat.",
+        ...KIRMIZI,
+      };
+    case "yedek":
+      return {
+        Ikon: Ik.Vida,
+        ana: "YEDEK PARÇA KAYDEDİLDİ",
+        alt:
+          (r.barkodlar ?? []).join(", ") +
+          ((r.miktar ?? 1) > 1 ? ` · ${r.miktar} adet` : "") +
+          " — ne olduğunu yazmayı unutma.",
+        ...SARI,
+      };
+    case "silindi":
+      return {
+        Ikon: Ik.Cop,
+        // Kuyruktan doğmuş bir fazla silinince kayıt kuyruğa GERİ DÖNER —
+        // sayaç yeniden artar, söylenmezse hata sanılır.
+        ana:
+          (r.silinen ?? 1) > 1 ? `${r.silinen} SATIR SİLİNDİ` : "OKUTMA SİLİNDİ",
+        alt:
+          (r.barkodlar ?? []).join(", ") +
+          (r.unutulan?.length ? ` · unutuldu: ${r.unutulan.join(", ")}` : "") +
+          (r.etiket_cozuldu ? ` · ${r.etiket_cozuldu} havuza döndü` : "") +
+          (r.kuyruk_acildi ? " · kayıt kuyruğa geri döndü" : ""),
+        ...SARI,
+      };
     case "raf":
       return { Ikon: Ik.Raf, ana: `RAF ${r.raf}`, alt: "Sonraki okutmalar bu rafa yazılacak.", ...MAVI };
     case "bitti":
@@ -266,8 +326,10 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
           bip(r.ses ?? "tik");
           setSon(r.tip === "tampon" ? null : r);
           if (r.tip !== "tampon") setIsik((n) => n + 1);
-          // Elle fazla: hemen "bu ne?" diye sor, kayıt isimsiz kalmasın.
-          if (r.tip === "fazla_elle" && r.okutma?.length) {
+          // Elle fazla ve yedek parça: hemen "bu ne?" diye sor, kayıt
+          // isimsiz kalmasın. Yedek parça Tiger'da hiç yok — adı yazılmazsa
+          // raporda yalnızca barkod ve raf kalır.
+          if ((r.tip === "fazla_elle" || r.tip === "yedek") && r.okutma?.length) {
             setFazlaIdler(r.okutma);
             setFazlaAd("");
           }
@@ -288,6 +350,54 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
     },
     [durum.oturum, setDurum, odakla],
   );
+
+  /* Akıştan silme (I1). ##GERIAL## yalnızca sonuncuyu alır; yanlış okutma
+     sahada bazen birkaç ürün sonra fark ediliyor.
+
+     Okutmalarla AYNI sıraya diziliyor: silme isteği araya girip yarım kalmış
+     bir grubun önüne geçmemeli. Kapsam grup — bir grup bir üründür. */
+  const sil = useCallback(
+    (a: AkisSatiri) => {
+      const ne = a.kod ?? a.ham ?? "bu okutma";
+      if (!window.confirm(`${ne} okutması silinsin mi?
+
+Öğrenilen barkod unutulur, bağlanan etiket havuza döner.`))
+        return siraRef.current;
+      bekleyenRef.current += 1;
+      setMesgul(true);
+      siraRef.current = siraRef.current.then(async () => {
+        try {
+          const r = await api.okutmaSil(a.id);
+          bip("uyari");
+          setSon(r);
+          setIsik((n) => n + 1);
+          setHata(null);
+          if (r.durum) setDurum(r.durum);
+        } catch (e) {
+          bip("uyari");
+          setHata(e instanceof Error ? e.message : String(e));
+        } finally {
+          bekleyenRef.current -= 1;
+          if (bekleyenRef.current === 0) {
+            setMesgul(false);
+            odakla();
+          }
+        }
+      });
+      return siraRef.current;
+    },
+    [setDurum, odakla],
+  );
+
+  const kilitAc = useCallback(async () => {
+    try {
+      const r = await api.sabitKod(durum.oturum, null);
+      bip("tik");
+      if (r.durum) setDurum(r.durum);
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }, [durum.oturum, setDurum]);
 
   // Klavye kısayolları — komut kartı elde değilse
   useEffect(() => {
@@ -385,6 +495,38 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               </span>
             )}
           </div>
+          {/* Kilit ve yedek parça modu SESSİZ KALAMAZ. İkisi de açık
+              unutulursa bütün raf yanlış malzemeye ya da yedek parçaya yazılır
+              ve bu ancak rapor açılınca fark edilir. */}
+          {durum.sabit_kod && (
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 border border-bilgi
+                               bg-bilgi-tint px-2 py-0.5 text-kucuk font-bold text-bilgi">
+                <Ik.Kilit boy={14} />
+                <span className="font-mono">{durum.sabit_kod}</span>
+                {durum.sabit_aciklama && (
+                  <span className="font-normal">· {durum.sabit_aciklama}</span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => void kilitAc()}
+                disabled={mesgul}
+                className="border-cizgi-kuvvetli text-solgun hover:text-yazi inline-flex
+                  items-center gap-1 rounded-sm border px-2 py-1 text-mikro disabled:opacity-40"
+              >
+                <Ik.KilitAcik boy={13} /> Kilidi aç
+              </button>
+            </div>
+          )}
+          {durum.yedek_parca && (
+            <div className="mt-1">
+              <span className="inline-flex items-center gap-1 border border-hata
+                               bg-hata-tint px-2 py-0.5 text-kucuk font-bold text-hata">
+                <Ik.Vida boy={14} /> YEDEK PARÇA MODU — okutulanlar Tiger'da aranmıyor
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="ml-auto flex items-center gap-5">
@@ -512,6 +654,43 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
             </span>
           </div>
         )}
+        {/* Mod düğmeleri (I2 / I4). Komut barkodunun ikizi: sahada karta uzanmak
+            zaman yiyor (DEMO_FEEDBACK.md 1-2), ama okuyucu laptopta olduğu için
+            PC'de de erişilebilmeli. İkisi de `okut()` borusundan geçiyor. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Dugme
+            cocuk={
+              durum.sabit_kod ? (
+                <>
+                  <Ik.KilitAcik /> Kilidi aç
+                </>
+              ) : (
+                <>
+                  <Ik.Kilit /> Bu malzemeye okut
+                </>
+              )
+            }
+            baslik={
+              durum.sabit_kod
+                ? "Malzeme kilidini kaldır"
+                : "Önce malzeme kodunu okut, sonra buna bas — sonrasında yalnız seri numaralarını okut"
+            }
+            pasif={mesgul}
+            tikla={() => void (durum.sabit_kod ? kilitAc() : gonder("##KILIT##"))}
+          />
+          <Dugme
+            cocuk={
+              <>
+                <Ik.Vida /> Yedek parça{durum.yedek_parca ? " (açık)" : ""}
+              </>
+            }
+            tur={durum.yedek_parca ? "tehlike" : "sade"}
+            baslik="Açıkken okutulanlar Tiger kayıtlarında aranmaz, doğrudan yedek parça yazılır"
+            pasif={mesgul}
+            tikla={() => void gonder("##YEDEK##")}
+          />
+        </div>
+
         {/* Giriş. Cam ve animasyon katmanlarının hepsi pointer-events-none —
             okuyucunun yazdığı yerin odağı hiçbir koşulda kaybolmamalı. */}
         <div className={uzaktan && !elleGiris ? "hidden" : ""}>
@@ -693,14 +872,16 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
           <ul className="flex-1 overflow-y-auto bg-panel">
             {durum.akis.map((a, i) => (
               <li
-                key={`${a.ts}-${i}`}
+                key={a.id}
                 className={`flex flex-wrap items-baseline gap-3 border-l-4 px-4 py-2 text-kucuk
                   ${
                     a.tip === "fazla" || a.tip === "bilinmiyor"
                       ? "border-l-hata"
-                      : a.tip === "kod"
-                        ? "border-l-bilgi"
-                        : "border-l-ok"
+                      : a.tip === "yedek"
+                        ? "border-l-uyari"
+                        : a.tip === "kod"
+                          ? "border-l-bilgi"
+                          : "border-l-ok"
                   } ${i % 2 ? "bg-panel2" : ""}`}
               >
                 <span className="rakam text-mikro text-solgun">{a.ts.slice(11, 19)}</span>
@@ -713,6 +894,18 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
                 <b className="font-mono">{a.kod ?? a.ham}</b>
                 {a.seri && <span className="font-mono text-solgun">{a.seri}</span>}
                 <span className="ml-auto text-mikro text-solgun">{a.not_ || a.tip}</span>
+                <button
+                  type="button"
+                  onClick={() => void sil(a)}
+                  disabled={mesgul}
+                  title="Bu okutmayı sil"
+                  aria-label={`${a.kod ?? a.ham} okutmasını sil`}
+                  className="border-cizgi text-solgun-hafif hover:border-hata hover:text-hata
+                    focus-visible:outline-vurgu inline-flex h-8 w-8 shrink-0 items-center
+                    justify-center rounded-sm border focus-visible:outline-2 disabled:opacity-40"
+                >
+                  <Ik.Cop boy={14} />
+                </button>
               </li>
             ))}
             {durum.akis.length === 0 && (

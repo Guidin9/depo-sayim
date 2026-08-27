@@ -1,4 +1,4 @@
-"""6 sekmeli sayım raporu (CLAUDE.md 5, 12).
+"""7 sekmeli sayım raporu (CLAUDE.md 5, 12).
 
 depo_sayim.py:307-375 taşındı. Sekme adları ve sütun düzeni korundu, üstüne:
   * Fazla / Eşleşen / Tiger Düzeltme sekmelerine Raf sütunu
@@ -12,8 +12,10 @@ iki yerde iki ayrı gerçek olmasın.
 """
 import os
 
-SEKME = ("Eksik", "Fazla", "Eşleşen", "Tiger Düzeltme", "Barkod Tablosu",
-         "Etiketler")
+from .norm import kirli_mi
+
+SEKME = ("Eksik", "Fazla", "Eşleşen", "Yedek Parça", "Tiger Düzeltme",
+         "Barkod Tablosu", "Etiketler")
 
 BASLIKLAR = {
     "Eksik": ["Malzeme Kodu", "Açıklama", "Beklenen Seri/Lot", "İzleme", "Miktar",
@@ -22,8 +24,14 @@ BASLIKLAR = {
     # kullanıcı elle yazar (CLAUDE.md 5, DEMO_FEEDBACK.md 3).
     "Fazla": ["Zaman", "Raf", "Okutulan", "Malzeme Kodu", "Açıklama", "Seri",
               "Miktar", "Not", "Ürün Adı"],
-    "Eşleşen": ["Zaman", "Raf", "Malzeme Kodu", "Açıklama", "Seri/Lot", "Miktar",
-                "Tip", "Not"],
+    # Okutulan Barkodlar: grubun tamamı (`okutma.ham`). Denetim izinin asıl
+    # değeri bu — "hangi cihazda hangi barkodu okuttum" sorusunun tek cevabı.
+    "Eşleşen": ["Zaman", "Raf", "Malzeme Kodu", "Açıklama", "Seri/Lot",
+                "Okutulan Barkodlar", "Miktar", "Tip", "Not"],
+    # Yedek parçalar Tiger'da kayıtlı değil; fazla da değiller, eksik de.
+    # Sayacı bozmasınlar diye kendi sekmelerinde dururlar (saha bildirimi I4).
+    "Yedek Parça": ["Zaman", "Raf", "Okutulan Barkodlar", "Ürün Adı", "Adet",
+                    "Not"],
     "Tiger Düzeltme": ["Malzeme Kodu", "Açıklama", "MEVCUT (hatalı) Seri No",
                        "YENİ (gerçek) Seri No", "Raf", "Zaman"],
     "Barkod Tablosu": ["Okutulan Barkod", "Malzeme Kodu", "Açıklama",
@@ -33,6 +41,10 @@ BASLIKLAR = {
 }
 
 DIPNOT = {
+    "Yedek Parça": ["Yedek parça modunda okutulanlar. Tiger'da aranmadılar — "
+                    "eksik ya da fazla sayılmazlar.",
+                    "Tiger'a sayım fazlası fişi olarak GİRİLMEZLER; ne "
+                    "yapılacağına ayrıca karar verin."],
     "Tiger Düzeltme": ["Bu sayfadaki kayıtlar Tiger'da seri numarası düzeltmesi "
                        "gerektirir.", "Ambar Sayımı ekranından fiş oluştururken "
                        "kullanın."],
@@ -153,19 +165,51 @@ def rapor_verisi(c, oturum_id):
         fazla.append(satir)
 
     eslesen = [[_kisa(r["ts"]), r["raf"] or "", r["kod"], r["aciklama"] or "",
-                r["seri"], r["miktar"], r["tip"], r["not_"] or ""]
+                r["seri"], r["ham"] or "", r["miktar"], r["tip"], r["not_"] or ""]
                for r in c.execute("""SELECT o.*, b.aciklama FROM okutma o
                                      LEFT JOIN beklenen b ON b.id=o.beklenen_id
                                      WHERE o.oturum=? AND o.tip IN ('eslesti','kod')
                                      ORDER BY o.id""", (oturum_id,))]
 
-    duzeltme = [[r["kod"], r["aciklama"], r["seri"], _yeni_seri(r["ham"]),
-                 r["raf"] or "", _kisa(r["ts"])]
-                for r in c.execute("""SELECT o.ham, o.ts, o.raf, b.kod, b.aciklama,
-                                      b.seri FROM okutma o
-                                      JOIN beklenen b ON b.id=o.beklenen_id
-                                      WHERE o.oturum=? AND b.kirli=1 AND o.ham<>''
-                                      ORDER BY o.id""", (oturum_id,))]
+    # Tiger'a önerilecek seri numarası `okutma.yeni_seri`'den okunur — `ham`
+    # artık grubun BÜTÜN barkodlarını taşıyor ve içinde malzeme kodu da var.
+    # `_yeni_seri(ham)` ona bakarsa kodu seri no sanıp Tiger'a yazdırır
+    # (ACIL_PLAN 3'te kapatılan hata).
+    #
+    # `yeni_seri IS NULL` = bu sütun eklenmeden önce yazılmış eski kayıt; orada
+    # `ham` hâlâ tek değerdi, eski kural uygulanır. Karar boşsa satır rapora
+    # GİRMEZ: `sn_yok` sözleşmesi (seri numarası verilmedi, düzeltme üretilmez).
+    yedek = [[_kisa(r["ts"]), r["raf"] or "", r["ham"] or "", r["ad"] or "",
+              r["miktar"], r["not_"] or ""]
+             for r in c.execute("""SELECT * FROM okutma WHERE oturum=? AND tip='yedek'
+                                   ORDER BY id""", (oturum_id,))]
+
+    duzeltme = []
+    duzeltme_elenen = 0
+    for r in c.execute("""SELECT o.ham, o.ts, o.raf, o.yeni_seri, b.kod, b.aciklama,
+                          b.seri FROM okutma o
+                          JOIN beklenen b ON b.id=o.beklenen_id
+                          WHERE o.oturum=? AND b.kirli=1
+                          ORDER BY o.id""", (oturum_id,)):
+        yeni = (r["yeni_seri"] if r["yeni_seri"] is not None
+                else _yeni_seri(r["ham"]))
+        yeni = (yeni or "").strip()
+        if not yeni:
+            continue
+        # SON SAVUNMA: bu sayfanın TEK işi Tiger'daki kirli seri numaralarını
+        # temizlemek. Önerilen değerin kendisi kirliyse öneri değil yeni bir
+        # kirlilik olur — özellikle "malzeme koduyla başlıyor" deseni
+        # (`kirli_mi` -> kod+sayac).
+        #
+        # Bu ağ boşuna değil: 2026-08-27'de `eslesti` dalı `yeni_seri`'yi NULL
+        # bırakınca rapor eski kurala düşüp `ham`'daki MALZEME KODUNU
+        # öneriyordu. Motor düzeltildi; ağ, bir sonraki benzer hatanın Tiger'a
+        # ulaşmasını engellemek için duruyor.
+        if kirli_mi(yeni, r["kod"])[0]:
+            duzeltme_elenen += 1
+            continue
+        duzeltme.append([r["kod"], r["aciklama"], r["seri"], yeni,
+                         r["raf"] or "", _kisa(r["ts"])])
 
     # Yalnızca BU raporun ambarındaki malzemelere ait barkodlar.
     #
@@ -195,10 +239,17 @@ def rapor_verisi(c, oturum_id):
 
     veri = {}
     for ad, satirlar in (("Eksik", eksik), ("Fazla", fazla), ("Eşleşen", eslesen),
+                         ("Yedek Parça", yedek),
                          ("Tiger Düzeltme", duzeltme), ("Barkod Tablosu", barkodlar),
                          ("Etiketler", etiket_satir)):
         veri[ad] = {"basliklar": BASLIKLAR[ad], "satirlar": satirlar,
                     "dipnot": list(DIPNOT.get(ad, []))}
+    if duzeltme_elenen:
+        veri["Tiger Düzeltme"]["dipnot"].append(
+            "%d öneri elendi: önerilen seri numarasının kendisi kirli desene "
+            "uyuyordu (malzeme koduyla başlıyor, boşluk içeriyor vb.). Bu "
+            "kayıtlar Tiger'da düzeltilmeden kaldı — sayımları işlendi."
+            % duzeltme_elenen)
     if haric_sayisi:
         veri["Eksik"]["dipnot"].append(
             "%d kalem sayım dışı filtresiyle çıkarıldı (lisans / hizmet / nakliye "

@@ -25,8 +25,20 @@ KOMUTLAR = [
      "Karar veremedin. Kuyruğa atar, sayım sonunda çözersin."),
     ("##BITIR##", "SAYIMI BİTİR",
      "Oturumu kapatır, rapor hazırlanır."),
+    # I2 — kilit PARAMETRESİZ basılır: malzeme kodlarının bir kısmı boşluk ya
+    # da Türkçe karakter taşıyor ve Code128'e girmiyor (CLAUDE.md 2.1).
+    ("##KILIT##", "BU MALZEMEYE OKUT",
+     "Önce malzeme kodunu okut, sonra bunu. Artık yalnız seri numaralarını "
+     "okutman yeter — her cihazda kodu tekrar okutma."),
+    ("##KILITAC##", "KİLİDİ AÇ",
+     "Malzeme kilidini kaldırır, normal sayıma döner."),
+    # I4
+    ("##YEDEK##", "YEDEK PARÇA MODU",
+     "Açar/kapatır. Açıkken okutulan hiçbir şey Tiger kayıtlarında ARANMAZ, "
+     "doğrudan yedek parça olarak yazılır."),
 ]
-RENKLER = ["#1b5e20", "#b71c1c", "#e65100", "#4a148c", "#01579b", "#263238"]
+RENKLER = ["#1b5e20", "#b71c1c", "#e65100", "#4a148c", "#01579b", "#263238",
+           "#004d40", "#33691e", "#880e4f"]
 
 
 def _svg(kod):

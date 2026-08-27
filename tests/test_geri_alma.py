@@ -149,6 +149,10 @@ def test_slot_seri_numarasi_yoksa_malzeme_kodu_yazilmaz(c, ot, yaz):
     yazılacak gerçek seri no" diye kullanıyor; `kirli_mi(kod, kod)` KİRLİ
     döner, yani uygulamanın temizlemeye çalıştığı deseni Tiger'a kendisi
     yazdırıyordu.
+
+    Karar artık `okutma.yeni_seri` sütununda (B1): `ham` grubun denetim izidir
+    ve okutulan malzeme kodunu TAŞIR — yasak olan şey onu Tiger'a seri
+    numarası diye önermek.
     """
     kod = _kirli_malzeme(c)
     r = yaz(kod, SONRAKI)
@@ -157,9 +161,10 @@ def test_slot_seri_numarasi_yoksa_malzeme_kodu_yazilmaz(c, ot, yaz):
     assert r["sn_yok"] is True
     assert r["ses"] == "uyari", "sessiz yeşil geçilmemeli"
 
-    ham = c.execute("SELECT ham FROM okutma WHERE oturum=? ORDER BY id DESC LIMIT 1",
-                    (ot["id"],)).fetchone()["ham"]
-    assert ham == "", "malzeme kodu seri numarası diye yazılmamalı"
+    x = c.execute("SELECT ham, yeni_seri FROM okutma WHERE oturum=? "
+                  "ORDER BY id DESC LIMIT 1", (ot["id"],)).fetchone()
+    assert x["yeni_seri"] == "", "malzeme kodu seri numarası diye önerilmemeli"
+    assert x["ham"] == kod, "okutulan barkod denetim izinde durmalı"
 
 
 def test_slot_seri_numarasi_yoksa_tiger_duzeltmesi_uretilmez(c, ot, yaz):

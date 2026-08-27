@@ -183,6 +183,29 @@ raporunda `Malzeme Türü` sütunu `TM` (860) ve `TK` (10) kısa kodlarını
 döndürüyor; yukarıdaki beş tür deseninin hiçbiri bu veride geçmiyor, yani
 o kurallar hiç ateşlemiyor.
 
+### 3.5 Uygulama sayılan ambarın dışına ÇIKMAZ
+
+**Bu bir eksiklik değil, karardır** (2026-08-27). Yeniden tartışılmasın diye
+yazılıyor.
+
+Şirkette birden çok depo var ve kayıtlardaki depo bilgisi kirli: bir ürün
+Tiger'da Kayseri'de 31 adet görünürken gerçekte Ankara'da 21 adet duruyor.
+Uygulamanın bunu "çözmesi" için ambarlar arası arama yapması, "şu ambarda
+kayıtlı ama burada bulundu" demesi ve bir transfer önerisi üretmesi gerekirdi.
+
+**Yapmıyoruz.** Sayılan depoda eksikse eksik çıkar, fazlaysa fazla çıkar.
+Bütün depolar tek tek sayıldığında kayıtlar kendiliğinden temizlenir: Kayseri
+sayımı 31'i eksik gösterir, Ankara sayımı 21'i fazla gösterir, düzeltme Tiger
+tarafında yapılır.
+
+Gerekçe: ambarlar arası eşleştirme, uygulamanın **tahmin yürütmediği** tek
+kuralını (CLAUDE.md §5, `DEMO_FEEDBACK.md` §4) bozardı. "Bu ürün aslında öteki
+depodaki kayıt olabilir" tam olarak kaldırdığımız "bu olabilir" önerisidir,
+üstelik ambar sınırını da aşarak.
+
+Sonuç olarak `beklenen` sorgularının hepsi `ambar` filtresi taşır ve taşımaya
+devam edecek — `matching.coz`, `ara`, `elle_say`, `reports.rapor_verisi`.
+
 ---
 
 ## 4. Eşleştirme motoru — çekirdek mantık
@@ -261,6 +284,26 @@ satırları dururken de oraya düşülür. Artık kayıt `kuyruk` tablosuna
 kaydı seç · gerçekten fazla · sonra çöz. Fazla kaydı yalnızca bu onaydan ve
 `##FAZLA##` komutundan doğar.
 
+**Bir grubun BÜTÜN barkodları `okutma.ham`'da saklanır**, `" + "` ile
+birleşik. Grup zaten tek üründür; okutulan her barkod o cihazın denetim izidir.
+
+2026-08-27'ye kadar `eslesti` dalı yalnızca eşleşen seri numarasını, `slot`
+dalı yalnızca tek bir adayı yazıyordu. Sonuç: ürünün üstündeki fabrika barkodu
+okutuluyor, kayıt eşleşiyor, ama **barkod kayıttan düşüyordu** — gerçek sayım
+denemesinde görüldü (`depo_sayim_bugs_improvements.md` B1). `kuyruk_coz` ve
+`kuyruk_fazla` zaten hepsini yazıyordu; üç dal aynı sözleşmede değildi.
+
+Tiger'a önerilecek seri numarası **ayrı sütundadır** (`okutma.yeni_seri`) ve
+her yazmada **açıkça doldurulur**; öneri yoksa boş dize yazılır. İkisi tek
+alanda durursa — ya da sütun boş bırakılırsa — `ham`'a malzeme kodu da girdiği
+için rapor kodu seri no sanıp Tiger'a yazdırır: `kirli_mi(kod, kod)` KİRLİ
+döner, yani uygulama tam da temizlemeye çalıştığı deseni üretir. Bu 2026-08-27
+denetiminde gerçek veriyle üretildi
+(`900-5G144-2200-000 TD SYNNEX 8000USD 2 -> 900-5G144-2200-000`).
+
+Son savunma raporda: **önerilen değerin kendisi kirliyse Tiger'a çıkmaz**,
+elenir ve dipnotta sayılır.
+
 **Bir grup bir fazla kaydı üretir — barkod sayısı kadar değil.** Grubun tanımı
 zaten budur: kullanıcı bir ürünün üstündeki bütün barkodları (P/N, S/N, UPC,
 lot, kendi etiketimiz) okutup `##SONRAKI##` der. Fazla yazılırken barkodlar
@@ -292,6 +335,38 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 | `##RAF-UST-1##` | Raf adı ASCII'ye katlanır — aşağıya bakın |
 | `##ADET-25##` | Sıradaki grubun miktarı — lot / dökme kalemde (§2.4) |
 | `##ADET-0##` | Girilen adedi sıfırla |
+| `##KILIT##` | Malzeme kodunu kilitle — aşağıya bakın |
+| `##KILITAC##` | Kilidi kaldır |
+| `##YEDEK##` | Yedek parça modunu aç / kapat |
+
+**`##KILIT##` sahadaki en büyük tekrarı kaldırır.** 21 cihazlı bir malzemede
+malzeme kodu 21 kez okutuluyordu. Kod bir kez okutulur, `##KILIT##` denir,
+ardından yalnızca seri numaraları gelir; grupta kod yoksa kilit devreye girer.
+
+Üç kural:
+
+* Kilit **parametresiz basılır.** Malzeme kodlarının 57'si boşluk ya da Türkçe
+  karakter taşıyor (§2.1) ve Code128'e girmiyor — o yüzden kilitlenecek kod
+  TAMPONDAN okunur. Arayüz açık kod gönderdiğinde (`##KILIT-<kod>##`) o
+  kullanılır; bu biçim yalnızca telefon/PC düğmesinden doğar, karta basılmaz.
+* **Elle okutulan kod her zaman kilidi yener.** Yoksa kullanıcı kilidi
+  açmadan başka bir ürünü sayamazdı.
+* Kilit **grup kapanınca tükenmez** (`##ADET-N##`'den farkı budur) ve
+  kilitlenecek kod bulunamazsa **sessiz kalmaz**: `kilit_yok` döner. Sessizce
+  kilitlenmemek şart — kullanıcı kilitlendiğini sanıp onlarca seri numarası
+  okutur ve hepsi kuyruğa düşerdi.
+
+**`##YEDEK##` açıkken hiçbir şey ARANMAZ.** Yedek parçalar Tiger'da kayıtlı
+değil; aranmaları yalnızca yanlış eşleşme üretiyordu (yedek parçanın üstündeki
+üretici kodu başka bir malzemenin önekine takılıp o malzemenin slotunu
+dolduruyordu). Mod açıkken grup doğrudan `tip='yedek'` yazılır: öğrenme yok,
+kuyruk yok, sayaçlara girmez, kendi rapor sekmesinde durur. `##ADET-N##`
+burada geçerlidir — aynı parçadan 20 tane olabilir.
+
+Kilit ve yedek parça modu **ekranda görünmek zorundadır.** İkisi de açık
+unutulursa bütün raf yanlış malzemeye ya da yedek parçaya yazılır ve bu ancak
+rapor açılınca fark edilir; bu yüzden hem Sayım hem telefon başlığında kalıcı
+rozetleri var.
 
 Adet **birikir**: `##ADET-25##` iki kez okutulursa 50 olur. Kartta sabit
 değerler basılı (1/5/10/25/50/100), ara değere ancak böyle ulaşılır. Telefondaki
@@ -301,6 +376,19 @@ sonraki ürüne sızmaz. **Boş tamponda `##SONRAKI##`'ye basmak adedi yakmaz.**
 
 Seri takipli kalemde adet uygulanmaz — her cihaz Tiger'da ayrı bir satır.
 Girilmişse sessizce yutulmaz, sonuçta `adet_yersiz` olarak bildirilir.
+
+**Ürün TANINMAZSA adet kaybolmaz, kuyruk kaydına taşınır** (`kuyruk.adet`).
+Sebebi: kuyruğa düşen kaydın malzemesi bilinmiyor, dolayısıyla seri takipli mi
+lot mu bilinmiyor — adedin anlamlı olup olmadığına ancak kayıt çözülünce karar
+verilebilir. Kayıt fazla olarak kapatılırsa miktar odur; bir malzemeye
+bağlanırsa lot/izlemesizde miktar olur, seri takiplide `adet_yersiz` ile
+bildirilir. Adet, kayıt çözülmeden önce kuyruk ekranından düzeltilebilir —
+kutuda 150 sanılıp 130 çıkabilir.
+
+2026-08-27'ye kadar bu yol yoktu ve **girilen adet sessizce buharlaşıyordu**:
+150 girilip tanınmayan bir ürün fazla işaretlendiğinde raporda 1 yazıyordu.
+Dahası `##FAZLA##` ve `##ATLA##` adedi tüketmiyordu bile — 150 ayakta kalıp
+**sonraki ürüne sızıyordu.**
 
 **Raf adı `norm.raf_adi()` ile temizlenir** ve normalizasyon TEK yerdedir:
 `ÜST-1` → `UST-1`, `ön çıkış` → `ON CIKIS`. Türkçe harfler katlanır, sonra
@@ -323,13 +411,14 @@ Sessizce boş rafa geçmek raf bilgisini yok ederdi.
 
 ## 5. Rapor çıktısı
 
-6 sekmeli Excel:
+7 sekmeli Excel:
 
 | Sekme | İçerik | Kullanım |
 |---|---|---|
 | Eksik | Okutulmamış beklenen kayıtlar | Tiger sayım eksikliği fişi |
 | Fazla | Karşılığı bulunamayan okutmalar (+ **Ürün Adı**) | Tiger sayım fazlası fişi |
-| Eşleşen | Başarılı okutmalar (denetim izi) | Kontrol |
+| Eşleşen | Başarılı okutmalar + **okutulan barkodlar** (denetim izi) | Kontrol |
+| Yedek Parça | Yedek parça modunda okutulanlar (§4.5) | Tiger'a fiş olarak GİRİLMEZ; ayrı karar |
 | Tiger Düzeltme | `eski (uydurma) S/N -> yeni (gerçek) S/N` | Seri no düzeltme fişi |
 | Barkod Tablosu | `öğrenilen barkod -> malzeme kodu` | Tiger malzeme kartı Barkod alanına yazılır |
 | Etiketler | Kendi bastığımız etiketlerin defteri (§12) | Fiziksel etiketi bulmak |
@@ -398,7 +487,7 @@ Excel çıktısı üretiyoruz.
 ## 7. Mevcut durum
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 193 test geçiyor. **Arayüz yeniden
+altında React + Vite + Tailwind arayüz, 374 test geçiyor. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
 kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
 
@@ -416,6 +505,9 @@ olmalıdır. Bilinçli sapmalar burada listelenir, sessizce ayrılmaz:
 | Sapma | Neden |
 |---|---|
 | Kirli slot bulunamayınca fazla değil **onay kuyruğu** (§4.4) | Prototip sessizce fazla yazıyordu; demo sayımında yanlış olduğu görüldü (`DEMO_FEEDBACK.md` §5) |
+| **Sabit malzeme kodu kilidi** (`##KILIT##`, §4.5) | Prototipte yok. 21 cihazlı malzemede kod 21 kez okutuluyordu |
+| **Yedek parça modu** (`##YEDEK##`, §4.5) | Prototipte yok. Yedek parçalar Tiger'da kayıtlı değil; aranmaları yanlış eşleşme üretiyordu |
+| **`okutma.ham` grubun tamamını taşır**, tek değeri değil (§4.4) | Prototipte eşleşen satır yalnızca seri numarasını yazıyordu; okutulan fabrika barkodu kayıttan düşüyordu |
 
 `komut_karti.py` Code128 komut barkodu kartı üretir (python-barcode gerektirir).
 

@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-26 · 300 test geçiyor.
+Son güncelleme: 2026-08-27 · 374 test geçiyor.
 
 ---
 
@@ -65,11 +65,11 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 | `yukleme` | id · ts · dosya_adi · kaynak · satir · not_ |
 | `beklenen` | id · yukleme · kod · **kod_n** · aciklama · tur · ambar · izleme · seri · **seri_n** · **seri_n0** · seri_aciklama · miktar · birim · kirli · kirli_sebep · haric · haric_sebep · kaynak |
 | `haric_kural` | id · tip · desen · aktif · varsayilan · UNIQUE(tip,desen) |
-| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** |
-| `okutma` | id · oturum · ts · ham · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** |
+| `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** · **sabit_kod** · **yedek_parca** |
+| `okutma` | id · oturum · ts · **ham** · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** · **yeni_seri** |
 | `eslesme` | **barkod (PK)** · kod · seri · ts |
 | `tampon` | id · oturum · ts · ham |
-| `kuyruk` | id · oturum · ts · barkodlar (JSON) · raf · cozuldu · not_ · beklet · **tur** · kod · ad |
+| `kuyruk` | id · oturum · ts · barkodlar (JSON) · raf · cozuldu · not_ · beklet · **tur** · kod · ad · **adet** |
 | `kuyruk_foto` | id · kuyruk · **okutma** · ts · tur · boyut · **veri BLOB** |
 | `basim` | id · ts · tur · adet · ilk · son · duzen · not_ |
 | `etiket` | **kod (PK)** · gosterim · tur · basim · ts · malzeme · beklenen_id · oturum · ts_bagla · raf |
@@ -77,13 +77,60 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 ### Bilinmesi gerekenler
 
 * **`fazla` diye tablo yoktur.** Fazla, `okutma.tip` değeridir.
-  `okutma.tip` yalnızca üç değer alır: `eslesti`, `kod`, `fazla`.
+  `okutma.tip` **dört** değer alır: `eslesti`, `kod`, `fazla`, **`yedek`**.
   (`bilinmiyor` üç ayrı sorguda filtreleniyordu ama prototip dahil hiçbir
   sürüm onu yazmamıştı — 2026-08-26'da kaldırıldı.)
+  `yedek` 2026-08-27'de eklendi (yedek parça modu). Mevcut sorguların hepsi
+  **olumlu** filtre kullandığı için (`tip='fazla'`, `tip IN ('eslesti','kod')`)
+  kendiliğinden dışarıda kalıyor — `sayaclar`, `esleme_verisi`,
+  `adsiz_fazlalar`, `fotosuz_fazlalar`, `fazla_bagla`, `reports` Fazla/Eşleşen
+  ve `db.bolunmus_fazlalari_birlestir`. **Yeni bir `tip` eklerken bu listeyi
+  tek tek gözden geçirin**; olumsuz filtre (`tip<>'...'`) yazan ilk sorgu bu
+  güvenceyi bozar. Kilidi `tests/test_yedek.py`.
+* **`okutma.ham` grubun BÜTÜN barkodlarını taşır**, `" + "` ile birleşik.
+  Bir grup bir üründür (CLAUDE.md §4.4). 2026-08-27'ye kadar `eslesti` ve
+  `slot` dalları buraya tek değer yazıyordu ve okutulan fabrika barkodu
+  kayıttan düşüyordu (saha bildirimi B1). `kuyruk_coz` / `kuyruk_fazla` zaten
+  doğru yazıyordu — üç dal artık aynı sözleşmede.
+* **`okutma.yeni_seri` HER YAZMADA açıkça doldurulur — NULL bırakılamaz.**
+  NULL yalnızca "bu sütun eklenmeden önce yazılmış" demektir ve rapor orada
+  eski kurala (`_yeni_seri(ham)`) düşer. `ham` artık malzeme kodunu da
+  taşıdığı için o kural en uzun aday olarak MALZEME KODUNU seçebiliyor:
+  gerçek veriyle üretildi (2026-08-27) —
+  `900-5G144-2200-000 TD SYNNEX 8000USD 2 -> 900-5G144-2200-000`.
+  Öneri yoksa **boş dize** yazılır. `okutma`'ya yazan sekiz yolun sekizi de
+  sütunu doldurur; **yeni bir yazma yolu eklerken bunu da doldurun.**
+  Değer seçimi: `eslesti` kaydı eşleştiren değeri önerir (kaydın mevcut
+  serisiyle aynıysa boş), `kuyruk_coz` / `fazla_bagla` `_fazla_seri` ile
+  malzeme kodunu eleyip `_yeni_seri` sırasını uygular, `adet` / `yedek` /
+  `fazla` boş yazar.
+* **Son savunma `reports`'ta:** önerilen değerin kendisi `kirli_mi` desenine
+  uyuyorsa satır rapora GİRMEZ ve dipnotta sayılır. Bu ağ tam da yukarıdaki
+  hatayı yakalamak için var; motor düzeltildi ama ağ duruyor.
+* **`okutma.yeni_seri` Tiger'a önerilecek seri numarasıdır** ve `ham`'dan
+  AYRIDIR. İkisi tek alanda durunca `ham`'a malzeme kodunu eklemek Tiger
+  Düzeltme sekmesini bozuyordu: `_yeni_seri` en uzun adayı seçtiği için kodu
+  seri no sanıp Tiger'a yazdırabilirdi (ACIL_PLAN §3'te kapatılan hata).
+  Boşsa Tiger Düzeltme satırı **üretilmez** (`sn_yok` sözleşmesi). NULL ise
+  sütun eklenmeden önce yazılmış eski satırdır; rapor orada `_yeni_seri(ham)`
+  eski kuralına düşer.
+* **`oturum.sabit_kod` kalıcıdır, `bekleyen_adet` değildir.** Kilit (I2) grup
+  kapanınca tükenmez — açıkça kapatılır ya da oturumla biter. Kural budur:
+  amaç aynı malzemeden art arda cihaz saymak.
 * **`kuyruk.tur` iki değer alır:** `bilinmiyor` (ne seri ne kod tanındı — "bu
   hangi malzeme?") ve `fazla_onay` (malzeme tanındı, karşılığı bulunamadı —
   "gerçekten fazla mı?"). Fazla kaydı yalnızca `kuyruk_fazla()` ve `##FAZLA##`
   komutundan doğar; motor kendiliğinden fazla yazmaz.
+* **Girilen adet grupla birlikte gider, ama KAYBOLMAZ.** Ürün tanınmazsa
+  `bekleyen_adet` sıfırlanırken değeri `kuyruk.adet`'e taşınır; kayıt
+  çözülünce oradan alınır. Sahada 150 girilip tanınmayan ürün fazla
+  işaretlendiğinde rapora 1 yazılıyordu (bildirim 2026-08-27): dört yer birden
+  adedi düşürüyordu — `grup_coz` kuyruk dalı (sütun yoktu), `kuyruk_fazla`
+  (`miktar` sabit 1), `##FAZLA##` ve `##ATLA##` (hem sabit 1 hem adedi
+  tüketmiyorlardı, yani 150 **sonraki ürüne sızıyordu**).
+  `kuyruk_coz` adedi malzemenin izlemesine göre karara bağlar: lot /
+  izlemesizde miktar olur, seri takiplide `adet_yersiz` ile bildirilir.
+  Kilidi `tests/test_kuyruk_adet.py` (10 test, hepsi eski kodda düşüyor).
 * **`oturum.bekleyen_adet` kalıcı bir ayar değildir.** Sıradaki grubun miktarını
   taşır (`##ADET-N##` / telefon Adet paneli) ve grup kapanınca — ya da
   `##IPTAL##` ile — sıfırlanır. Oturum ayarı gibi davranırsa 25 adet sonraki
@@ -190,6 +237,10 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | **`POST /oturum/{id}/okut`** | `{ham, zorla}` | **Tek giriş noktası** |
 | `POST /oturum/{id}/gerial` | `{kapsam}` — `okutma` \| `grup` | Geri al |
 | `PATCH /okutma/{id}` | `{ad?, not_?}` | Fazla kaydına ürün adı / not (kısmi) |
+| **`DELETE /okutma/{id}`** | `{kapsam?}` — `grup` (varsayılan) \| `satir` | Akıştan sil (I1). Yan etkiler `_yan_etkileri_geri_al` ile geri alınır |
+| `POST /oturum/{id}/sabit-kod` | `{kod}` — null kilidi açar | Malzeme kilidi (I2). İçeride `##KILIT-<kod>##` / `##KILITAC##` üretip `okut()`'a verir |
+| `POST /oturum/{id}/yedek-parca` | `{acik}` | Yedek parça modu (I4), aynı desen |
+| `POST /oturum/{id}/say` | `{beklenen_id, ham?}` | Barkodsuz ürünü listeden seçerek say (I5) |
 | `GET /oturum/{id}/esleme` | — | Sayım sonu: `{fazla, eksik}` |
 | `POST /okutma/{id}/bagla` | `{beklenen_id}` | Fazlayı eksik kayda bağla |
 | `POST /okutma/{id}/coz-ayir` | — | Eşleştirmeyi geri al |
@@ -201,7 +252,8 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 
 > **Grup kapatma / komut barkodları için ayrı uç YOKTUR.** `##SONRAKI##`,
 > `##IPTAL##`, `##GERIAL##`, `##FAZLA##`, `##ATLA##`, `##BITIR##`, `##RAF-X##`,
-> `##ADET-N##`
+> `##ADET-N##`, `##KILIT##` / `##KILIT-<kod>##` / `##KILITAC##`,
+> `##YEDEK##` / `##YEDEKKAPAT##`
 > hepsi `POST /oturum/{id}/okut` gövdesindeki `ham` alanından geçer ve
 > Raf adı `norm.raf_adi()`den geçer (`ÜST-1` -> `UST-1`): Code128 ASCII dışını
 > taşımıyor ve **basılan değerle elle yazılan değer aynı olmalı**, yoksa iki
@@ -217,7 +269,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 |---|---|---|
 | `GET /oturum/{id}/kuyruk` | `?hepsi=false` | Kayıtlar; her satırda `fotolar` id listesi |
 | `POST /kuyruk/{id}/coz` | `{beklenen_id}` | Malzemeye bağla, barkodları öğren |
-| `PATCH /kuyruk/{id}` | `{not_?, beklet?, ad?}` | Kısmi güncelleme (biri diğerini silmez) |
+| `PATCH /kuyruk/{id}` | `{not_?, beklet?, ad?, adet?}` | Kısmi güncelleme (biri diğerini silmez). `adet` kayıt çözülmeden düzeltilebilir |
 | `DELETE /kuyruk/{id}` | `{ad?}` | **Fazla olarak kapatır** (`matching.kuyruk_fazla`). Kod bilinmiyorsa `ad` zorunlu → 400 `ad_gerekli` |
 | `POST /kuyruk/{id}/foto` | multipart `dosya` | Maks 6 MB · jpeg/png/webp |
 | `POST /okutma/{id}/foto` | multipart `dosya` | Fazla kaydının fotoğrafı (aynı sınırlar) |
@@ -279,6 +331,7 @@ durur; `ara(sadece_acik=True)` ve `kuyruk_coz()` de aynı işlevi kullanır.
 Tampondaki barkodların hepsi **tek ürün** kabul edilir.
 
 ```
+YEDEK PARÇA MODU açık                    -> tip="yedek"    (coz() HİÇ çağrılmaz)
 tekrar var, seri yok                     -> tip="tekrar"   (hiçbir şey yazılmaz)
 kaynak SAYIM DIŞI kalem                  -> tip="haric"    (hiçbir şey yazılmaz)
 seri de kod da tanınmadı                 -> tip="kuyruk"   (kullanıcıya sorulur)
@@ -288,6 +341,15 @@ kod tanındı (ya da lot satırı eşleşti):
   izleme='seri', slot yok                -> tip="onay"     (*)
   izleme='lot' | 'yok'                   -> tip="adet"     (adet +1)
 ```
+
+**Yedek parça modu her şeyden önce gelir** (I4): tampon boşaltılır, tek satır
+`tip='yedek'` yazılır, `coz()` hiç çağrılmaz. Öğrenme ve kuyruk yoktur — yedek
+parçalar Tiger'da kayıtlı değil ve aranmaları yalnızca yanlış eşleşme
+üretiyordu.
+
+**Sabit kod kilidi `kod_h`'nin yedeğidir** (I2): grupta malzeme kodu YOKSA ve
+`oturum.sabit_kod` doluysa kilit devreye girer. Elle okutulan kod her zaman
+kilidi yener — yoksa kullanıcı kilidi açmadan başka bir ürünü sayamazdı.
 
 **Seri dalına yalnızca `izleme='seri'` satırları girer.** Lot numarası birebir
 eşleşse bile (1. adım) adet dalına düşer: seri dalı `miktar=1` yazıp satırı
@@ -361,6 +423,14 @@ Komut barkodu mu diye bakar; değilse `tampon`'a yazıp anlık çözümlemeyi d�
   kayıt kaldığını gösteren sayaç durur, satıra basınca seriler açılır. Sunucu
   yine düz satır döner; `sadece_acik` sayesinde sayılan/eşleşen kayıt hiç
   gelmez, kayıt çözülünce liste tazelenir ve sayaç düşer.
+* `okutma_sil(c, ot, okutma_id, kapsam="grup")` — akıştan silme (I1).
+  `gerial`den farkı: o yalnızca SONUNCUYU alır. Varsayılan kapsam **grup**,
+  çünkü `adet` dalı bir grubu birden çok satıra yazabilir ve `geri` yalnızca
+  ilkinde durur. Yan etkiler `_yan_etkileri_geri_al` ile geri alınır — ayrı
+  temizleme kodu YOKTUR.
+* `elle_say(c, ot, beklenen_id, ham=None)` — barkodsuz ürün (I5).
+  `kuyruk_coz` ile aynı iki kural: dolu kayda bağlanmaz (`kapasite_kaldi`),
+  yazılan değer öğrenilir ama DS- seri etiketi öğrenilmez.
 * `fazla_bagla(c, okutma_id, beklenen_id)` — sayım sonu eşleştirmesi: fazla
   satırını `eslesti` yapar, barkodları öğretir. Zaten sayılmış kayda bağlamayı
   reddeder (çift sayım olurdu). `fazla_coz_ayir()` geri alır.
@@ -375,6 +445,10 @@ Komut barkodu mu diye bakar; değilse `tampon`'a yazıp anlık çözümlemeyi d�
   bir satır kalır.
 * `sayaclar(c, ot)` — okutulan / kalan / fazla / kuyruk / toplam.
 * `durum(c, ot, akis)` — sayım ekranının tek çağrıda ihtiyacı olan her şey.
+  Akış satırları `id` ve `grup` taşır (satır bazlı silme için şart);
+  `sabit_kod` / `sabit_aciklama` / `yedek_parca` da buradan gelir — ikisi de
+  ekranda **görünmek zorunda**, açık unutulursa bütün raf yanlış malzemeye ya
+  da yedek parçaya yazılır.
 
 ---
 
@@ -419,7 +493,7 @@ alanının odaklanmasını engeller. `/telefon` rotasıyla ilgisi yoktur.
 | Kurulum | `ekranlar/Kurulum.tsx` | Excel yükle, kurallar, ambar seç, oturum aç | PC |
 | Sayım | `ekranlar/Sayim.tsx` | Barkod girişi, tampon, akış | PC |
 | Kuyruk | `ekranlar/Kuyruk.tsx` | Tanınmayanları rafa göre çöz | PC |
-| Rapor | `ekranlar/Rapor.tsx` | Sekme önizleme, xlsx, oturumu bitir | PC |
+| Rapor | `ekranlar/Rapor.tsx` | 7 sekme önizleme, xlsx, oturumu bitir. **`SEKME` listesi `reports.SEKME`'nin kopyasıdır** — sekme eklerken ikisi de güncellenir | PC |
 | Geçmiş | `ekranlar/Gecmis.tsx` | Eski oturumlar, komut kartı | PC |
 | Ayarlar | `ekranlar/Ayarlar.tsx` | Aktif raf, kurallar, ses, cihaz modu | PC |
 | Etiket | `ekranlar/Etiket.tsx` | Etiket basımı ve defteri | PC |
@@ -478,7 +552,7 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **193 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **374 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
 
 | Dosya | Kapsam |
@@ -494,6 +568,20 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 | `test_olaylar.py` | SSE akışı |
 | `test_rapor.py` | Rapor sekmeleri |
 | `test_senaryolar.py` | `CLAUDE.md` §8'deki saha senaryoları |
+| `test_b1_barkod.py` | **B1**: grup barkodları `ham`'da hayatta kalıyor, malzeme kodu Tiger'a seri no diye yazılmıyor |
+| `test_silme.py` | **I1**: akıştan silme, yan etkilerin geri alınması, grup kapsamı |
+| `test_sabit_kod.py` | **I2**: malzeme kilidi — kilitliyken slot dolar, kilitsizken kuyruğa düşer |
+| `test_yedek.py` | **I4**: `tip='yedek'` hiçbir mevcut sorguya sızmıyor, kendi sekmesinde çıkıyor |
+| `test_elle_giris.py` | **I5**: listeden seçerek sayma, öğrenme, çift bağlama koruması |
+| `test_kuyruk_adet.py` | Tanınmayan üründe girilen adedin kaybolmaması ve sonraki ürüne sızmaması |
+
+Denetimden çıkanlar (2026-08-27, kendi değişikliklerimin gözden geçirmesi):
+`eslesti` dalı `yeni_seri`'yi NULL bırakıp malzeme kodunu Tiger'a önerdiriyordu
+(gerçek veriyle üretildi); `kuyruk_coz` ve `fazla_bagla` aynı sınıftan
+**önceden var olan** bir hataya sahipti (malzeme kodunu elemiyorlardı);
+yedek satırları akış listesinde yeşil (= "eşleşti") görünüyordu; `elle_say`
+DS- etiketini bağlamıyordu; yedek parça modunda `##FAZLA##` / `##ATLA##` modu
+sessizce deliyordu. Hepsi düzeltildi ve testle kilitlendi.
 
 **Fixture'lar (`conftest.py`):** `sablon` (session, XLSX bir kez yüklenir) ·
 `c` (şablonun kopyası, her test izole) · `ot` (Ambar 1'de açık oturum) ·
@@ -525,6 +613,13 @@ stok ve tutar içerdiği için `.gitignore`'da.
 ---
 
 ## 9. Bilinen sapmalar / açık işler
+
+* `depo_sayim_bugs_improvements.md` — **gerçek** sayım denemesinden çıkan
+  1 bug + 5 feature. B1, I1, I2, I4, I5 çözüldü (2026-08-27); **hiçbiri gerçek
+  sahada denenmedi.** I3 (kutu barkodu) yalnızca tasarlandı —
+  `KUTU_TASARIM.md`, kod yok.
+* **Çok depo bir eksiklik değil, karar** (2026-08-27): uygulama sayılan
+  ambarın dışına çıkmaz. Ayrıntı `CLAUDE.md` §3.5.
 
 * `DEMO_FEEDBACK.md` — demo sayımından çıkan 1 bug + 5 feature.
   **Altısı da çözüldü** (2026-08-22): telefon kumandası, sıradaki/geri al, elle

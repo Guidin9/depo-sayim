@@ -10,7 +10,7 @@ import json
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
-from .. import matching
+from .. import matching, norm
 from .ortak import DB, oturum_getir
 
 router = APIRouter(prefix="/api", tags=["kuyruk"])
@@ -28,6 +28,9 @@ class Not(BaseModel):
     not_: str | None = None
     beklet: bool | None = None
     ad: str | None = None
+    # Kuyruğa düşerken girilmiş adet düzeltilebilmeli: kullanıcı 150 dedi,
+    # kaydı çözerken kutuda 130 olduğunu görebilir. 0 = adet girilmedi.
+    adet: float | None = None
 
 
 class FazlaKapat(BaseModel):
@@ -49,6 +52,7 @@ def _satir(c, r):
             "ts": (r["ts"] or "")[:19].replace("T", " "), "cozuldu": bool(r["cozuldu"]),
             "not_": r["not_"] or "", "beklet": bool(r["beklet"]), "fotolar": fotolar,
             "tur": r["tur"] or "bilinmiyor", "kod": r["kod"], "ad": r["ad"],
+            "adet": float(r["adet"] or 0),
             "aciklama": _aciklama(c, r["kod"])}
 
 
@@ -94,6 +98,10 @@ def guncelle(kuyruk_id: int, istek: Not, c=DB):
     if istek.beklet is not None:
         c.execute("UPDATE kuyruk SET beklet=? WHERE id=?",
                   (1 if istek.beklet else 0, kuyruk_id))
+    if istek.adet is not None:
+        if istek.adet < 0 or istek.adet > norm.ADET_TAVAN:
+            raise HTTPException(400, "Adet 0 ile %d arasında olmalı" % norm.ADET_TAVAN)
+        c.execute("UPDATE kuyruk SET adet=? WHERE id=?", (istek.adet, kuyruk_id))
     c.commit()
     return _satir(c, _kuyruk_getir(c, kuyruk_id))
 

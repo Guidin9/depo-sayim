@@ -65,12 +65,17 @@ export type TamponSatiri = {
 };
 
 export type AkisSatiri = {
+  /** Satır bazlı silme (I1) için şart — `##GERIAL##` yalnızca sonuncuyu alır. */
+  id: number;
   ts: string;
   ham: string;
   kod: string | null;
   seri: string | null;
   tip: string;
   raf: string | null;
+  /** Bir grup bir üründür; silme varsayılan olarak grubun tamamını alır. */
+  grup: number | null;
+  miktar: number;
   not_: string | null;
 };
 
@@ -81,6 +86,11 @@ export type Durum = {
   aktif_raf: string | null;
   /** Sıradaki grubun adedi — ##ADET-N## / telefon tuş takımı. 0 = verilmedi. */
   bekleyen_adet: number;
+  /** Kilitli malzeme kodu (I2). Yalnız seri numaraları okutuluyor demek. */
+  sabit_kod: string | null;
+  sabit_aciklama: string | null;
+  /** Yedek parça modu (I4): okutulan hiçbir şey Tiger'da ARANMAZ. */
+  yedek_parca: boolean;
   durum: string;
   sayac: Sayac;
   tampon: TamponSatiri[];
@@ -117,12 +127,21 @@ export type OkutmaSonucu = {
   sebep?: string;
   /** tip="slot": sayıldı ama Tiger'a yazılacak seri numarası verilmedi. */
   sn_yok?: boolean;
-  /** ##GERIAL## geri alınan yan etkileri bildirir. */
+  /** Kilitli malzeme koduyla sayıldıysa hangi kodla (I2). */
+  sabit_kod?: string | null;
+  /** tip="yedek_mod": mod açık mı. */
+  acik?: boolean;
+  /** ##GERIAL## ve okutma silme, geri alınan yan etkileri bildirir. */
   unutulan?: string[];
   etiket_cozuldu?: string | null;
+  /** tip="silindi": kaç okutma satırı gitti, kuyruk kaydı yeniden açıldı mı. */
+  silinen?: number;
+  kuyruk_acildi?: number | null;
   barkodlar?: string[];
   ogrenilen?: string[];
   raf?: string;
+  /** tip="tampon": tampondaki BARKOD sayısı — ürün adedi değil.
+   *  Ürün adedi her zaman `miktar`. */
   adet?: number;
   ham?: string;
   coz?: CozTipi;
@@ -162,6 +181,8 @@ export type KuyrukSatiri = {
   /** fazla_onay'da tanınan malzeme kodu; bilinmiyor'da null. */
   kod: string | null;
   ad: string | null;
+  /** Grup kapanırken girilmiş adet. 0 = girilmedi ("1 tane" ile aynı şey değil). */
+  adet: number;
   aciklama: string;
 };
 
@@ -373,6 +394,9 @@ export const api = {
   /** Fazla kaydına elle ürün adı (Tiger'da karşılığı olmayan ürünler için). */
   okutmaAd: (okutmaId: number, ad: string) =>
     gonder<{ id: number; ad: string }>(`/api/okutma/${okutmaId}`, { ad }, "PATCH"),
+  /** Akıştaki bir okutmayı sil. Varsayılan kapsam: grubun tamamı. */
+  okutmaSil: (okutmaId: number, kapsam: "grup" | "satir" = "grup") =>
+    gonder<OkutmaSonucu>(`/api/okutma/${okutmaId}`, { kapsam }, "DELETE"),
 
   esleme: (id: number) => istek<EslemeVerisi>(`/api/oturum/${id}/esleme`),
   fazlaBagla: (okutmaId: number, beklenen_id: number) =>
@@ -405,6 +429,9 @@ export const api = {
     gonder<KuyrukSatiri>(`/api/kuyruk/${kid}`, { not_ }, "PATCH"),
   kuyrukBeklet: (kid: number, beklet: boolean) =>
     gonder<KuyrukSatiri>(`/api/kuyruk/${kid}`, { beklet }, "PATCH"),
+  /** Kuyruk kaydının adedini düzelt (kutuda 150 sanıp 130 çıkabilir). */
+  kuyrukAdet: (kid: number, adet: number) =>
+    gonder<KuyrukSatiri>(`/api/kuyruk/${kid}`, { adet }, "PATCH"),
   fotoYukle: (kid: number, dosya: Blob, ad = "foto.jpg") => {
     const veri = new FormData();
     veri.append("dosya", dosya, ad);
@@ -423,6 +450,16 @@ export const api = {
       ##ADET-N## komut barkoduyla birebir aynı yol. */
   adetAyarla: (id: number, adet: number) =>
     gonder<OkutmaSonucu>(`/api/oturum/${id}/adet`, { adet }),
+  /** Barkodu olmayan ürünü listeden seçerek sayıldı işaretle (I5). */
+  elleSay: (id: number, beklenen_id: number, ham?: string) =>
+    gonder<OkutmaSonucu>(`/api/oturum/${id}/say`, { beklenen_id, ham: ham ?? null }),
+  /** Malzeme kodunu kilitle; kod boş/null ise kilidi açar (I2). */
+  sabitKod: (id: number, kod: string | null) =>
+    gonder<OkutmaSonucu>(`/api/oturum/${id}/sabit-kod`, { kod }),
+  /** Yedek parça modunu aç/kapat (I4). */
+  yedekParca: (id: number, acik: boolean) =>
+    gonder<OkutmaSonucu>(`/api/oturum/${id}/yedek-parca`, { acik }),
+
   raflar: (id: number) => istek<string[]>(`/api/oturum/${id}/raflar`),
 
   onizleme: (id: number) => istek<RaporOnizleme>(`/api/oturum/${id}/rapor/onizleme`),

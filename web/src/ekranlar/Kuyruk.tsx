@@ -142,6 +142,19 @@ export default function Kuyruk({
     await tazele();
   }
 
+  /* Kutuda 150 sanıp 130 çıkabilir — kayıt çözülmeden düzeltilebilmeli.
+     Boş bırakmak "adet girilmedi" (0) demektir, "1 tane" demek değil. */
+  async function adetKaydet(k: KuyrukSatiri, deger: string) {
+    const n = deger.trim() === "" ? 0 : Number(deger);
+    if (!Number.isFinite(n) || n < 0 || n === k.adet) return;
+    try {
+      await api.kuyrukAdet(k.id, n);
+      await tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function fotoEkle(k: KuyrukSatiri, dosya: File) {
     try {
       await api.fotoYukle(k.id, await kucult(dosya));
@@ -241,6 +254,18 @@ export default function Kuyruk({
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-mikro
                           text-solgun">
                           <span>{k.ts}</span>
+                          {/* Girilen adet burada GÖRÜNMEK zorunda: kullanıcı
+                              grup kapanırken "150 tane" dedi, ürün tanınmadı.
+                              Sayı görünmezse kayıt çözülürken 1'e düşer ve
+                              150 sessizce kaybolur. */}
+                          {k.adet > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-sm
+                              border border-vurgu bg-vurgu-tint px-2.5 py-0.5 font-semibold
+                              text-vurgu">
+                              <Ik.Katman boy={11} />
+                              <span className="rakam">{k.adet}</span> adet
+                            </span>
+                          )}
                           {k.beklet && (
                             <span
                               title="Telefonda fotoğraflanıp ertelendi — çözümü sana bırakıldı"
@@ -267,6 +292,19 @@ export default function Kuyruk({
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-2 text-mikro text-solgun">
+                        adet
+                        <input
+                          type="number"
+                          min={0}
+                          defaultValue={k.adet || ""}
+                          placeholder="1"
+                          onBlur={(e) => void adetKaydet(k, e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                          className="rakam w-24 rounded-sm border border-cizgi-kuvvetli
+                            bg-zemin px-3 py-2 text-govde"
+                        />
+                      </label>
                       <input
                         defaultValue={k.not_}
                         placeholder="not (isteğe bağlı): siyah kutu, üst raf, HP yazıyor…"

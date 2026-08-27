@@ -7,10 +7,13 @@ import { api, type RaporOnizleme } from "../api";
 import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
 import * as Ik from "../ikonlar";
 
+/* `reports.SEKME` ile aynı sırada olmalı — sunucu veriyi sekme adına göre
+   veriyor, buradaki liste yalnızca çizim sırasını ve açıklamayı taşıyor. */
 const SEKME = [
   "Eksik",
   "Fazla",
   "Eşleşen",
+  "Yedek Parça",
   "Tiger Düzeltme",
   "Barkod Tablosu",
   "Etiketler",
@@ -19,7 +22,9 @@ const SEKME = [
 const ACIKLAMA: Record<string, string> = {
   Eksik: "Okutulmamış beklenen kayıtlar — Tiger'da sayım eksikliği fişi.",
   Fazla: "Karşılığı bulunamayan okutmalar — Tiger'da sayım fazlası fişi.",
-  Eşleşen: "Başarılı okutmalar, denetim izi.",
+  Eşleşen: "Başarılı okutmalar, denetim izi — okutulan barkodlarla birlikte.",
+  "Yedek Parça":
+    "Yedek parça modunda okutulanlar. Tiger'da aranmadılar; eksik ya da fazla sayılmazlar.",
   "Tiger Düzeltme": "Uydurma seri no → okutulan gerçek seri no. Seri düzeltme fişi.",
   "Barkod Tablosu": "Öğrenilen barkodlar — malzeme kartı > Birimler > Barkod alanına yazın.",
   Etiketler:

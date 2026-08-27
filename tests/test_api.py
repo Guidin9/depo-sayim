@@ -126,6 +126,111 @@ def test_oturum_devam_ettirme(kurulu):
     assert d["sayac"]["okutulan"] == 1
 
 
+def test_okutma_silme_uc_noktasi(kurulu):
+    """I1: akıştaki herhangi bir satır silinebilmeli, sonuncu olmasa bile."""
+    ist, _, o = kurulu
+    oid = o["id"]
+    okut(ist, oid, "5S47WC2", SONRAKI)
+    hedef = ist.get("/api/oturum/%s/durum" % oid).json()["akis"][0]["id"]
+    okut(ist, oid, "0WGP72", "W3S2000G7745", SONRAKI)   # araya başka ürün
+
+    r = ist.request("DELETE", "/api/okutma/%s" % hedef, json={"kapsam": "grup"})
+    assert r.status_code == 200, r.text
+    g = r.json()
+    assert g["tip"] == "silindi" and g["silinen"] == 1
+    assert [a["id"] for a in g["durum"]["akis"]] != [hedef]
+    assert g["durum"]["sayac"]["okutulan"] == 1
+
+    assert ist.request("DELETE", "/api/okutma/999999").status_code == 404
+
+
+def test_okutma_silme_govdesiz_calisir(kurulu):
+    """Gövde göndermeyen istemci varsayılan kapsamı (grup) almalı."""
+    ist, _, o = kurulu
+    okut(ist, o["id"], "5S47WC2", SONRAKI)
+    hedef = ist.get("/api/oturum/%s/durum" % o["id"]).json()["akis"][0]["id"]
+    r = ist.request("DELETE", "/api/okutma/%s" % hedef)
+    assert r.status_code == 200, r.text
+    assert r.json()["durum"]["sayac"]["okutulan"] == 0
+
+
+def test_kuyruk_adedi_kaybolmaz(kurulu):
+    """Saha bildirimi: 150 gir · okut · SONRAKI · Tiger'da yok · fazla işaretle."""
+    ist, _, o = kurulu
+    oid = o["id"]
+    r = okut(ist, oid, "##ADET-150##", "HICBIR-KAYITTA-YOK-7788", SONRAKI)
+    assert r["tip"] == "kuyruk" and r["miktar"] == 150
+
+    kid = ist.get("/api/oturum/%s/kuyruk" % oid).json()[0]["id"]
+    assert ist.get("/api/oturum/%s/kuyruk" % oid).json()[0]["adet"] == 150
+
+    # adet düzeltilebilmeli (kutuda 150 sanıp 130 çıkabilir)
+    r = ist.patch("/api/kuyruk/%s" % kid, json={"adet": 130})
+    assert r.status_code == 200 and r.json()["adet"] == 130
+
+    r = ist.request("DELETE", "/api/kuyruk/%s" % kid, json={"ad": "deneme ürünü"})
+    assert r.status_code == 200, r.text
+
+    on = ist.get("/api/oturum/%s/rapor/onizleme" % oid).json()
+    i = on["Fazla"]["basliklar"].index("Miktar")
+    assert [s[i] for s in on["Fazla"]["satirlar"]] == [130]
+
+
+def test_sabit_kod_uc_noktasi(kurulu):
+    """I2: telefondan açık kod gönderme — Code128'e girmeyen kodlar için tek yol."""
+    ist, _, o = kurulu
+    oid = o["id"]
+    r = ist.post("/api/oturum/%s/sabit-kod" % oid, json={"kod": "0WGP72"})
+    assert r.status_code == 200, r.text
+    assert r.json()["durum"]["sabit_kod"] == "0WGP72"
+
+    # kilitliyken yalnız seri okutmak slot doldurur
+    g = okut(ist, oid, "W3S2000G7745", SONRAKI)
+    assert g["tip"] == "slot" and g["kod"] == "0WGP72"
+
+    r = ist.post("/api/oturum/%s/sabit-kod" % oid, json={"kod": None})
+    assert r.json()["durum"]["sabit_kod"] is None
+
+    # malzeme kodu olmayan bir değer kilitlenemez
+    assert ist.post("/api/oturum/%s/sabit-kod" % oid,
+                    json={"kod": "HICBIRSEY-9999"}).status_code == 400
+
+
+def test_yedek_parca_uc_noktasi(kurulu):
+    """I4: mod açıkken kayıtlı bir seri bile aranmadan yedek parça yazılır."""
+    ist, _, o = kurulu
+    oid = o["id"]
+    r = ist.post("/api/oturum/%s/yedek-parca" % oid, json={"acik": True})
+    assert r.status_code == 200 and r.json()["durum"]["yedek_parca"] is True
+
+    g = okut(ist, oid, "5S47WC2", SONRAKI)
+    assert g["tip"] == "yedek"
+    assert g["durum"]["sayac"]["okutulan"] == 0, "sayacı bozmamalı"
+
+    r = ist.post("/api/oturum/%s/yedek-parca" % oid, json={"acik": False})
+    assert r.json()["durum"]["yedek_parca"] is False
+
+    on = ist.get("/api/oturum/%s/rapor/onizleme" % oid).json()
+    assert on["_ozet"]["sayilar"]["Yedek Parça"] == 1
+
+
+def test_elle_say_uc_noktasi(kurulu):
+    """I5: barkodu olmayan ürün listeden seçilerek sayılır."""
+    ist, _, o = kurulu
+    oid = o["id"]
+    liste = ist.get("/api/oturum/%s/ara" % oid, params={"q": "5S47WC2"}).json()
+    bid = liste["satirlar"][0]["id"]
+
+    r = ist.post("/api/oturum/%s/say" % oid,
+                 json={"beklenen_id": bid, "ham": "ELLE-YAZILAN-1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["durum"]["sayac"]["okutulan"] == 1
+
+    # aynı kayda ikinci ürün bağlanamaz
+    assert ist.post("/api/oturum/%s/say" % oid,
+                    json={"beklenen_id": bid}).status_code == 400
+
+
 def test_gerial_uc_noktasi(kurulu):
     ist, _, o = kurulu
     okut(ist, o["id"], "5S47WC2", SONRAKI, "hj6g8x3", SONRAKI)

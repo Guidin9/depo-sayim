@@ -15,7 +15,7 @@
  * Depoda telefona yanlış dokunup sayımı kapatmak, kolaylıktan daha pahalı.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, type AramaSonucu, type Durum, type KuyrukSatiri } from "../api";
+import { api, type AkisSatiri, type AramaSonucu, type Durum, type KuyrukSatiri } from "../api";
 import { Nokta } from "../bilesenler";
 import { kucult } from "../foto";
 import { suz } from "../liste";
@@ -34,6 +34,9 @@ type Props = {
 /** Akış satırını renkli şeride çevirir (laptoptaki okutmanın özeti). */
 function seritSinifi(tip: string) {
   if (tip === "fazla" || tip === "bilinmiyor") return "border-hata bg-hata-tint text-hata";
+  // Yedek parça SAYILMIŞ bir kayıt değil: Tiger'da aranmadı, eksik/fazla
+  // sayaçlarına girmiyor. Yeşil göstermek "eşleşti" yalanı olurdu.
+  if (tip === "yedek") return "border-uyari bg-uyari-tint text-uyari";
   if (tip === "kod") return "border-bilgi bg-bilgi-tint text-bilgi";
   return "border-ok bg-ok-tint text-ok";
 }
@@ -41,6 +44,7 @@ function seritSinifi(tip: string) {
 /** Aynı sonucun ambiyans ışıması rengi — şeritle ayrışmasın. */
 function seritRengi(tip: string): IsimaRenk {
   if (tip === "fazla" || tip === "bilinmiyor") return "hata";
+  if (tip === "yedek") return "uyari";
   if (tip === "kod") return "bilgi";
   return "ok";
 }
@@ -55,6 +59,12 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
   const [q, setQ] = useState("");
   const [havuz, setHavuz] = useState<AramaSonucu[]>([]);
   const [aramaAcik, setAramaAcik] = useState(false);
+  /* I5 — barkodu olmayan ürünler: üstünde yalnızca seri numarası yazılı.
+     Klavye KENDİLİĞİNDEN açılmaz, düğmeyle çağrılır (aşağıdaki nota bak). */
+  const [elleAcik, setElleAcik] = useState(false);
+  const [elleDeger, setElleDeger] = useState("");
+  const [elleQ, setElleQ] = useState("");
+  const [elleArama, setElleArama] = useState(false);
   const [fazlaOnay, setFazlaOnay] = useState<number | null>(null);
   const [yuklenen, setYuklenen] = useState<number | null>(null);
   const [buyutulen, setBuyutulen] = useState<number | null>(null);
@@ -133,7 +143,7 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
      fiziksel ürün tek kayda bağlanır. Sunucu da aynı kuralı uyguluyor
      (matching.kapasite_kaldi). */
   useEffect(() => {
-    if (!oturum || !aramaAcik) {
+    if (!oturum || (!aramaAcik && !elleArama)) {
       setHavuz([]);
       return;
     }
@@ -152,7 +162,7 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
     return () => {
       iptal = true;
     };
-  }, [oturum, aramaAcik, tik]);
+  }, [oturum, aramaAcik, elleArama, tik]);
 
   const sonuc = useMemo(
     () =>
@@ -162,6 +172,13 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
         "seri",
       ]),
     [havuz, q, sadeceKirli],
+  );
+
+  /* Elle giriş panelinin kendi süzmesi: kuyruk kartıyla aynı havuzu kullanır
+     ama sorgusu ayrı — ikisi açıkken birbirinin aramasını silmesin. */
+  const elleSonuc = useMemo(
+    () => suz(havuz, elleQ.trim(), ["kod", "aciklama", "seri"]),
+    [havuz, elleQ],
   );
 
   async function coz(kuyrukId: number, beklenenId: number) {
@@ -279,14 +296,119 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
           return;
         }
       }
-      // Elle fazla: kayıt isimsiz kalmasın, hemen sor (DEMO_FEEDBACK.md 3).
-      if (r.tip === "fazla_elle" && r.okutma?.length) {
+      // Elle fazla ve yedek parça: kayıt isimsiz kalmasın, hemen sor
+      // (DEMO_FEEDBACK.md 3). Yedek parçanın Tiger'da karşılığı hiç yok.
+      if ((r.tip === "fazla_elle" || r.tip === "yedek") && r.okutma?.length) {
         setFazlaIdler(r.okutma);
         setFazlaAd("");
       }
       navigator.vibrate?.(r.tip === "eslesti" || r.tip === "slot" ? 60 : [80, 50, 80]);
       setHata(null);
       await kuyrukTazele();
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
+  }
+
+  /* Akıştan silme (I1) — telefon birincil arayüz (DEMO_FEEDBACK.md 1), yanlış
+     okutmayı düzeltmek için laptopa gitmek gerekmemeli. */
+  async function okutmaSil(a: AkisSatiri) {
+    if (!oturum || mesgul) return;
+    const ne = a.kod ?? a.ham ?? "bu okutma";
+    if (!confirm(`${ne} okutması silinsin mi?
+
+Öğrenilen barkod unutulur, bağlanan etiket havuza döner.`))
+      return;
+    setMesgul(true);
+    try {
+      await api.okutmaSil(a.id);
+      navigator.vibrate?.([80, 50, 80]);
+      setHata(null);
+      await kuyrukTazele();
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
+  }
+
+  /* I5 — elle yazılan değeri okuyucudan gelmiş gibi işler. Yeni bir yol
+     DEĞİL: aynı `POST /okut` borusundan geçer, yani eşleştirme, öğrenme ve
+     grup mantığı birebir aynı kalır. */
+  async function elleOkut() {
+    const d = elleDeger.trim();
+    if (!d || !oturum || mesgul) return;
+    setElleDeger("");
+    await komut(d);
+  }
+
+  /* Yazılan değer hiçbir kayda tutmadıysa: ürünü listeden bulup işaretle. */
+  async function elleSay(beklenenId: number) {
+    if (!oturum || mesgul) return;
+    setMesgul(true);
+    try {
+      await api.elleSay(oturum, beklenenId, elleDeger.trim() || undefined);
+      navigator.vibrate?.(60);
+      setElleDeger("");
+      setElleQ("");
+      setElleArama(false);
+      setHata(null);
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
+  }
+
+  /* I2 — malzeme kilidi. Okuyucu laptopta ama düğme telefonda: saha birincil
+     arayüzü telefon (DEMO_FEEDBACK.md 1). Kilitlenecek kod tampondan alınır,
+     o yüzden gövdesiz ##KILIT## yeterli. */
+  async function kilitle() {
+    if (!oturum || mesgul) return;
+    setMesgul(true);
+    try {
+      const r = await api.okut(oturum, "##KILIT##");
+      if (r.tip === "kilit_yok") {
+        setHata("Önce malzeme kodunu okut, sonra kilitle.");
+      } else {
+        setHata(null);
+        navigator.vibrate?.(60);
+      }
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
+  }
+
+  async function kilidiAc() {
+    if (!oturum || mesgul) return;
+    setMesgul(true);
+    try {
+      await api.sabitKod(oturum, null);
+      setHata(null);
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMesgul(false);
+    }
+  }
+
+  /* I4 — yedek parça modu. */
+  async function yedekModu(acik: boolean) {
+    if (!oturum || mesgul) return;
+    setMesgul(true);
+    try {
+      await api.yedekParca(oturum, acik);
+      setHata(null);
+      navigator.vibrate?.(acik ? [80, 50, 80] : 60);
       tazele();
     } catch (e) {
       setHata(e instanceof Error ? e.message : String(e));
@@ -463,6 +585,15 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
             <span className="block font-mono text-govde font-bold break-all">
               {k.barkodlar.join(" + ")}
             </span>
+            {/* Girilen adet görünmek zorunda: kayıt çözülürken 1'e düşerse
+                kullanıcının "150 tane" bilgisi sessizce kaybolur. */}
+            {k.adet > 0 && (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-sm border
+                border-vurgu bg-vurgu-tint px-2 py-0.5 text-mikro font-bold text-vurgu">
+                <Ik.Katman boy={12} />
+                <span className="rakam">{k.adet}</span> adet
+              </span>
+            )}
             <span className="mt-1 block text-mikro text-solgun">
               {k.raf && <span className="text-uyari">raf {k.raf} · </span>}
               {k.ts.slice(11, 16)}
@@ -763,6 +894,52 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
         </div>
       )}
 
+      {/* Kilit ve yedek parça modu SESSİZ KALAMAZ: açık unutulursa bütün raf
+          yanlış malzemeye ya da yedek parçaya yazılır ve bu ancak rapor
+          açılınca fark edilir. Başlığın hemen altında, sayaçların üstünde. */}
+      {durum.sabit_kod && (
+        <div className="flex items-center gap-2 rounded-sm border border-bilgi
+          bg-bilgi-tint px-3 py-2">
+          <Ik.Kilit boy={18} className="shrink-0 text-bilgi" />
+          <div className="min-w-0 flex-1">
+            <div className="font-mono text-kucuk font-bold break-all text-bilgi">
+              {durum.sabit_kod}
+            </div>
+            <div className="text-mikro text-bilgi">
+              {durum.sabit_aciklama ?? "yalnız seri numaralarını okut"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void kilidiAc()}
+            disabled={mesgul}
+            className="border-bilgi text-bilgi flex h-12 shrink-0 items-center gap-1
+              rounded-sm border px-3 text-mikro font-bold disabled:opacity-40"
+          >
+            <Ik.KilitAcik boy={14} /> Aç
+          </button>
+        </div>
+      )}
+      {durum.yedek_parca && (
+        <div className="flex items-center gap-2 rounded-sm border border-hata
+          bg-hata-tint px-3 py-2">
+          <Ik.Vida boy={18} className="shrink-0 text-hata" />
+          <div className="flex-1 text-kucuk font-bold text-hata">
+            YEDEK PARÇA MODU
+            <div className="text-mikro font-normal">Okutulanlar Tiger'da aranmıyor.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void yedekModu(false)}
+            disabled={mesgul}
+            className="border-hata text-hata flex h-12 shrink-0 items-center rounded-sm
+              border px-3 text-mikro font-bold disabled:opacity-40"
+          >
+            Kapat
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-2">
         {[
           { e: "okutulan", d: durum.sayac.okutulan, s: "text-ok" },
@@ -817,10 +994,20 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
 
       {/* İkincil kumanda. Birincil iki eylem alt çubukta; bunlar daha seyrek
           ama yine de karta uzanmadan erişilebilmeli. */}
-      <div className="grid grid-cols-5 gap-2">
+      {/* Sekiz eyleme çıktı: üçlü ızgara iki satır. `grid-cols-5` tek satırda
+          48 px'lik dokunma hedefini kaldırmıyordu (CLAUDE.md 10.1). */}
+      <div className="grid grid-cols-3 gap-2">
         {[
           { e: "Raf", I: Ik.Raf, f: () => void rafDegistir() },
           { e: "Adet", I: Ik.Katman, f: () => setAdetPanel((v) => !v) },
+          { e: "Elle gir", I: Ik.Klavye, f: () => setElleAcik((v) => !v), etkin: elleAcik },
+          { e: "Kilitle", I: Ik.Kilit, f: () => void kilitle(), etkin: !!durum.sabit_kod },
+          {
+            e: "Yedek",
+            I: Ik.Vida,
+            f: () => void yedekModu(!durum.yedek_parca),
+            etkin: durum.yedek_parca,
+          },
           { e: "İptal", I: Ik.Kapat, f: () => void komut("##IPTAL##") },
           { e: "Atla", I: Ik.Soru, f: () => void komut("##ATLA##") },
           { e: "Fazla", I: Ik.Uyari, f: () => void komut("##FAZLA##") },
@@ -830,14 +1017,95 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
             type="button"
             disabled={mesgul}
             onClick={x.f}
-            className="border border-cizgi-kuvvetli bg-panel flex flex-col items-center justify-center gap-1 rounded-sm
-              py-2 text-mikro font-semibold disabled:bg-panel2 disabled:text-solgun-hafif"
+            aria-pressed={x.etkin ?? undefined}
+            className={`flex flex-col items-center justify-center gap-1 rounded-sm border
+              py-3 text-mikro font-semibold disabled:bg-panel2 disabled:text-solgun-hafif
+              ${
+                x.etkin
+                  ? "border-vurgu bg-vurgu-tint text-vurgu"
+                  : "border-cizgi-kuvvetli bg-panel"
+              }`}
           >
             <x.I boy={18} />
             {x.e}
           </button>
         ))}
       </div>
+
+      {/* I5 — barkodu olmayan ürün. Kutunun üstünde okutulacak bir şey yok,
+          yalnızca elle yazılmış bir seri numarası ya da benzeri bir
+          tanımlayıcı var.
+
+          Klavye politikası (aşağıdaki not alanıyla aynı): kendiliğinden
+          açılmaz, düğmeye basınca açılır. Sahada telefon cepte / elde duruyor;
+          habersiz açılan klavye ekranın yarısını yiyor. */}
+      {elleAcik && (
+        <section className="border-cizgi bg-panel space-y-3 rounded-sm border p-3">
+          <div className="text-mikro text-solgun font-semibold tracking-wider uppercase">
+            barkodsuz ürün — seri no / tanımlayıcı
+          </div>
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              value={elleDeger}
+              onChange={(e) => setElleDeger(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void elleOkut();
+              }}
+              placeholder="cihazın üstünde yazan değer"
+              className="border-cizgi-kuvvetli bg-zemin min-w-0 flex-1 rounded-sm border
+                px-3 py-3 font-mono text-govde"
+            />
+            <button
+              type="button"
+              onClick={() => void elleOkut()}
+              disabled={mesgul || !elleDeger.trim()}
+              className="bg-vurgu shrink-0 rounded-sm px-4 py-3 text-govde font-bold
+                text-white disabled:opacity-40"
+            >
+              Okut
+            </button>
+          </div>
+          <p className="text-mikro text-solgun">
+            Okuyucudan gelmiş gibi işlenir. Tutmazsa aşağıdan ürünü bulup işaretle.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setElleArama((v) => !v)}
+            className="border-cizgi-kuvvetli text-solgun flex w-full items-center
+              justify-center gap-2 rounded-sm border py-3 text-kucuk font-semibold"
+          >
+            <Ik.Ara boy={15} />
+            {elleArama ? "Aramayı kapat" : "Ürünü listeden bul"}
+          </button>
+
+          {elleArama && (
+            <>
+              <input
+                autoFocus
+                value={elleQ}
+                onChange={(e) => setElleQ(e.target.value)}
+                placeholder="kod / açıklama / seri ara"
+                className="border-cizgi-kuvvetli bg-zemin w-full rounded-sm border px-3
+                  py-3 text-govde"
+              />
+              {/* Yalnızca AÇIK kayıtlar gelir (`sadece_acik`): sayılmış kayda
+                  ikinci fiziksel ürün bağlanmasın (CLAUDE.md 5). */}
+              <ul className="border-cizgi max-h-72 overflow-y-auto rounded-sm border">
+                <GrupluListe
+                  satirlar={elleSonuc}
+                  anahtar={elleQ}
+                  onSec={(r) => void elleSay(r.id)}
+                />
+              </ul>
+              <div className="text-mikro text-solgun text-center">
+                {elleSonuc.length} / {toplam} açık kayıt
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {/* Adet paneli. Bekleyen adet panel kapalıyken de görünür (aşağıdaki
           rozet), yoksa kullanıcı 25 girdiğini unutup sonraki ürüne geçer. */}
@@ -965,13 +1233,15 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
         <ul className="bg-panel">
           {durum.akis.slice(0, 15).map((a, i) => (
             <li
-              key={`${a.ts}-${i}`}
+              key={a.id}
               className={`flex flex-wrap items-baseline gap-2 border-l-4 px-3 py-2 text-kucuk ${
                 a.tip === "fazla" || a.tip === "bilinmiyor"
                   ? "border-l-hata"
-                  : a.tip === "kod"
-                    ? "border-l-bilgi"
-                    : "border-l-ok"
+                  : a.tip === "yedek"
+                    ? "border-l-uyari"
+                    : a.tip === "kod"
+                      ? "border-l-bilgi"
+                      : "border-l-ok"
               } ${i % 2 ? "bg-panel2" : ""}`}
             >
               <span className="rakam text-mikro text-solgun">{a.ts.slice(11, 19)}</span>
@@ -983,6 +1253,16 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
               )}
               <b className="font-mono break-all">{a.kod ?? a.ham}</b>
               {a.seri && <span className="font-mono break-all text-solgun">{a.seri}</span>}
+              <button
+                type="button"
+                onClick={() => void okutmaSil(a)}
+                disabled={mesgul}
+                aria-label={`${a.kod ?? a.ham} okutmasını sil`}
+                className="border-cizgi text-solgun-hafif ml-auto inline-flex h-12 w-12
+                  shrink-0 items-center justify-center rounded-sm border disabled:opacity-40"
+              >
+                <Ik.Cop boy={16} />
+              </button>
             </li>
           ))}
           {durum.akis.length === 0 && (

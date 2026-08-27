@@ -29,10 +29,21 @@ def sifirsiz(n):
 
 
 KOMUT = {"##SONRAKI##": "sonraki", "##IPTAL##": "iptal", "##GERIAL##": "gerial",
-         "##FAZLA##": "fazla", "##ATLA##": "atla", "##BITIR##": "bitir"}
+         "##FAZLA##": "fazla", "##ATLA##": "atla", "##BITIR##": "bitir",
+         # Sabit malzeme kodu (I2): kod bir kez okutulur, ardından yalnız seri
+         # numaraları okutulur. Kartta basılı hâli parametresizdir — malzeme
+         # kodlarının 57'si boşluk / Türkçe karakter taşıyor ve Code128'e
+         # girmiyor (CLAUDE.md 2.1), o yüzden kilit TAMPONDAN okunur.
+         "##KILIT##": "kilit", "##KILITAC##": "kilitac",
+         # Yedek parça modu (I4): açıkken okutulan hiçbir şey veritabanında
+         # ARANMAZ, doğrudan yedek parça olarak yazılır.
+         "##YEDEK##": "yedek", "##YEDEKKAPAT##": "yedekkapat"}
 
 RAF_ONEK = "##RAF-"
 ADET_ONEK = "##ADET-"
+# Parametreli kilit YALNIZCA arayüz üretir (telefon / PC düğmesi), kart basmaz:
+# kod ASCII dışı olabilir. Tek kod yolu kalsın diye uç de bu komuttan geçer.
+KILIT_ONEK = "##KILIT-"
 
 # Adet barkodunun üst sınırı. Dört hane, çünkü beş haneli bir değer okuma
 # hatasıdır: en büyük Tiger kalemi 460 adet.
@@ -84,6 +95,12 @@ def komut_coz(ham):
         s = u[len(ADET_ONEK):-2]
         if s.isdigit() and int(s) <= ADET_TAVAN:
             return "adet", int(s)
+    # ##KILIT-<kod>## — arayüzden gelen açık kod. `ham` büyütülmüş hâliyle
+    # dönülür; malzeme kodu zaten `coz()` içinde norm()'dan geçiyor.
+    if u.startswith(KILIT_ONEK) and u.endswith("##") and len(u) > len(KILIT_ONEK) + 2:
+        kod = str(ham).strip()[len(KILIT_ONEK):-2].strip()
+        if kod:
+            return "kilit", kod
     return None, None
 
 

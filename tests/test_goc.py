@@ -60,9 +60,11 @@ def test_yeni_sutunlar_eklenir(tmp_path):
         def sutunlar(t):
             return {r["name"] for r in c.execute("PRAGMA table_info(%s)" % t)}
 
-        assert {"tur", "kod", "ad"} <= sutunlar("kuyruk")
-        assert "ad" in sutunlar("okutma")
+        assert {"tur", "kod", "ad", "adet"} <= sutunlar("kuyruk")
+        assert {"ad", "yeni_seri"} <= sutunlar("okutma")
         assert "okutma" in sutunlar("kuyruk_foto")
+        # I2 kilidi ve I4 yedek parça modu oturuma yazılıyor.
+        assert {"sabit_kod", "yedek_parca"} <= sutunlar("oturum")
     finally:
         c.close()
 
@@ -89,6 +91,11 @@ def test_mevcut_veri_korunur(tmp_path):
         # eski kuyruk kaydı varsayılan türü alır
         q = c.execute("SELECT * FROM kuyruk WHERE id=1").fetchone()
         assert (q["tur"] or "bilinmiyor") == "bilinmiyor"
+        # eski okutmada `yeni_seri` NULL kalır — rapor o satırlarda eski kurala
+        # (`_yeni_seri(ham)`) düşer, yoksa geçmiş oturumların Tiger Düzeltme
+        # sekmesi boşalırdı.
+        assert c.execute("SELECT yeni_seri FROM okutma WHERE id=1"
+                         ).fetchone()["yeni_seri"] is None
     finally:
         c.close()
 

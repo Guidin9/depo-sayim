@@ -38,6 +38,26 @@ class OkutmaGuncelle(BaseModel):
     not_: str | None = None
 
 
+class ElleSay(BaseModel):
+    """Listeden seçerek sayma (I5). `ham` varsa öğrenilir."""
+    beklenen_id: int
+    ham: str | None = None
+
+
+class SabitKod(BaseModel):
+    """Sabit malzeme kodu kilidi (I2). None / boş = kilidi aç."""
+    kod: str | None = None
+
+
+class YedekMod(BaseModel):
+    acik: bool
+
+
+class OkutmaSil(BaseModel):
+    """Varsayılan kapsam GRUP: bir grup bir üründür (CLAUDE.md 4.4)."""
+    kapsam: str = "grup"        # "grup" | "satir"
+
+
 class Coz(BaseModel):
     beklenen_id: int
 
@@ -107,6 +127,26 @@ def okutma_guncelle(okutma_id: int, istek: OkutmaGuncelle, c=DB):
         c.execute("UPDATE okutma SET not_=? WHERE id=?", (istek.not_.strip(), okutma_id))
     c.commit()
     return dict(c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone())
+
+
+@router.delete("/okutma/{okutma_id}")
+def okutma_sil(okutma_id: int, istek: OkutmaSil | None = None, c=DB):
+    """Akış listesinden bir okutmayı sil (I1).
+
+    `##GERIAL##` yalnızca sonuncuyu alır; sahada yanlış okutma birkaç ürün
+    sonra fark ediliyor. Yan etkiler aynı yoldan geri alınır.
+    """
+    x = c.execute("SELECT oturum FROM okutma WHERE id=?", (okutma_id,)).fetchone()
+    if not x:
+        raise HTTPException(404, "Okutma #%s bulunamadı" % okutma_id)
+    o = oturum_getir(x["oturum"], c)
+    sonuc = matching.okutma_sil(c, o, okutma_id,
+                                kapsam=(istek.kapsam if istek else "grup"))
+    if sonuc.get("hata"):
+        raise HTTPException(400, sonuc["hata"])
+    c.commit()
+    sonuc["durum"] = matching.durum(c, oturum_getir(x["oturum"], c))
+    return sonuc
 
 
 @router.get("/oturum/{oturum_id}/esleme")
@@ -193,6 +233,52 @@ def adet_ayarla(oturum_id: int, istek: AdetAyar, c=DB):
     if istek.adet < 0 or istek.adet > norm.ADET_TAVAN:
         raise HTTPException(400, "Adet 0 ile %d arasında olmalı." % norm.ADET_TAVAN)
     sonuc = matching.okut(c, o, "##ADET-%d##" % istek.adet)
+    c.commit()
+    sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
+    return sonuc
+
+
+@router.post("/oturum/{oturum_id}/say")
+def elle_say(oturum_id: int, istek: ElleSay, c=DB):
+    """Barkodu olmayan ürünü listeden seçerek sayıldı işaretle (I5)."""
+    o = oturum_getir(oturum_id, c)
+    if o["durum"] != "acik":
+        raise HTTPException(409, "Oturum kapalı")
+    sonuc = matching.elle_say(c, o, istek.beklenen_id, ham=istek.ham)
+    if sonuc.get("hata"):
+        raise HTTPException(400, sonuc["hata"])
+    c.commit()
+    sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
+    return sonuc
+
+
+@router.post("/oturum/{oturum_id}/sabit-kod")
+def sabit_kod_ayarla(oturum_id: int, istek: SabitKod, c=DB):
+    """Malzeme kodunu kilitle / kilidi aç (I2).
+
+    `##KILIT##` komut barkodunun ikizi: içeride aynı komutu üretip
+    `matching.okut()`'a verir — iki kod yolu oluşmasın (`/raf` ve `/adet` ile
+    aynı desen).
+    """
+    o = oturum_getir(oturum_id, c)
+    if o["durum"] != "acik":
+        raise HTTPException(409, "Oturum kapalı")
+    kod = (istek.kod or "").strip()
+    sonuc = matching.okut(c, o, ("##KILIT-%s##" % kod) if kod else "##KILITAC##")
+    if sonuc.get("tip") == "kilit_yok":
+        raise HTTPException(400, "%s bir malzeme kodu değil" % kod)
+    c.commit()
+    sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
+    return sonuc
+
+
+@router.post("/oturum/{oturum_id}/yedek-parca")
+def yedek_parca_ayarla(oturum_id: int, istek: YedekMod, c=DB):
+    """Yedek parça modunu aç / kapat (I4)."""
+    o = oturum_getir(oturum_id, c)
+    if o["durum"] != "acik":
+        raise HTTPException(409, "Oturum kapalı")
+    sonuc = matching.okut(c, o, "##YEDEK##" if istek.acik else "##YEDEKKAPAT##")
     c.commit()
     sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
     return sonuc

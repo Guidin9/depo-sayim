@@ -162,10 +162,10 @@ def test_kuyruktan_cozulen_tek_seri_yazar(c, ot, yaz):
     d = _satirlar(reports.rapor_verisi(c, ot["id"]), "Tiger Düzeltme")
     assert d[0][2] == "0WGP72SAYIM1"
     assert d[0][3] == "EDBP0153231475674"      # UPC değil, en uzun aday
-    # denetim izi Eşleşen sekmesinde tam haliyle duruyor
+    # denetim izi Eşleşen sekmesinde tam haliyle duruyor (Okutulan Barkodlar)
     es = _satirlar(reports.rapor_verisi(c, ot["id"]), "Eşleşen")
-    assert "198701689928 + EDBP0153231475674" in [s[4] for s in es] or any(
-        "kuyruktan" in str(s[7]) for s in es)
+    assert "198701689928 + EDBP0153231475674" in [s[5] for s in es]
+    assert any("kuyruktan" in str(s[8]) for s in es)
 
 
 def test_arama_sayilani_isaretler(c, ot, yaz):

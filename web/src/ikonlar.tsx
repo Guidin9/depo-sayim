@@ -137,6 +137,35 @@ export const Kapat = (p: Props) => (
   </Ikon>
 );
 
+export const Cop = (p: Props) => (
+  <Ikon {...p}>
+    <path d="M4 7h16" />
+    <path d="M9 7V4h6v3" />
+    <path d="M6 7l1 13h10l1-13" />
+    <path d="M10 11v6M14 11v6" />
+  </Ikon>
+);
+
+export const Kilit = (p: Props) => (
+  <Ikon {...p}>
+    <rect x="4" y="10" width="16" height="10" rx="2" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+  </Ikon>
+);
+
+export const KilitAcik = (p: Props) => (
+  <Ikon {...p}>
+    <rect x="4" y="10" width="16" height="10" rx="2" />
+    <path d="M8 10V7a4 4 0 0 1 7.5-2" />
+  </Ikon>
+);
+
+export const Vida = (p: Props) => (
+  <Ikon {...p}>
+    <path d="M14.7 6.3a4 4 0 0 1-5.2 5.2L4 17v3h3l5.5-5.5a4 4 0 0 1 5.2-5.2l-2.6 2.6-2.1-2.1z" />
+  </Ikon>
+);
+
 export const Geri = (p: Props) => (
   <Ikon {...p}>
     <path d="M9 14 4 9l5-5" />
