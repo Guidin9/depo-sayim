@@ -51,6 +51,9 @@ function seritRengi(tip: string): IsimaRenk {
 
 export default function Telefon({ durum, canli, tik, tazele }: Props) {
   const [kuyruk, setKuyruk] = useState<KuyrukSatiri[]>([]);
+  /* Kap kaydında listeden seçilen malzeme hemen bağlanmaz: adet de gerekiyor. */
+  const [kutuSecim, setKutuSecim] = useState<{ kid: number; malzeme: AramaSonucu } | null>(null);
+  const [kutuAdet, setKutuAdet] = useState<Record<number, string>>({});
   const [toplam, setToplam] = useState(0);
   /* Aday önerisi kaldırıldı (DEMO_FEEDBACK.md 4); yerine filtreli liste.
      PC'deki Kuyruk modaliyle aynı set. */
@@ -180,6 +183,41 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
     () => suz(havuz, elleQ.trim(), ["kod", "aciklama", "seri"]),
     [havuz, elleQ],
   );
+
+  /* Kap kaydı iki cevap ister: içinde ne var (KALICI) ve kaç tane sayıldı
+     (yalnızca bu oturum). İkincisi kabın kaydından okunmaz — içerik ayda bir
+     değişiyor, kayıttaki adet bir varsayımdır (KUTU_TASARIM.md 3, 6). */
+  async function kutuSay(k: KuyrukSatiri) {
+    const secim = kutuSecim?.kid === k.id ? kutuSecim.malzeme : null;
+    const kod = secim?.kod ?? k.kutu?.malzeme ?? k.kod;
+    const izleme = secim?.izleme ?? k.kutu?.izleme;
+    if (!kod) return;
+    // Alanın gösterdiği değerle gönderilen değer AYNI olmalı: öneri dolu
+    // gelip kullanıcı hiç dokunmadığında `kutuAdet` boş kalır.
+    const n = Number(
+      kutuAdet[k.id] ??
+        (k.kutu?.oneri_adet != null ? String(k.kutu.oneri_adet) : k.adet ? String(k.adet) : ""),
+    );
+    if (izleme !== "seri" && !(n > 0)) return;
+    try {
+      const r = await api.kutuCoz(k.id, kod, izleme === "seri" ? null : n);
+      navigator.vibrate?.(60);
+      setAcik(null);
+      setKutuSecim(null);
+      setAramaAcik(false);
+      // Seri takipli kapta sayım yapılmaz: kap tanımlanır, cihazlar tek tek
+      // okutulur. Sessiz kalırsa kullanıcı saydığını sanır.
+      setHata(
+        r.sayildi === false
+          ? `${kod} seri takipli: kap kaydedildi, sayım YAPILMADI — cihazların seri numaralarını okut.`
+          : null,
+      );
+      await kuyrukTazele();
+      tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   async function coz(kuyrukId: number, beklenenId: number) {
     try {
@@ -568,7 +606,7 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
             if (acilir) {
               // Aday önerisi kaldığı için kart açılınca doğrudan liste gelsin;
               // onay kaydında malzeme belli olduğu için arama kodla dolu açılır.
-              setQ(k.tur === "fazla_onay" ? (k.kod ?? "") : "");
+              setQ(k.tur === "bilinmiyor" ? "" : (k.kod ?? ""));
               setAramaAcik(true);
             }
           }}
@@ -579,6 +617,18 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
               <span className="mb-1 block text-mikro font-bold text-uyari">
                 <span className="inline-flex items-center gap-1">
                   <Ik.Soru boy={13} /> {k.kod} — karşılığı bulunamadı
+                </span>
+              </span>
+            )}
+            {k.tur === "kutu" && (
+              <span className="mb-1 block text-mikro font-bold text-bilgi">
+                <span className="inline-flex items-center gap-1">
+                  <Ik.Katman boy={13} />
+                  {k.kutu?.malzeme
+                    ? `${k.kutu.gosterim} — ${k.kutu.malzeme}${
+                        k.kutu.adet != null ? ` · son bilinen ${k.kutu.adet} adet` : ""
+                      }${k.kutu.taze ? "" : " (kayıt eski)"}`
+                    : `${k.kutu?.gosterim ?? "kap"} — içinde ne var?`}
                 </span>
               </span>
             )}
@@ -670,7 +720,11 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
         {acikMi && (
           <div className="mt-3 border-t border-cizgi pt-3">
             <p className="mb-2 text-mikro font-semibold tracking-wider text-solgun uppercase">
-              {k.tur === "fazla_onay" ? "Stokta karşılığı var mı?" : "Bu hangi malzeme?"}
+              {k.tur === "fazla_onay"
+                ? "Stokta karşılığı var mı?"
+                : k.tur === "kutu"
+                  ? "Bu kapta ne var, kaç tane?"
+                  : "Bu hangi malzeme?"}
             </p>
             {k.tur === "fazla_onay" && (
               <p className="mb-2 text-kucuk leading-snug text-solgun">
@@ -739,7 +793,11 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
                   <GrupluListe
                     satirlar={sonuc}
                     anahtar={q + (sadeceKirli ? "K" : "")}
-                    onSec={(b) => void coz(k.id, b.id)}
+                    onSec={(b) =>
+                      k.tur === "kutu"
+                        ? setKutuSecim({ kid: k.id, malzeme: b })
+                        : void coz(k.id, b.id)
+                    }
                   />
                   {sonuc.length === 0 && (
                     <li className="py-6 text-center text-govde text-solgun italic">
@@ -749,6 +807,79 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
                 </ul>
               </>
             )}
+
+            {/* Kap: malzeme + adet tek panelde. Malzeme kayıtlıysa listeye
+                hiç girilmez — sahadaki asıl akış "kapta kaç tane var" sorusu. */}
+            {k.tur === "kutu" &&
+              (() => {
+                const secim = kutuSecim?.kid === k.id ? kutuSecim.malzeme : null;
+                const kod = secim?.kod ?? k.kutu?.malzeme ?? k.kod;
+                const izleme = secim?.izleme ?? k.kutu?.izleme;
+                const seriTakipli = izleme === "seri";
+                const deger =
+                  kutuAdet[k.id] ??
+                  (k.kutu?.oneri_adet != null
+                    ? String(k.kutu.oneri_adet)
+                    : k.adet
+                      ? String(k.adet)
+                      : "");
+                return (
+                  <div className="mt-3 rounded-sm border border-bilgi bg-bilgi-tint p-3">
+                    <p className="mb-2 text-kucuk leading-snug">
+                      {kod ? (
+                        <>
+                          <b className="font-mono">{kod}</b>{" "}
+                          <span className="text-solgun">
+                            {secim?.aciklama ?? k.kutu?.aciklama ?? ""}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-solgun">
+                          Yukarıdaki listeden kapta ne olduğunu seç.
+                        </span>
+                      )}
+                    </p>
+                    {kod && seriTakipli ? (
+                      <p className="text-kucuk leading-snug text-solgun">
+                        Seri takipli: kap kaydedilir ama sayılmaz — her adet Tiger'da
+                        ayrı satır. Kaydettikten sonra cihazların seri numaralarını
+                        okut.
+                      </p>
+                    ) : (
+                      kod && (
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          value={deger}
+                          onChange={(e) =>
+                            setKutuAdet((o) => ({ ...o, [k.id]: e.target.value }))
+                          }
+                          placeholder={
+                            k.kutu?.adet != null
+                              ? `kaç adet? (son bilinen ${k.kutu.adet})`
+                              : "kaç adet sayıldı?"
+                          }
+                          className="rakam w-full rounded-sm border border-cizgi-kuvvetli
+                            bg-zemin px-4 py-3 text-govde text-yazi focus:border-vurgu
+                            focus:outline-none"
+                        />
+                      )
+                    )}
+                    {kod && (
+                      <button
+                        type="button"
+                        disabled={!seriTakipli && !(Number(deger) > 0)}
+                        onClick={() => void kutuSay(k)}
+                        className="mt-2 w-full rounded-sm bg-vurgu px-4 py-3 text-govde
+                          font-bold text-white disabled:bg-panel2 disabled:text-solgun-hafif"
+                      >
+                        Kaydet ve say
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
             {/* Fazla yazmadan önce "bu ne?" — kodu olmayan kayıtta zorunlu.
                 Yepyeni ürün (kendi etiketimizle giren dahil) tam bu yoldan

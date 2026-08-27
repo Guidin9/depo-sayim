@@ -37,6 +37,11 @@ export default function Kuyruk({
      yoksa raporda yalnızca seri numarası ve raf kalır, ürün bulunamaz. */
   const [fazlaAdayi, setFazlaAdayi] = useState<KuyrukSatiri | null>(null);
   const [fazlaAd, setFazlaAd] = useState("");
+  /* Kap kaydının cevabı iki parçalı: "içinde ne var" + "kaç tane sayıldı".
+     Birincisi KALICI (kap defterine yazılır), ikincisi yalnızca bu oturuma —
+     içerik ayda bir değişiyor, adet kalıcı bir gerçek değil. */
+  const [kutuMalzeme, setKutuMalzeme] = useState<AramaSonucu | null>(null);
+  const [kutuAdet, setKutuAdet] = useState("");
   const [hata, setHata] = useState<string | null>(null);
   const [araniyor, setAraniyor] = useState(false);
   const [telefonAdresi, setTelefonAdresi] = useState<string | null>(null);
@@ -59,7 +64,20 @@ export default function Kuyruk({
     if (!secili) return;
     // Onay kaydında malzeme zaten belli: aramayı o kodla açıp kullanıcıyı
     // doğrudan o kodun sayılmamış satırlarının önüne koyuyoruz.
-    setQ(secili.tur === "fazla_onay" ? (secili.kod ?? "") : "");
+    // Onay ve kap kaydında bir aday kod var: aramayı onunla açıyoruz.
+    setQ(secili.tur === "bilinmiyor" ? "" : (secili.kod ?? ""));
+    setKutuMalzeme(null);
+    // Adet alanı yalnızca kayıt TAZEYKEN dolu gelir. 30 günden eski bir kap
+    // kaydı bilgi değil tahmindir; boş alan kullanıcıyı saymaya zorlar.
+    setKutuAdet(
+      secili.tur === "kutu"
+        ? secili.kutu?.oneri_adet != null
+          ? String(secili.kutu.oneri_adet)
+          : secili.adet
+            ? String(secili.adet)
+            : ""
+        : "",
+    );
     setTimeout(() => aramaRef.current?.focus(), 30);
   }, [secili]);
 
@@ -105,6 +123,36 @@ export default function Kuyruk({
     try {
       await api.kuyrukCoz(secili.id, b.id);
       bip("ok");
+      setSecili(null);
+      await tazele();
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /* Kabın içeriğini yaz ve (serisizse) say. Sunucu ikisini tek işlemde
+     yapıyor: kap defteri kalıcı, sayım oturuma ait. */
+  async function kutuKaydet() {
+    if (!secili) return;
+    // Kayıtlı içerik varsa yeniden seçtirmiyoruz: kap zaten "bende bu var"
+    // diyor, eksik olan yalnızca adet. Listeden seçim onu EZER.
+    const kod = kutuMalzeme?.kod ?? secili.kutu?.malzeme;
+    const seriTakipli = (kutuMalzeme?.izleme ?? secili.kutu?.izleme) === "seri";
+    if (!kod) return;
+    const n = Number(kutuAdet);
+    if (!seriTakipli && !(n > 0)) return;
+    try {
+      const r = await api.kutuCoz(secili.id, kod, seriTakipli ? null : n);
+      bip(r.sayildi === false ? "uyari" : "ok");
+      // Seri takipli kapta sayım YAPILMAZ: her adet Tiger'da ayrı satır.
+      // Kap tanımlandı, cihazlar tek tek okutulacak — kullanıcı bunu bilmeli.
+      if (r.sayildi === false)
+        setHata(
+          `${kod} seri takipli: kap kaydedildi ama sayım yapılmadı. ` +
+            "Sayım ekranından cihazların seri numaralarını okut (kodu kilitlersen " +
+            "her cihazda malzemeyi tekrar okutman gerekmez).",
+        );
+      else setHata(null);
       setSecili(null);
       await tazele();
     } catch (e) {
@@ -222,6 +270,41 @@ export default function Kuyruk({
                     {/* Onay kaydında malzeme bellidir; soru "bu ne?" değil,
                         "stokta karşılığı var mı?"dır. Kart bunu söylemezse
                         kullanıcı iki kaydı aynı sanır. */}
+                    {/* Kap kaydı: soru "bu hangi ürün" değil, "BU KAPTA ne
+                        var, kaç tane". Kabın son bilinen içeriği kartta durur
+                        ama tazelik açıkça yazılır — bayat bir adet, sayım
+                        sonucu diye onaylanacak bir şey değildir. */}
+                    {k.tur === "kutu" && (
+                      <div className="mb-3 flex items-start gap-2 rounded-sm border
+                        border-bilgi bg-bilgi-tint px-3 py-2">
+                        <Ik.Katman boy={16} />
+                        <p className="text-kucuk leading-snug">
+                          <b className="font-mono">{k.kutu?.gosterim}</b>
+                          {k.kutu?.malzeme ? (
+                            <>
+                              {" "}
+                              — kayıtlı içerik <b>{k.kutu.malzeme}</b>
+                              {k.kutu.aciklama ? ` (${k.kutu.aciklama})` : ""}
+                              <span className="text-solgun">
+                                {k.kutu.adet != null && (
+                                  <>
+                                    {" "}
+                                    · son bilinen <b className="text-yazi">{k.kutu.adet}</b> adet
+                                  </>
+                                )}
+                                {k.kutu.yas_gun != null &&
+                                  (k.kutu.taze
+                                    ? ` · ${k.kutu.yas_gun} gün önce doğrulandı`
+                                    : ` · ${Math.round(k.kutu.yas_gun)} gün önce doğrulandı — eski, yeniden say`)}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-solgun"> — bu kapta ne var? Bir kez söyle, kalıcı olarak kaydedilsin.</span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+
                     {k.tur === "fazla_onay" && (
                       <div className="mb-3 flex items-start gap-2 rounded-sm border
                         border-uyari bg-uyari-tint px-3 py-2">
@@ -280,7 +363,13 @@ export default function Kuyruk({
                         </div>
                       </div>
                       <Dugme
-                        cocuk={k.tur === "fazla_onay" ? "Stokta karşılığını bul" : "Malzeme seç"}
+                        cocuk={
+                          k.tur === "fazla_onay"
+                            ? "Stokta karşılığını bul"
+                            : k.tur === "kutu"
+                              ? "Kapta ne var?"
+                              : "Malzeme seç"
+                        }
                         tur="ana"
                         tikla={() => setSecili(k)}
                       />
@@ -452,10 +541,14 @@ export default function Kuyruk({
           <div className="border border-cizgi bg-panel flex max-h-full w-full max-w-2xl flex-col rounded-sm">
             <header className="border-b border-cizgi p-4">
               <h2 className="text-lg font-bold">
-                {secili.barkodlar.join(" + ")} — hangi malzeme?
+                {secili.tur === "kutu"
+                  ? `${secili.kutu?.gosterim ?? secili.barkodlar.join(" + ")} — bu kapta ne var?`
+                  : `${secili.barkodlar.join(" + ")} — hangi malzeme?`}
               </h2>
               <p className="mt-1 text-kucuk text-solgun">
-                Seçtiğin malzemeye bu barkodlar kalıcı olarak bağlanır; bir daha sorulmaz.
+                {secili.tur === "kutu"
+                  ? "Malzeme kabın KALICI kaydına yazılır — gelecek sayımda kap kendi içeriğini söyler. Adet kaydedilmez, her sayımda yeniden sorulur."
+                  : "Seçtiğin malzemeye bu barkodlar kalıcı olarak bağlanır; bir daha sorulmaz."}
               </p>
               {secili.not_ && <p className="mt-2 text-kucuk text-uyari">not: {secili.not_}</p>}
               {secili.fotolar.length > 0 && (
@@ -515,10 +608,64 @@ export default function Kuyruk({
               <GrupluListe
                 satirlar={sonuc}
                 anahtar={q + (sadeceKirli ? "K" : "")}
-                onSec={(b) => void bagla(b)}
+                onSec={(b) => (secili.tur === "kutu" ? setKutuMalzeme(b) : void bagla(b))}
               />
             </ul>
-            <footer className="border-t border-cizgi p-4">
+            <footer className="flex flex-col gap-3 border-t border-cizgi p-4">
+              {secili.tur === "kutu" && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="min-w-0 flex-1 text-kucuk">
+                    {kutuMalzeme || secili.kutu?.malzeme ? (
+                      <>
+                        <b className="font-mono">
+                          {kutuMalzeme?.kod ?? secili.kutu?.malzeme}
+                        </b>{" "}
+                        <span className="text-solgun">
+                          {kutuMalzeme?.aciklama ?? secili.kutu?.aciklama}
+                        </span>
+                        {!kutuMalzeme && (
+                          <span className="text-solgun"> · kayıtlı içerik</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-solgun">Listeden malzemeyi seç.</span>
+                    )}
+                  </span>
+                  {/* Seri takipli kapta adet SORULMAZ: her adet Tiger'da ayrı
+                      satır, sayımı seri numaraları yapar. */}
+                  {(kutuMalzeme?.izleme ?? secili.kutu?.izleme) === "seri" ? (
+                    <span className="text-kucuk text-bilgi">
+                      seri takipli — kap kaydedilir, cihazlar tek tek okutulur
+                    </span>
+                  ) : (
+                    <label className="flex items-center gap-2 text-mikro text-solgun">
+                      kaç adet sayıldı
+                      <input
+                        type="number"
+                        min={1}
+                        value={kutuAdet}
+                        onChange={(e) => setKutuAdet(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && void kutuKaydet()}
+                        placeholder={
+                          secili.kutu?.adet != null ? `son: ${secili.kutu.adet}` : "adet"
+                        }
+                        className="rakam w-28 rounded-sm border border-cizgi-kuvvetli
+                          bg-zemin px-3 py-2 text-govde"
+                      />
+                    </label>
+                  )}
+                  <Dugme
+                    cocuk="Kaydet ve say"
+                    tur="ana"
+                    pasif={
+                      !(kutuMalzeme?.kod ?? secili.kutu?.malzeme) ||
+                      ((kutuMalzeme?.izleme ?? secili.kutu?.izleme) !== "seri" &&
+                        !(Number(kutuAdet) > 0))
+                    }
+                    tikla={() => void kutuKaydet()}
+                  />
+                </div>
+              )}
               <Dugme cocuk="Vazgeç (Esc)" tikla={() => setSecili(null)} genis />
             </footer>
           </div>

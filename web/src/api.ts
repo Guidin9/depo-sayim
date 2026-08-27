@@ -54,6 +54,11 @@ export type CozTipi =
   | "bilinmiyor"
   | "tekrar"
   | "etiket_bos"
+  /* Kap etiketi (KUTU_TASARIM.md): tanımlı / tanımsız / malzemesi bu ambarda
+     olmayan. Kap kodu hiçbir zaman "bilinmiyor" dönmez — öğrenilmez de. */
+  | "kutu"
+  | "kutu_bos"
+  | "kutu_yabanci"
   | "bos";
 
 export type TamponSatiri = {
@@ -158,6 +163,15 @@ export type OkutmaSonucu = {
   fotosuz?: { id: number; ham: string; kod: string | null; raf: string | null }[];
   /** Ne olduğu yazılmamış fazla kayıtları — bitirme kapısı. */
   adsiz?: { id: number; ham: string; raf: string | null; seri: string | null }[];
+  /** Kap okutmasında kabın gösterim kodu (DK-000007). */
+  kutu?: string | null;
+  /** tip="kutu_yabanci": kayıtta duran ama bu ambarda olmayan malzeme. */
+  eski_kod?: string | null;
+  /** tip="kutu_sor" / "kutu_seri": kabın SON BİLİNEN adedi ve tazeliği.
+   *  `oneri_adet` yalnızca kayıt tazeyken dolu — bayat kayıtta alan boş açılır,
+   *  çünkü içerik ayda bir değişiyor (KUTU_TASARIM.md 3, 6). */
+  taze?: boolean;
+  oneri_adet?: number | null;
 };
 
 /** Karar bekleyen kaydın türü.
@@ -165,7 +179,31 @@ export type OkutmaSonucu = {
  * bilinmiyor: ne seri ne kod tanındı — "bu hangi malzeme?"
  * fazla_onay: malzeme tanındı, karşılığı bulunamadı — "gerçekten fazla mı?"
  */
-export type KuyrukTuru = "bilinmiyor" | "fazla_onay";
+export type KuyrukTuru = "bilinmiyor" | "fazla_onay" | "kutu";
+
+/** Kap kaydı — "bu kapta ne var" (KUTU_TASARIM.md).
+ *
+ * Kalıcı olan MALZEME BAĞIDIR, adet değil: içerik ayda bir değişiyor, sayım
+ * yılda bir yapılıyor. `oneri_adet` bu yüzden yalnızca taze kayıtta dolu;
+ * bayatta null döner ve arayüz adet alanını BOŞ açar. `adet` son bilinen
+ * değerdir ve yalnızca gri ipucu olarak gösterilir. */
+export type KutuBilgi = {
+  kod: string;
+  gosterim: string;
+  malzeme: string | null;
+  aciklama: string | null;
+  adet: number | null;
+  izleme: "seri" | "lot" | "yok" | null;
+  raf: string | null;
+  yas_gun: number | null;
+  taze: boolean;
+  tazelik_gun: number;
+  oneri_adet: number | null;
+  /** Kayıtlı malzeme bu ambarda var mı (CLAUDE.md 3.5 — dışına çıkmıyoruz). */
+  bu_ambarda: boolean | null;
+  ts: string | null;
+  ts_guncelle: string | null;
+};
 
 export type KuyrukSatiri = {
   id: number;
@@ -184,6 +222,8 @@ export type KuyrukSatiri = {
   /** Grup kapanırken girilmiş adet. 0 = girilmedi ("1 tane" ile aynı şey değil). */
   adet: number;
   aciklama: string;
+  /** tur="kutu" kayıtlarında kabın durumu; ötekilerde null. */
+  kutu: KutuBilgi | null;
 };
 
 export type AramaSonucu = {
@@ -281,10 +321,12 @@ export type EtiketIhtiyaci = {
   seri: { kirli_kayit: number; havuzda: number; ust_sinir: number };
 };
 
+export type EtiketTuru = "malzeme" | "seri" | "kutu";
+
 export type EtiketSatiri = {
   kod: string;
   gosterim: string;
-  tur: "malzeme" | "seri";
+  tur: EtiketTuru;
   basim: number | null;
   ts: string | null;
   malzeme: string | null;
@@ -306,10 +348,12 @@ export type BasimOzeti = {
 };
 
 export type BasimIstegi = {
-  tur: "malzeme" | "seri";
+  tur: EtiketTuru;
   adet?: number;      // kaç etiket (malzeme: atlanırsa hepsi)
   kopya?: number;     // malzeme: her koddan kaç kopya
-  kapsam?: "eksik" | "hepsi" | "bos";
+  /** kutu: "tanimli" = içeriği belli kapları YENİDEN bas (yeni numara
+   *  tüketmez — kap etiketi değişse de kod aynı kalmalı). */
+  kapsam?: "eksik" | "hepsi" | "bos" | "tanimli";
   yukleme?: number;
   ambar?: string;
   duzen: "a4" | "rulo";
@@ -413,6 +457,13 @@ export const api = {
   },
 
   kuyruk: (id: number) => istek<KuyrukSatiri[]>(`/api/oturum/${id}/kuyruk`),
+  /** Kap kaydını çöz: içeriği tanımla ve (serisizse) sayımı işle.
+   *  Seri takipli malzemede adet gönderilmez — sayım seri numaralarıyla olur. */
+  kutuCoz: (kid: number, malzeme: string, adet?: number | null) =>
+    gonder<OkutmaSonucu & { sayildi?: boolean }>(`/api/kuyruk/${kid}/kutu`, {
+      malzeme,
+      adet: adet ?? null,
+    }),
   kuyrukCoz: (kid: number, beklenen_id: number) =>
     gonder<OkutmaSonucu>(`/api/kuyruk/${kid}/coz`, { beklenen_id }),
   /** Kuyruk kaydını fazla olarak kapatır.
@@ -462,6 +513,29 @@ export const api = {
 
   raflar: (id: number) => istek<string[]>(`/api/oturum/${id}/raflar`),
 
+  /* --- kap defteri (KUTU_TASARIM.md). Oturuma bağlı DEĞİL: kabın içeriği
+     fiziksel bir gerçek, sayım oturumu değil. */
+  kutular: (q?: string, sadece_tanimli = false) => {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (sadece_tanimli) p.set("sadece_tanimli", "true");
+    return istek<(KutuBilgi & { aciklama: string | null })[]>(`/api/kutu?${p}`);
+  },
+  kutu: (kod: string, yukleme?: number, ambar?: string) => {
+    const p = new URLSearchParams();
+    if (yukleme != null) p.set("yukleme", String(yukleme));
+    if (ambar != null) p.set("ambar", ambar);
+    return istek<KutuBilgi>(`/api/kutu/${encodeURIComponent(kod)}?${p}`);
+  },
+  kutuTanimla: (
+    kod: string,
+    v: { malzeme: string; adet?: number | null; yukleme: number; ambar: string;
+         raf?: string | null; oturum?: number | null },
+  ) => gonder<KutuBilgi>(`/api/kutu/${encodeURIComponent(kod)}`, v),
+  /** Kap boşaldı / başka işe ayrıldı: içerik bağı silinir, NUMARA KALIR. */
+  kutuBosalt: (kod: string) =>
+    istek<KutuBilgi>(`/api/kutu/${encodeURIComponent(kod)}`, { method: "DELETE" }),
+
   onizleme: (id: number) => istek<RaporOnizleme>(`/api/oturum/${id}/rapor/onizleme`),
   raporUrl: (id: number) => `/api/oturum/${id}/rapor.xlsx`,
 
@@ -469,7 +543,7 @@ export const api = {
     istek<EtiketIhtiyaci>(
       `/api/etiket/ihtiyac?yukleme=${yukleme}&ambar=${encodeURIComponent(ambar)}`,
     ),
-  etiketler: (tur?: "malzeme" | "seri", q?: string) => {
+  etiketler: (tur?: EtiketTuru, q?: string) => {
     const p = new URLSearchParams();
     if (tur) p.set("tur", tur);
     if (q) p.set("q", q);

@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db as dbm
 from . import olaylar
-from .routers import etiket, kuyruk, oturum, rapor, yukleme
+from .routers import etiket, kutu, kuyruk, oturum, rapor, yukleme
 
 STATIK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 # Telefon monitörünün adresi. Arayüz bu yolu görünce sade izleme ekranını açar.
@@ -38,6 +38,7 @@ app.include_router(oturum.router)
 app.include_router(kuyruk.router)
 app.include_router(rapor.router)
 app.include_router(etiket.router)
+app.include_router(kutu.router)
 
 
 @app.middleware("http")

@@ -178,6 +178,11 @@ const ROZET: Record<CozTipi, { ad: string; Ikon: typeof Ik.Onay; tur: DurumTuru 
   tekrar: { ad: "zaten okutuldu", Ikon: Ik.Tekrar, tur: "uyari" },
   // Bizim bastığımız, henüz hiçbir ürüne bağlanmamış seri etiketi
   etiket_bos: { ad: "boş etiket", Ikon: Ik.Etiket, tur: "vurgu" },
+  // Kap etiketi (DK-): "bu kapta ne var". Tanımlıysa malzemeyi getirir,
+  // tanımsızsa bir kez sorulur (KUTU_TASARIM.md).
+  kutu: { ad: "kap", Ikon: Ik.Katman, tur: "bilgi" },
+  kutu_bos: { ad: "tanımsız kap", Ikon: Ik.Soru, tur: "uyari" },
+  kutu_yabanci: { ad: "kap içeriği değişmiş", Ikon: Ik.Soru, tur: "uyari" },
   bos: { ad: "boş", Ikon: Ik.Bos, tur: "notr" },
 };
 

@@ -3,7 +3,7 @@
 *Gerçek depo sayımı denenirken toplanan geri bildirimler*
 
 **Durum (2026-08-27): B1 · I1 · I2 · I4 · I5 çözüldü, 357 test geçiyor.
-Hiçbiri gerçek sahada denenmedi.** I3 tasarlandı, kodlanmadı —
+Hiçbiri gerçek sahada denenmedi.** I3'ün serisiz yarısı kodlandı —
 `KUTU_TASARIM.md`. Veri temizliği maddesi karara bağlandı (aşağıda).
 
 ---
@@ -46,7 +46,7 @@ Bir ürün yanlış okutulup "sonraki" denildikten sonra hata bazen geç fark ed
   Kilit grup kapanınca tükenmez; elle okutulan kod her zaman kilidi yener;
   kilitlenecek kod bulunamazsa sessiz kalmaz. Testler: `tests/test_sabit_kod.py`.
 
-### I3. Kutu barkodu ile toplu sayım (Büyük Feature) — 📐 TASARLANDI, kodlanmadı
+### I3. Kutu barkodu ile toplu sayım (Büyük Feature) — ✅ SERİSİZ YARISI KODLANDI
 Raftaki kutu bazlı stoklar için (örn. A1 rafında bir üründen 150 adet) her ürünü tek tek okutmak yerine:
 - Kutuya özel bir **kutu barkodu** oluşturulsun (sistem tarafından üretilebilir/etiketlenebilir).
 - Kutu barkodu okutulduğunda sistem sorsun:
@@ -57,9 +57,27 @@ Raftaki kutu bazlı stoklar için (örn. A1 rafında bir üründen 150 adet) her
 
 > Not: Bu madde diğerlerine göre daha büyük bir iş; ayrı bir tasarım/akış dokümanı gerektirebilir.
 
-**Tasarım yazıldı: `KUTU_TASARIM.md`.** Kod yok. Sahada denenmesi gereken üç
-soru var ve cevapları koddan değil depodan gelir — özellikle: I2 kilidi seri
-takipli kutuyu zaten yeterince hızlandırdı mı?
+**Tasarım `KUTU_TASARIM.md`'de, serisiz yarısı kodlandı** (2026-08-27).
+Üç saha sorusunun ikisi cevaplandı: depoda **100'den fazla kap** var ve içerik
+**ayda bir** değişiyor. Bu ikincisi tasarımın yarısını değiştirdi: kapta kalıcı
+olan **malzeme bağıdır, adet değil** — adet etikete basılmaz, 30 günden eskiyse
+ekrana dolu gelmez ve hiçbir zaman sorusuz sayıma yazılmaz.
+
+- **Yapıldı:** `DK-` etiket sınıfı, `kutu` tablosu (+ `data/etiket/kutu.csv`
+  yedeği), `coz()` 1d adımı, `grup_coz` kap dalları, `kutu_coz()`, tazelik
+  kuralı, kap etiketi basımı (adetsiz), Sayım · Kuyruk · Telefon · Etiket
+  ekranlarında paneller, `tests/test_kutu.py`.
+- **Kap kodu bir malzeme kodu okutması gibi işleniyor:** ayrı sayım dalı yok,
+  sayımı mevcut dallar yapıyor. Kap kodu `eslesme`'ye hiç yazılmıyor — kap bir
+  malzeme değil, malzemenin durduğu yer.
+- **Bekleyen:** seri takipli dal (kap okutunca otomatik kilit + sayaç) ve
+  `##KUTUKAPAT##`. Açık soru: **I2 kilidi seri takipli kabı zaten yeterince
+  hızlandırdı mı?** Cevap sahadan gelecek. O zamana kadar seri takipli kap
+  kutusuz akışla sayılıyor: kap malzemeyi getirir, kilit elle basılır.
+
+Yukarıdaki üç soru maddesinden ikisi tasarımda **sorulmuyor**: "seri no
+gerektiren ürün mü" cevabı Tiger'da (`beklenen.izleme`), "kayıtlarımızda var
+mı" ise mevcut `coz()` zincirinin işi.
 
 ### I4. Yedek parça modu (ayrı buton) — ✅ ÇÖZÜLDÜ
 Yedek parçalar genelde ana veritabanında kayıtlı değil. Bunun için:

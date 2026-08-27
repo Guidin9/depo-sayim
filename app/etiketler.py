@@ -2,7 +2,7 @@
 
 Depodaki kalemlerin bir kısmında ne üretici parça numarası ne de okunabilir bir
 seri numarası var. Etiketi kendimiz basıyoruz, ama depoda yazıcı yok: toplu
-basılıp elde götürülüyor. Bu yüzden iki ayrı etiket sınıfı var.
+basılıp elde götürülüyor. Bu yüzden üç ayrı etiket sınıfı var.
 
   malzeme (DM-000123)  Malzeme kodunun taranabilir hâli. Malzeme kodu başına
                        BİR kod; raf gözüne / kutuya yapışır. Aynı malzeme iki
@@ -13,13 +13,26 @@ basılıp elde götürülüyor. Bu yüzden iki ayrı etiket sınıfı var.
                        numarası olur. Bu yüzden "hangi üründen kaç etiket
                        basayım" sorusu hiç sorulmaz; fazla basılan israf değil,
                        sonraki sayıma kalır.
+  kutu    (DK-000007)  Kabın kimliği: "bu kapta ne var" (KUTU_TASARIM.md).
+                       Basıldığında o da anonimdir; içeriği okutma anında
+                       `kutu` tablosuna yazılır ve KALICIDIR — gelecek yıl aynı
+                       kap tek okutmayla malzemesini söyler. Kalıcı olan
+                       malzeme bağıdır, ADET DEĞİL: içerik ayda bir değişiyor,
+                       o yüzden adet her sayımda yeniden sorulur ve etikete
+                       basılmaz.
 
 Bunların hiçbiri `##RAF-A1##` konum barkodu değildir (CLAUDE.md 4.5): o "nerede
 duruyorum"u, buradakiler "ne" ve "hangisi"ni söyler.
 
-Her iki sınıf da mevcut Tiger'a-geri-yazma yollarına düşer, yeni rapor mantığı
-gerektirmez: malzeme etiketi `eslesme` üzerinden Barkod Tablosu sekmesine, seri
-etiketi kirli slot doldurma üzerinden Tiger Düzeltme sekmesine.
+Malzeme ve seri sınıfı mevcut Tiger'a-geri-yazma yollarına düşer, yeni rapor
+mantığı gerektirmez: malzeme etiketi `eslesme` üzerinden Barkod Tablosu
+sekmesine, seri etiketi kirli slot doldurma üzerinden Tiger Düzeltme sekmesine.
+
+Kutu sınıfı Tiger'a HİÇ yazılmaz ve `eslesme`'ye de girmez: kap bir malzeme
+değil, malzemenin bulunduğu yerdir. Kutu kodunu malzeme barkodu diye Tiger'ın
+malzeme kartına yazmak, kap ertesi ay başka bir ürünle dolduğunda kalıcı bir
+yanlış eşleşme bırakırdı (aynı gerekçe seri etiketinde de var — CLAUDE.md
+12.6). Kutunun içeriği yalnızca `kutu` tablosunda durur.
 """
 import csv
 import os
@@ -27,7 +40,7 @@ import re
 
 from .norm import norm
 
-ONEK = {"malzeme": "DM", "seri": "DS"}
+ONEK = {"malzeme": "DM", "seri": "DS", "kutu": "DK"}
 HANE = 6
 
 # Sabit genişlik şart: değişken uzunlukta bir etiket kodu diğerinin öneki
@@ -57,20 +70,49 @@ def bicimle(tur, no):
 
 
 def etiket_turu(deger):
-    """Değer bizim bastığımız bir etiket mi? 'malzeme' | 'seri' | None döner.
+    """Değer bizim bastığımız bir etiket mi? ONEK anahtarı ya da None döner.
 
     Yalnızca desene bakar, veritabanına değil: rapor ve eşleştirme yolları
     etiket defteri sıfırlanmış olsa da doğru davranmalı.
+
+    TERS ARAMA, ikili if/else DEĞİL. Eskiden "DM değilse seri" yazıyordu ve
+    üçüncü sınıf eklendiği anda sessizce yanlış cevap veriyordu:
+    `etiket_turu("DK-000007")` -> "seri". Sonuçları (KUTU_TASARIM.md 4):
+      * `kuyruk_coz` / `fazla_bagla` kutu kodunu "öğrenilmeyecek seri etiketi"
+        sanardı — doğru sonuç, yanlış sebep; kural değişirse sessizce bozulur.
+      * `reports._yeni_seri` kutu numarasını gerçek bir seri numarası adayı
+        sayardı ve Tiger'a "bu cihazın S/N'i DK-000007" diye yazdırırdı.
     """
     n = norm(deger)
     if not DESEN.match(n):
         return None
-    return "malzeme" if n.startswith(ONEK["malzeme"]) else "seri"
+    for tur, onek in ONEK.items():
+        if n.startswith(onek):
+            return tur
+    return None
 
 
 def etiket_mi(deger):
     """Normalize edilmiş değer bizim bastığımız etiket desenine uyuyor mu?"""
     return etiket_turu(deger) is not None
+
+
+# `eslesme` tablosuna (yani Tiger'ın malzeme kartındaki Barkod alanına) YAZILMAZ.
+# İkisi de tekil bir nesneye ait: seri etiketi bir cihaza, kutu etiketi bir kaba.
+# Malzeme seviyesine yükseltilirlerse o malzemenin HER ürünü o barkodu taşıyor
+# sayılır — ve kap ertesi ay başka bir ürünle dolduğunda yanlış eşleşme kalıcı
+# olur (CLAUDE.md 12.6 ikinci madde, KUTU_TASARIM.md 4).
+OGRENILMEZ = ("seri", "kutu")
+
+
+def ogrenilebilir(deger):
+    """Bu barkod bir malzemeye kalıcı olarak bağlanabilir mi?
+
+    Kural tek yerde dursun diye: `matching` üç ayrı yerde (`kuyruk_coz`,
+    `fazla_bagla`, `elle_say`) aynı ayrımı yapıyor ve biri güncellenmeden
+    kalırsa fark ancak gelecek yılın raporunda görülür.
+    """
+    return etiket_turu(deger) not in OGRENILMEZ
 
 
 def sonraki_no(c, tur):
@@ -121,6 +163,9 @@ def bas(c, tur, adet=None, kopya=1, kapsam="eksik", yukleme=None, ambar=None,
         duzen="a4", not_=None):
     """Yeni basım partisi açar ve basılacak satırları döner.
 
+    kutu:    `adet` kadar yeni anonim kap numarası. Seri etiketiyle aynı
+             mantık — basılırken hiçbir şeye ait değildir, içeriği ilk
+             okutmada tanımlanır (KUTU_TASARIM.md 3).
     malzeme: `adet` kaç FARKLI malzemenin etiketleneceğidir (None = hepsi).
              160 malzemenin hepsine etiket gerekmez: çoğunun kutusunda üretici
              kodu zaten basılıdır. Az basıp devam edilir, sonraki basım kaldığı
@@ -193,14 +238,32 @@ def bas(c, tur, adet=None, kopya=1, kapsam="eksik", yukleme=None, ambar=None,
             benzersiz.append({"kod": norm(g), "gosterim": g, "tur": "malzeme",
                               "malzeme": m["kod"], "aciklama": m["aciklama"],
                               "yeni": True})
+    elif tur == "kutu" and kapsam == "tanimli":
+        # YENİDEN BASIM: içeriği belli kapların etiketi. Yeni numara
+        # TÜKETİLMEZ — kap etiketi değişince kod aynı kalmalı, yoksa depoda
+        # aynı kap için iki numara dolaşır (CLAUDE.md 12.7 ile aynı gerekçe).
+        # İçerik değiştiğinde (kap başka ürüne ayrıldığında) bu yol kullanılır.
+        sinir = None if adet is None else max(0, int(adet))
+        for k in c.execute("""SELECT k.kod, k.gosterim, k.malzeme,
+                                (SELECT aciklama FROM beklenen WHERE kod=k.malzeme
+                                 ORDER BY yukleme DESC LIMIT 1) aciklama
+                              FROM kutu k WHERE COALESCE(k.malzeme,'')<>''
+                              ORDER BY k.kod"""):
+            if sinir is not None and len(benzersiz) >= sinir:
+                break
+            benzersiz.append({"kod": k["kod"], "gosterim": k["gosterim"],
+                              "tur": "kutu", "malzeme": k["malzeme"],
+                              "aciklama": k["aciklama"], "yeni": False})
     else:
+        # seri ve kutu: ikisi de anonim havuz. Fark yalnızca ne sorduklarında
+        # ("hangisi bu" / "bu kapta ne var") ve etiketin basılış biçiminde.
         adet = int(adet or 0)
         if adet < 1:
             raise ValueError("adet en az 1 olmalı")
         for _ in range(adet):
-            g = bicimle("seri", no)
+            g = bicimle(tur, no)
             no += 1
-            benzersiz.append({"kod": norm(g), "gosterim": g, "tur": "seri",
+            benzersiz.append({"kod": norm(g), "gosterim": g, "tur": tur,
                               "malzeme": None, "aciklama": None, "yeni": True})
 
     # Kâğıda çıkacak satırlar: her benzersiz kod `kopya` kez.

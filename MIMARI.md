@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-27 · 374 test geçiyor.
+Son güncelleme: 2026-08-27 · 397 test geçiyor.
 
 ---
 
@@ -24,12 +24,13 @@ app/
   matching.py    EŞLEŞTİRME MOTORU — coz(), grup_coz(), okut(), kuyruk_coz()
   importer.py    Tiger Excel/JSON raporunu beklenen tablosuna yükler
   reports.py     6 sekmeli rapor verisi + Excel yazıcı
-  etiketler.py   Kendi bastığımız DM-/DS- etiketlerinin defteri
+  etiketler.py   Kendi bastığımız DM-/DS-/DK- etiketlerinin defteri
+  kutu.py        Kap defteri: hangi kapta ne var + tazelik kuralı (DK-)
   barkod.py      Code128 komut kartı ve etiket sayfası (HTML, base64 SVG)
   olaylar.py     SSE yayını (tek global sürüm sayacı)
   oturumlar.py   Oturum yaşam döngüsü (ac / acik / getir / bitir / gecmis)
   cli.py         Komut satırı arayüzü
-  routers/       ortak.py · yukleme.py · oturum.py · kuyruk.py · rapor.py · etiket.py
+  routers/       ortak.py · yukleme.py · oturum.py · kuyruk.py · rapor.py · etiket.py · kutu.py
   static/        web/ derlemesinin çıktısı (git'te yok)
 
 web/src/
@@ -72,7 +73,8 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 | `kuyruk` | id · oturum · ts · barkodlar (JSON) · raf · cozuldu · not_ · beklet · **tur** · kod · ad · **adet** |
 | `kuyruk_foto` | id · kuyruk · **okutma** · ts · tur · boyut · **veri BLOB** |
 | `basim` | id · ts · tur · adet · ilk · son · duzen · not_ |
-| `etiket` | **kod (PK)** · gosterim · tur · basim · ts · malzeme · beklenen_id · oturum · ts_bagla · raf |
+| `etiket` | **kod (PK)** · gosterim · **tur** (`malzeme`\|`seri`\|`kutu`) · basim · ts · malzeme · beklenen_id · oturum · ts_bagla · raf |
+| `kutu` | **kod (PK)** · gosterim · **malzeme** · adet · izleme · raf · ts · **ts_guncelle** · oturum |
 
 ### Bilinmesi gerekenler
 
@@ -137,7 +139,9 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
   ürüne sızar.
 * **`okutma.geri`, `##GERIAL##`'in sözleşmesidir.** Bir okutmanın KENDİ SATIRI
   DIŞINDA ne yarattığını JSON olarak tutar:
-  `{"ogrenilen": ["198701689928"], "etiket": "DS-000045"}`. Geri alma bunu
+  `{"ogrenilen": ["198701689928"], "etiket": "DS-000045"}` (kap sayımında
+  ayrıca `{"kutu": {"kod": ..., "onceki": {...}}}` — kabın okutmadan önceki
+  hâli; yoksa reddedilen adet kayıtta taze görünmeye devam ederdi). Geri alma bunu
   okuyup `eslesme` kaydını siler ve etiket bağlamasını çözer
   (`etiketler.coz_bagla`, numara TÜKETİLMEZ — defter kaydı durur), kuyruk
   kaydını yeniden açar (`cozuldu=0`) ve silinen okutmaya bağlı fotoğrafın
@@ -269,6 +273,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 |---|---|---|
 | `GET /oturum/{id}/kuyruk` | `?hepsi=false` | Kayıtlar; her satırda `fotolar` id listesi |
 | `POST /kuyruk/{id}/coz` | `{beklenen_id}` | Malzemeye bağla, barkodları öğren |
+| `POST /kuyruk/{id}/kutu` | `{malzeme?, adet?}` | **Kap kaydını çöz**: içeriği kalıcı yaz + (serisizse) say. Adet eksikse 400 `kap_adet_gerekli` |
 | `PATCH /kuyruk/{id}` | `{not_?, beklet?, ad?, adet?}` | Kısmi güncelleme (biri diğerini silmez). `adet` kayıt çözülmeden düzeltilebilir |
 | `DELETE /kuyruk/{id}` | `{ad?}` | **Fazla olarak kapatır** (`matching.kuyruk_fazla`). Kod bilinmiyorsa `ad` zorunlu → 400 `ad_gerekli` |
 | `POST /kuyruk/{id}/foto` | multipart `dosya` | Maks 6 MB · jpeg/png/webp |
@@ -287,6 +292,9 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `GET /etiket/ihtiyac` | Etiket ihtiyacı **üst sınırı** (hedef değil) |
 | `POST /etiket/basim` | Parti bas, HTML sayfa + defter + CSV |
 | `GET /etiket` · `GET /etiket/basimlar` | Defter ve partiler |
+| `GET /kutu` · `GET /kutu/{kod}` | Kap defteri / tek kap (`gorunum` tazelik kararını da verir) |
+| `POST /kutu/{kod}` | `{malzeme, adet?, yukleme, ambar}` — içeriği yaz. İzleme **malzemeden kopyalanır**, sorulmaz. Malzeme bu ambarda yoksa 400 |
+| `DELETE /kutu/{kod}` | Kap boşaldı: içerik bağı silinir, **numara kalır** |
 
 ### Altyapı (`main.py`)
 
@@ -312,6 +320,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | 1 | `beklenen.seri_n = n` | `seri` / `tekrar` |
 | 1b | 1 boş **ve** `n` tamamen rakam, `seri_n0 = sifirsiz(n)` | `seri` / `tekrar` |
 | 1c | `etiket.kod=n AND tur='seri'` | bağlıysa `seri`/`tekrar`, boşsa **`etiket_bos`** |
+| 1d | `n` DK- deseni (kap etiketi) | tanımlı `kutu` · tanımsız **`kutu_bos`** · malzemesi bu ambarda yok **`kutu_yabanci`** |
 | 2 | `beklenen.kod_n = n` | `kod` |
 | 3 | `len(n)>=8`, iki yönlü önek eşleşmesi (her iki taraf en az 8) | `kod` |
 | 4 | `eslesme.barkod = n` (öğrenilmiş) | `ogrenilmis` |
@@ -334,6 +343,7 @@ Tampondaki barkodların hepsi **tek ürün** kabul edilir.
 YEDEK PARÇA MODU açık                    -> tip="yedek"    (coz() HİÇ çağrılmaz)
 tekrar var, seri yok                     -> tip="tekrar"   (hiçbir şey yazılmaz)
 kaynak SAYIM DIŞI kalem                  -> tip="haric"    (hiçbir şey yazılmaz)
+KAP okutuldu (bkz. aşağıdaki kap dalı)   -> tip="kutu_*"   (kap kodu = malzeme kodu)
 seri de kod da tanınmadı                 -> tip="kuyruk"   (kullanıcıya sorulur)
 izleme='seri' satırı eşleşti             -> tip="eslesti"  (+ bilinmeyenler öğrenilir)
 kod tanındı (ya da lot satırı eşleşti):
@@ -346,6 +356,40 @@ kod tanındı (ya da lot satırı eşleşti):
 `tip='yedek'` yazılır, `coz()` hiç çağrılmaz. Öğrenme ve kuyruk yoktur — yedek
 parçalar Tiger'da kayıtlı değil ve aranmaları yalnızca yanlış eşleşme
 üretiyordu.
+
+**Kap kodu, malzeme kodu okutmakla AYNI ŞEYDİR** (`KUTU_TASARIM.md`). Kap
+malzemeyi, izleme yöntemini ve son bilinen adedi getirir; sayımın kendisi
+mevcut dallardan geçer (slot / adet / onay). Ayrı bir sayım yolu yazılmadı —
+olsaydı `_adet_dagit` gibi kurallar iki yerde ayrı ayrı düzeltilirdi. Tek fark
+kabın TEK BAŞINA ne anlama geldiğidir:
+
+```
+kap tanımsız / malzemesi bu ambarda yok  -> tip="kutu_tanimsiz" | "kutu_yabanci"
+                                            (kuyruk tur='kutu', hiçbir şey sayılmaz)
+kap tanımlı, izleme='seri', yalnız kap   -> tip="kutu_seri"  (HİÇBİR SATIR YAZILMAZ)
+kap tanımlı, izleme='seri', S/N de var   -> normal seri dalı (kap yalnızca bağlam)
+kap tanımlı, lot/yok, ##ADET-N## var     -> tip="adet"  + kap kaydı tazelenir
+kap tanımlı, lot/yok, adet YOK           -> tip="kutu_sor" (kuyruk tur='kutu')
+```
+
+**Kap kaydındaki adet sorusuz uygulanmaz.** Saha cevabı: içerik ayda bir
+değişiyor, sayım yılda bir yapılıyor — yani kayıttaki adet sayım anında
+neredeyse her zaman bayattır. Sorusuz uygulamak, uygulamanın kendi bayat
+verisini sayım sonucu diye onaylaması olurdu (CLAUDE.md §6'daki "Sayım
+Miktarı" tuzağının bizim tarafımızdaki hâli). `kutu.TAZELIK_GUN` (30) içindeki
+kayıt arayüze **öneri** olarak gelir (`oneri_adet`), eskisi **boş** gelir.
+
+**Kap kodu `eslesme`'ye HİÇ girmez** (`etiketler.ogrenilebilir()` eler): kap bir
+malzeme değil, malzemenin durduğu yerdir. Öğrenilseydi 4. adım onu kalıcı bir
+malzeme barkodu sayar, Barkod Tablosu sekmesi Tiger'ın malzeme kartına
+yazdırır ve kap ertesi ay başka bir ürünle dolduğunda yanlış eşleşme kalıcı
+olurdu. `reports._yeni_seri` de kap kodunu seri numarası adayı saymaz.
+
+**Aynı kap iki kez okutulursa ikinci kuyruk kaydı AÇILMAZ**
+(`_acik_kutu_kuyrugu`): kullanıcı "kaç adet?" sorusunu görüp `##ADET-130##`
+okutur ve kabı yeniden okutur — ilk kayıt açık kalsaydı, cevabı çoktan verilmiş
+bir soru oturumun kapanmasını engellerdi. Sayım gerçekleşince o kaba ait açık
+soru kapanır (`_kutu_kuyrugu_kapat`).
 
 **Sabit kod kilidi `kod_h`'nin yedeğidir** (I2): grupta malzeme kodu YOKSA ve
 `oturum.sabit_kod` doluysa kilit devreye girer. Elle okutulan kod her zaman
@@ -405,6 +449,15 @@ Komut barkodu mu diye bakar; değilse `tampon`'a yazıp anlık çözümlemeyi d�
 
 * `kuyruk_coz(c, kuyruk_id, beklenen_id)` — grubu malzemeye bağlar, barkodları
   kalıcı öğretir, `tip='eslesti'` yazar.
+* `kutu_coz(c, kuyruk_id, malzeme=None, adet=None)` — kap kaydının cevabı.
+  İki şeyi birden yapar ve ikisi ayrı ömürlüdür: kabın içeriği `kutu`
+  tablosuna **kalıcı** yazılır, sayım bu **oturuma** işlenir. Seri takipli
+  malzemede sayım yapılmaz (`sayildi=False`) — her adet Tiger'da ayrı satır;
+  kap tanımlanır, cihazlar tek tek okutulur. Sayım `_adet_islemi()` ile
+  `grup_coz` ile aynı koddan geçer.
+* `_adet_islemi(...)` — lot/izlemesiz miktarı doğru satır(lar)a yazan ORTAK
+  gövde (`grup_coz` adet dalı + `kutu_coz`). `_adet_dagit` kuralı tek yerde
+  dursun diye ayrıldı.
 * `kuyruk_fazla(c, kuyruk_id, ad=None)` — kaydı fazla olarak kapatır. Malzeme
   kodu bilinmiyorsa `ad` **zorunlu**; yoksa `{"hata": "ad_gerekli"}` döner ve
   kayıt oluşmaz. `fazla_onay`
@@ -492,11 +545,11 @@ alanının odaklanmasını engeller. `/telefon` rotasıyla ilgisi yoktur.
 |---|---|---|---|
 | Kurulum | `ekranlar/Kurulum.tsx` | Excel yükle, kurallar, ambar seç, oturum aç | PC |
 | Sayım | `ekranlar/Sayim.tsx` | Barkod girişi, tampon, akış | PC |
-| Kuyruk | `ekranlar/Kuyruk.tsx` | Tanınmayanları rafa göre çöz | PC |
+| Kuyruk | `ekranlar/Kuyruk.tsx` | Tanınmayanları rafa göre çöz; **kap kaydında malzeme + adet paneli** | PC |
 | Rapor | `ekranlar/Rapor.tsx` | 7 sekme önizleme, xlsx, oturumu bitir. **`SEKME` listesi `reports.SEKME`'nin kopyasıdır** — sekme eklerken ikisi de güncellenir | PC |
 | Geçmiş | `ekranlar/Gecmis.tsx` | Eski oturumlar, komut kartı | PC |
 | Ayarlar | `ekranlar/Ayarlar.tsx` | Aktif raf, kurallar, ses, cihaz modu | PC |
-| Etiket | `ekranlar/Etiket.tsx` | Etiket basımı ve defteri | PC |
+| Etiket | `ekranlar/Etiket.tsx` | Etiket basımı ve defteri (DM / DS / **DK kap**) | PC |
 | Eşleştirme | `ekranlar/Esleme.tsx` | Sayım sonu: fazla ↔ eksik elle eşleştirme, fazla fotoğrafı | PC |
 | Telefon | `ekranlar/Telefon.tsx` | Monitör + uzaktan kumanda + kuyruk çözme | `/telefon` |
 
@@ -552,13 +605,14 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **374 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **397 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
 
 | Dosya | Kapsam |
 |---|---|
 | `test_api.py` | FastAPI uçtan uca (TestClient) |
 | `test_etiket.py` | DM-/DS- etiketleri: basım, defter, bağlama, CSV geri yükleme |
+| `test_kutu.py` | DK- kap etiketi: tanımsız kap kuyruğu, tazelik kuralı, seri takipli kapta sayım YAPILMAMASI, geri alma, CSV defteri, uçlar |
 | `test_genel_rapor.py` | Yükleyici `deneme.XLSX`'e bağımlı değil (sentetik Excel) |
 | `test_goc.py` | **Eski şemalı veritabanının göçü** — `deneme.XLSX` gerektirmez |
 | `test_haric.py` | Sayım dışı kalem kuralları |
@@ -616,8 +670,11 @@ stok ve tutar içerdiği için `.gitignore`'da.
 
 * `depo_sayim_bugs_improvements.md` — **gerçek** sayım denemesinden çıkan
   1 bug + 5 feature. B1, I1, I2, I4, I5 çözüldü (2026-08-27); **hiçbiri gerçek
-  sahada denenmedi.** I3 (kutu barkodu) yalnızca tasarlandı —
-  `KUTU_TASARIM.md`, kod yok.
+  sahada denenmedi.** I3 (kap barkodu) **serisiz yarısı kodlandı** —
+  `KUTU_TASARIM.md` §10. Kodlanmayanlar, I2 sahada denenene kadar bilerek
+  bekliyor: kap okutunca otomatik `sabit_kod` kilidi, "150'nin 12'si" sayacı ve
+  `##KUTUKAPAT##` komutu. Seri takipli kap bu sürümde kutusuz akışla sayılıyor —
+  kap malzemeyi getirir, kilit elle basılır.
 * **Çok depo bir eksiklik değil, karar** (2026-08-27): uygulama sayılan
   ambarın dışına çıkmaz. Ayrıntı `CLAUDE.md` §3.5.
 
@@ -630,6 +687,5 @@ stok ve tutar içerdiği için `.gitignore`'da.
   derleme doğrulandı, **gerçek telefonda test edilmedi.**
 * `CLAUDE.md` §12 etiketleri gerçek Tiger verisiyle doğrulandı ama **basılan
   sayfa gerçek barkod okuyucuyla test edilmedi.**
-* `db.py`'deki `etiket.tur` yorumu (`'raf' | 'birim'`) eskidir; gerçek değerler
-  `malzeme` ve `seri`.
+* `db.py`'deki `etiket.tur` yorumu düzeltildi: `malzeme` · `seri` · `kutu`.
 * `okutma.tip='bilinmiyor'` raporlarda filtrelenir ama hiçbir yerde yazılmaz.

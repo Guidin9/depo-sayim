@@ -12,11 +12,24 @@ import { api, type BasimOzeti, type EtiketIhtiyaci, type EtiketSatiri } from "..
 import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
 import * as Ik from "../ikonlar";
 
-type Tur = "malzeme" | "seri";
+type Tur = "malzeme" | "seri" | "kutu";
 type Duzen = "a4" | "rulo";
 type Kapsam = "eksik" | "hepsi" | "bos";
+/* Kap etiketi iki yoldan basılır: yeni anonim numara ya da içeriği belli
+   kapların YENİDEN basımı. Yeniden basım numara tüketmez — kap etiketi
+   değişse de kod aynı kalmalı, yoksa depoda aynı kap için iki numara dolaşır
+   (KUTU_TASARIM.md 7). */
+type KutuKapsam = "yeni" | "tanimli";
 
 const A4_HUCRE = 24; // 3 sütun x 8 satır
+
+/* Üç tür de kendi adıyla görünür. "Malzeme değilse Seri" yazmak, üçüncü sınıf
+   eklendiği anda kap etiketlerini defterde "Seri" gösterirdi. */
+const TUR_ADI: Record<string, string> = {
+  malzeme: "Malzeme",
+  seri: "Seri",
+  kutu: "Kap",
+};
 
 export default function Etiket({
   yukleme,
@@ -37,6 +50,9 @@ export default function Etiket({
   const [mAdet, setMAdet] = useState(A4_HUCRE);
   const [kopya, setKopya] = useState(1);
   const [kapsam, setKapsam] = useState<Kapsam>("eksik");
+  const [kutuKapsam, setKutuKapsam] = useState<KutuKapsam>("yeni");
+  const [kAdet, setKAdet] = useState(A4_HUCRE);
+  const [kutuSayisi, setKutuSayisi] = useState(0);
   const [duzen, setDuzen] = useState<Duzen>("a4");
   const [atla, setAtla] = useState(0);
   const [q, setQ] = useState("");
@@ -48,6 +64,7 @@ export default function Etiket({
       try {
         setIhtiyac(await api.etiketIhtiyac(yukleme, ambar));
         setBasimlar(await api.basimlar());
+        setKutuSayisi((await api.kutular(undefined, true)).length);
       } catch (e) {
         setHata(e instanceof Error ? e.message : String(e));
       }
@@ -69,9 +86,14 @@ export default function Etiket({
     try {
       const html = await api.etiketBas({
         tur,
-        adet: tur === "seri" ? adet : mAdet,
+        adet: tur === "seri" ? adet : tur === "kutu" ? kAdet : mAdet,
         kopya: tur === "malzeme" ? kopya : 1,
-        kapsam: tur === "malzeme" ? kapsam : undefined,
+        kapsam:
+          tur === "malzeme"
+            ? kapsam
+            : tur === "kutu" && kutuKapsam === "tanimli"
+              ? "tanimli"
+              : undefined,
         yukleme: tur === "malzeme" ? yukleme : undefined,
         ambar: tur === "malzeme" ? ambar : undefined,
         duzen,
@@ -180,6 +202,7 @@ export default function Etiket({
                 secenekler={[
                   ["seri", "Seri etiketi (boş havuz)"],
                   ["malzeme", "Malzeme etiketi (kod başına bir numara)"],
+                  ["kutu", "Kap etiketi (bu kapta ne var)"],
                 ]}
                 deger={tur}
                 degistir={(v) => setTur(v as Tur)}
@@ -249,6 +272,59 @@ export default function Etiket({
                     )}
                   </div>
                 </Alan>
+              </>
+            )}
+
+            {tur === "kutu" && (
+              <>
+                <Alan etiket="Hangisi">
+                  <Secim
+                    secenekler={[
+                      ["yeni", "Yeni boş kap numarası"],
+                      ["tanimli", `İçeriği belli kapları yeniden bas (${kutuSayisi})`],
+                    ]}
+                    deger={kutuKapsam}
+                    degistir={(v) => setKutuKapsam(v as KutuKapsam)}
+                  />
+                </Alan>
+                <Alan etiket="Adet">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={5000}
+                      value={kAdet}
+                      onChange={(e) => setKAdet(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-32 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                        font-mono text-govde focus:border-vurgu focus:outline-none"
+                    />
+                    <Dugme cocuk="1 sayfa (24)" tikla={() => setKAdet(A4_HUCRE)} />
+                    <Dugme cocuk="4 sayfa (96)" tikla={() => setKAdet(A4_HUCRE * 4)} />
+                    {kutuKapsam === "tanimli" && kutuSayisi > 0 && (
+                      <Dugme cocuk={`Tümü: ${kutuSayisi}`} tikla={() => setKAdet(kutuSayisi)} />
+                    )}
+                    {duzen === "a4" && (
+                      <span className="text-kucuk text-solgun">
+                        {Math.ceil((kAdet + atla) / A4_HUCRE)} sayfa
+                      </span>
+                    )}
+                  </div>
+                </Alan>
+                <p className="rounded-sm border border-cizgi bg-panel2 p-3 text-kucuk
+                  text-solgun leading-snug">
+                  Kap etiketinde <b>adet yazmaz</b> — içerik ayda bir değişiyor ve depoda
+                  yazıcı yok. Kapta "150" yazıp içinde 130 olması, hiç sayı yazmamaktan
+                  kötüdür: sayan kişi elindekine değil etikete inanır. Kabın içeriği ilk
+                  okutmada sorulur ve kalıcı olarak kaydedilir; adet her sayımda yeniden
+                  sorulur.
+                  {kutuKapsam === "tanimli" && (
+                    <>
+                      {" "}
+                      Yeniden basım <b>yeni numara tüketmez</b>: aynı kap hep aynı kodu
+                      taşır.
+                    </>
+                  )}
+                </p>
               </>
             )}
 
@@ -371,7 +447,7 @@ export default function Etiket({
                       <tr key={e.kod} className="border-t border-cizgi">
                         <td className="py-2 pr-3 font-mono font-bold">{e.gosterim}</td>
                         <td className="py-2 pr-3 text-solgun">
-                          {e.tur === "malzeme" ? "Malzeme" : "Seri"}
+                          {TUR_ADI[e.tur] ?? e.tur}
                         </td>
                         <td className="py-2 pr-3">
                           {e.malzeme ? (
@@ -411,7 +487,7 @@ export default function Etiket({
                     bg-panel2 px-4 py-3 text-kucuk"
                 >
                   <span className="font-bold">
-                    {b.tur === "malzeme" ? "Malzeme" : "Seri"}
+                    {TUR_ADI[b.tur as Tur] ?? b.tur}
                   </span>
                   <span className="rakam text-solgun">{b.adet} adet</span>
                   <span className="font-mono text-solgun">

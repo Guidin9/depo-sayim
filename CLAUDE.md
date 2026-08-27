@@ -487,7 +487,7 @@ Excel çıktısı üretiyoruz.
 ## 7. Mevcut durum
 
 Uygulama çalışır durumda: `app/` altında FastAPI + SQLite arka uç, `web/`
-altında React + Vite + Tailwind arayüz, 374 test geçiyor. **Arayüz yeniden
+altında React + Vite + Tailwind arayüz, 397 test geçiyor. **Arayüz yeniden
 tasarlanıyor** — eski tasarım dili bırakıldı; uyulması gereken kısıtlar ve logo
 kuralı §10'da, dağıtım ve kurulum tuzakları §11'de.
 
@@ -775,15 +775,27 @@ Depodaki kalemlerin bir kısmında ne üretici parça numarası ne de okunabilir
 seri numarası var: kablo, fan, dökme parça, `0,70MM TEL` gibi şirket içi kodlu
 kalemler. Depoda yazıcı yok, etiketler ofiste toplu basılıp elde götürülüyor.
 
-### 12.1 İki etiket sınıfı
+### 12.1 Üç etiket sınıfı
 
-Bunların ikisi de `##RAF-A1##` konum barkodu (§4.5) DEĞİLDİR. Üç ayrı soru var:
-`##RAF-A1##` "nerede duruyorum", `DM-` "ne bu", `DS-` "hangisi bu".
+Bunların hiçbiri `##RAF-A1##` konum barkodu (§4.5) DEĞİLDİR. Dört ayrı soru var:
+`##RAF-A1##` "nerede duruyorum", `DM-` "ne bu", `DS-` "hangisi bu",
+`DK-` "bu kapta ne var".
 
 | Sınıf | Ne söyler | Kaç FARKLI kod | Nereye |
 |---|---|---|---|
 | **Malzeme** `DM-000123` | Malzeme kodunun taranabilir hâli | Malzeme kodu sayısı | Raf gözüne / kutuya |
 | **Seri** `DS-000045` | Sadece sıralı numara, basılırken hiçbir şeye ait değil | Etiketlenecek adet sayısı | Okutma anında hangi ürüne yapıştıysa ona |
+| **Kap** `DK-000007` | Kabın kimliği; içeriği ilk okutmada sorulur ve KALICI kaydedilir | Kap sayısı (depoda 100'den fazla) | Kabın üstüne, kalıcı |
+
+**Kap etiketinin tasarımı ve gerekçeleri `KUTU_TASARIM.md`'dedir.** İki kural
+burada da bilinmeli, çünkü ikisi de saha verisinden çıktı:
+
+* Kapta **kalıcı olan malzeme bağıdır, adet değil.** İçerik ayda bir değişiyor,
+  sayım yılda bir yapılıyor: kayıttaki adet sayım anında neredeyse her zaman
+  bayattır ve sorusuz uygulanmaz (`kutu.TAZELIK_GUN` = 30 gün).
+* Kap etiketine **adet basılmaz.** Depoda yazıcı yok; kapta "150" yazıp içinde
+  130 olması, hiç sayı yazmamaktan kötüdür — sayan kişi elindekine değil
+  etikete inanır.
 
 Malzeme etiketi **kod başına bir numaradır**, ama kaç tanesinin basılacağı
 kullanıcının seçimidir (`bas(..., adet=24)`). 160 malzemenin hepsine etiket

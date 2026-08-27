@@ -113,14 +113,42 @@ CREATE TABLE IF NOT EXISTS basim(
   ilk TEXT, son TEXT, duzen TEXT, not_ TEXT);
 
 CREATE TABLE IF NOT EXISTS etiket(
-  kod TEXT PRIMARY KEY,      -- normalize edilmiş: DM000123 / DS000045
+  kod TEXT PRIMARY KEY,      -- normalize edilmiş: DM000123 / DS000045 / DK000007
   gosterim TEXT,             -- insan okur hâli: DM-000123
-  tur TEXT,                  -- 'raf' | 'birim'
+  tur TEXT,                  -- 'malzeme' | 'seri' | 'kutu' (etiketler.ONEK)
   basim INT, ts TEXT,
-  malzeme TEXT,              -- raf: basımda dolu · birim: bağlanınca dolar
-  beklenen_id INT,           -- birim: doldurduğu kirli slot
+  malzeme TEXT,              -- malzeme: basımda dolu · seri: bağlanınca dolar
+                             -- kutu: HEP BOŞ — kabın içeriği `kutu` tablosunda
+  beklenen_id INT,           -- seri: doldurduğu kirli slot
   oturum INT, ts_bagla TEXT, raf TEXT);
 CREATE INDEX IF NOT EXISTS ix_etiket_tur ON etiket(tur, malzeme);
+
+-- Kap defteri (KUTU_TASARIM.md 3). `etiket` tablosu "bu numara basıldı"yı,
+-- burası "o kapta ne var"ı bilir.
+--
+-- KALICI, sayıma özel DEĞİL: kabın içeriği fiziksel bir gerçek, sayım oturumu
+-- değil. Gelecek yıl aynı kap tek okutmayla malzemesini söyler.
+--
+-- Ama kalıcı olan MALZEME BAĞIDIR, adet değil. Saha cevabı: içerik ayda bir
+-- civarında değişiyor, sayım ise yılda bir yapılıyor — yani sayım anında
+-- `adet` alanının doğru olma ihtimali pratikte sıfırdır. Kaydı "kapta 150 var"
+-- diye okumak, uygulamanın kendi bayat verisini sayım sonucu diye onaylaması
+-- olurdu (CLAUDE.md 6'daki "Sayım Miktarı" tuzağının bizim tarafımızdaki
+-- hâli). `adet` yalnızca girdi alanının VARSAYILANIDIR ve tazelik kuralına
+-- tabidir (kutu.TAZELIK_GUN).
+--
+-- Yeni tablo eski veritabanlarında da sorunsuz oluşur: tuzak yalnızca mevcut
+-- tabloya SÜTUN eklemekte (bkz. EK_INDEKS).
+CREATE TABLE IF NOT EXISTS kutu(
+  kod TEXT PRIMARY KEY,      -- normalize: DK000007
+  gosterim TEXT,             -- DK-000007
+  malzeme TEXT,              -- beklenen.kod  <- kalıcı olan bu
+  adet REAL,                 -- SON BİLİNEN adet; gerçek değil, varsayılan
+  izleme TEXT,               -- 'seri' | 'lot' | 'yok' (malzemeden kopyalanır)
+  raf TEXT,
+  ts TEXT, ts_guncelle TEXT, -- ts_guncelle = adedin en son doğrulandığı an
+  oturum INT);               -- ilk tanımlandığı oturum
+CREATE INDEX IF NOT EXISTS ix_kutu_malzeme ON kutu(malzeme);
 """
 
 # Eski veritabanlarına sonradan eklenen sütunlar.
@@ -197,6 +225,7 @@ def baglan(yol=None):
     lic_kuralini_duzelt(c)
     kurallari_tohumla(c)
     etiketleri_geri_yukle(c)
+    kutulari_geri_yukle(c)
     c.commit()
     return c
 
@@ -308,6 +337,22 @@ def etiketleri_geri_yukle(c):
     from . import etiketler
     try:
         etiketler.csv_geri_yukle(c)
+    except OSError:
+        pass
+
+
+def kutulari_geri_yukle(c):
+    """sifirla.bat sonrası kap defterini data/etiket/kutu.csv'den tamamlar.
+
+    `etiketleri_geri_yukle` ile aynı gerekçe, bir adım ötesi: basılmış DK
+    etiketi veritabanından uzun ömürlüdür ve kabın İÇERİĞİ de öyle. Sayaç geri
+    gelip kutu bağları gitseydi, depodaki 100 kabın hepsi yeniden "tanımsız"
+    olur ve kalıcı kutu kaydının tek kazancı (malzemeyi tek okutmada bilmek)
+    sıfırlanırdı.
+    """
+    from . import kutu as kutum
+    try:
+        kutum.csv_geri_yukle(c)
     except OSError:
         pass
 

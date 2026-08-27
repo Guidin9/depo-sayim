@@ -57,8 +57,14 @@ DIPNOT = {
                   "Tiger'a yazılacak değerler Tiger Düzeltme ve Barkod Tablosu "
                   "sekmelerinde; bu sayfa fiziksel etiketi bulmak içindir.",
                   "Malzemesi boş satırlar henüz kullanılmamış, havuzda bekleyen "
-                  "etiketlerdir."],
+                  "etiketlerdir.",
+                  "Kutu (DK-) satırlarında malzeme kabın İÇERİĞİDİR ve "
+                  "değişebilir; etiket numarası değişmez. Adet burada "
+                  "yazmaz — her sayımda yeniden sorulur."],
 }
+
+
+ETIKET_TUR_ADI = {"malzeme": "Malzeme", "seri": "Seri", "kutu": "Kutu"}
 
 
 def _kisa(ts):
@@ -82,6 +88,13 @@ def _yeni_seri(ham):
     parcalar = [p.strip() for p in str(ham or "").split(" + ") if p.strip()]
     if len(parcalar) <= 1:
         return ham
+    # KAP KODU HİÇBİR ZAMAN SERİ NUMARASI ADAYI DEĞİLDİR ve son çare bile
+    # olamaz: DK-000007 bir cihazın kimliği değil, durduğu kabın numarasıdır.
+    # Tiger'a "bu cihazın S/N'i DK-000007" diye yazmak, kap ertesi ay
+    # boşaldığında hiçbir şeye karşılık gelmeyen bir seri numarası bırakır.
+    parcalar = [p for p in parcalar if etiket_turu(p) != "kutu"] or parcalar
+    if len(parcalar) == 1:
+        return parcalar[0]
     adaylar = [p for p in parcalar if not upc_mi(p)] or parcalar
     for sinif in (None, "seri"):            # önce gerçek S/N, sonra seri etiketi
         havuz = [p for p in adaylar if etiket_turu(p) == sinif]
@@ -228,11 +241,21 @@ def rapor_verisi(c, oturum_id):
                         ORDER BY e.kod, e.barkod""",
                                     (yukleme, ambar, yukleme, ambar))]
 
-    etiket_satir = [[r["gosterim"], "Malzeme" if r["tur"] == "malzeme" else "Seri",
-                     r["malzeme"] or "", r["aciklama"] or "", r["slot"] or "",
-                     r["raf"] or "", _kisa(r["ts"]), _kisa(r["ts_bagla"])]
+    # Üç tür de kendi adıyla çıkar. Eskiden "malzeme değilse Seri" yazıyordu ve
+    # üçüncü sınıf eklendiği anda kap etiketleri raporda "Seri" görünürdü
+    # (KUTU_TASARIM.md 4). Kap satırında malzeme `etiket` tablosunda değil
+    # `kutu` defterinde durur — kabın içeriği değişebilir, etiket numarası
+    # değişmez.
+    etiket_satir = [[r["gosterim"], ETIKET_TUR_ADI.get(r["tur"], r["tur"] or "?"),
+                     r["malzeme"] or r["kutu_malzeme"] or "", r["aciklama"] or "",
+                     r["slot"] or "", r["raf"] or "", _kisa(r["ts"]),
+                     _kisa(r["ts_bagla"] or r["kutu_guncelle"])]
                     for r in c.execute("""SELECT e.*,
-                          (SELECT aciklama FROM beklenen WHERE kod=e.malzeme
+                          (SELECT malzeme FROM kutu WHERE kod=e.kod) kutu_malzeme,
+                          (SELECT ts_guncelle FROM kutu WHERE kod=e.kod) kutu_guncelle,
+                          (SELECT aciklama FROM beklenen
+                           WHERE kod=COALESCE(e.malzeme,
+                                 (SELECT malzeme FROM kutu WHERE kod=e.kod))
                            ORDER BY yukleme DESC LIMIT 1) aciklama,
                           (SELECT seri FROM beklenen WHERE id=e.beklenen_id) slot
                           FROM etiket e ORDER BY e.tur, e.kod""")]

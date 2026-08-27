@@ -171,6 +171,22 @@ def _etiket(s):
                 '<div class=kod>%s</div></div>'
                 % (html.escape(str(s.get("ad") or "")), _etiket_svg(g),
                    html.escape(g)))
+    if s.get("tur") == "kutu":
+        # Kap etiketi kabın ÜSTÜNDE durur ve uzaktan okunur: içerik büyük
+        # yazılır, barkod altında kalır (raf etiketiyle aynı mantık).
+        #
+        # ADET BASILMAZ. İlk taslakta "150 AD" satırı vardı; içerik ayda bir
+        # değişiyor (KUTU_TASARIM.md 9.3) ve depoda yazıcı yok — ayda bir
+        # yeniden basım imkânsız. Yanlış basılmış bir sayı, hiç sayı
+        # olmamasından çok daha kötüdür: kapta 150 yazar, içinde 130 vardır ve
+        # sayan kişi elindeki gerçeğe değil etikete inanır.
+        ad = _kisalt(s.get("aciklama") or s.get("malzeme") or "KAP", 28)
+        return ('<div class="k rafk"><div class=kutuad>%s</div>'
+                '<img src="data:image/svg+xml;base64,%s">'
+                '<div class=kod>%s</div>%s</div>'
+                % (html.escape(str(ad)), _etiket_svg(g), html.escape(g),
+                   ("<div class=m>%s</div>" % html.escape(str(s.get("malzeme"))))
+                   if s.get("malzeme") else ""))
     alt = ""
     if s.get("tur") == "malzeme":
         alt = ("<div class=m>%s</div><div class=a>%s</div>"
@@ -224,6 +240,7 @@ body{font:11px/1.25 Arial,sans-serif;margin:0;color:#000;background:#fff}
 .m{font-weight:700;font-size:10px;margin-top:.6mm}
 .a{font-size:8px;color:#444}
 .raf{font-weight:800;font-size:18px;letter-spacing:1px;margin-bottom:.8mm}
+.kutuad{font-weight:800;font-size:14px;line-height:1.15;margin-bottom:.8mm}
 @media screen{body{padding:10px;background:#eee}
   .k{outline:1px dashed #bbb;background:#fff}}
 </style><div class=grid>%s</div></html>""" % (sayfa, yerlesim, "".join(hucreler))

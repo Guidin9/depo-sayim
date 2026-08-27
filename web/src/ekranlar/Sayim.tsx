@@ -170,6 +170,49 @@ function seritMetni(r: OkutmaSonucu): Serit | null {
           : `${(r.barkodlar ?? []).join(" + ")} — sayımı durdurma, sonunda çözersin.`,
         ...SARI,
       };
+    /* Kap okutması (KUTU_TASARIM.md). Kap "içinde NE var" der, "kaç tane"
+       demez: içerik ayda bir değişiyor, sayım yılda bir yapılıyor. Kayıttaki
+       adet bir varsayımdır ve sorulmadan sayıma yazılmaz. */
+    case "kutu_tanimsiz":
+      return {
+        Ikon: Ik.Soru,
+        ana: `TANIMSIZ KAP — ${r.kutu}`,
+        alt: "Bu kapta ne olduğunu bir kez söyle; kalıcı olarak kaydedilir ve "
+          + "gelecek sayımlarda kap kendi malzemesini söyler.",
+        ...SARI,
+      };
+    case "kutu_yabanci":
+      return {
+        Ikon: Ik.Soru,
+        ana: `KAP BAŞKA MALZEMEYE KAYITLI — ${r.kutu}`,
+        alt:
+          `Kayıtlı içeriği (${r.eski_kod}) bu ambarda yok. Kabın içeriği değişmiş ` +
+          "olabilir: kuyruktan doğru malzemeyi seç ya da fazla olarak yaz.",
+        ...SARI,
+      };
+    case "kutu_sor":
+      return {
+        Ikon: Ik.Katman,
+        ana: `${r.kutu} — ${r.kod}: kaç adet?`,
+        alt:
+          `${r.aciklama ?? ""} · ` +
+          (r.oneri_adet != null
+            ? `Kayıtta ${r.oneri_adet} yazıyor (yeni doğrulanmış). Doğrula ya da düzelt.`
+            : r.adet != null
+              ? `Son bilinen ${r.adet} adet ama kayıt eski — sayıp yaz.`
+              : "Kapta kaç adet olduğunu yaz."),
+        ...SARI,
+      };
+    case "kutu_seri":
+      return {
+        Ikon: Ik.Kilit,
+        ana: `${r.kutu} — ${r.kod} seri takipli`,
+        alt:
+          `${r.aciklama ?? ""} · Kap tek başına sayım değildir: her adet Tiger'da ` +
+          "ayrı satır. Cihazların seri numaralarını okut — kodu kilitlersen her " +
+          "cihazda malzemeyi tekrar okutmana gerek kalmaz.",
+        ...MAVI,
+      };
     case "iptal":
       return { Ikon: Ik.Tekrar, ana: "GRUP İPTAL", alt: "Tampon boşaltıldı.", ...SARI };
     case "gerial":
@@ -292,6 +335,9 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
   /* Elle fazla işaretlenen kayıtlar — adı sorulana (ya da geçilene) kadar. */
   const [fazlaIdler, setFazlaIdler] = useState<number[]>([]);
   const [fazlaAd, setFazlaAd] = useState("");
+  /* Kap sayısı. Alan ODAKLANMIYOR (autoFocus yok) — okuyucu hep barkod
+     kutusuna yazmalı, yoksa okutulan barkod adet alanına düşer. */
+  const [kutuAdet, setKutuAdet] = useState("");
   /* Ambiyans ışımasını yeniden tetiklemek için sayaç: aynı barkod arka arkaya
      okutulduğunda sonuç nesnesi aynı görünse de ışık yine çakmalı. */
   const [isik, setIsik] = useState(0);
@@ -333,6 +379,9 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
             setFazlaIdler(r.okutma);
             setFazlaAd("");
           }
+          // Taze kayıtta alan dolu gelir, bayatta BOŞ: 30 günden eski bir
+          // adet bilgi değil tahmindir (KUTU_TASARIM.md 6).
+          if (r.tip === "kutu_sor") setKutuAdet(r.oneri_adet != null ? String(r.oneri_adet) : "");
           setHata(null);
           if (r.durum) setDurum(r.durum);
         } catch (e) {
@@ -429,6 +478,26 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
     window.addEventListener("keydown", tus);
     return () => window.removeEventListener("keydown", tus);
   }, [gonder]);
+
+  /* Kaptaki adedi yaz ve say. Sunucuda `kutu_coz` çalışır: hem kabın son
+     bilinen adedi tazelenir hem sayım işlenir — ikisi tek yerden. */
+  async function kutuSay() {
+    if (son?.tip !== "kutu_sor" || !son.kuyruk_id || !son.kod) return;
+    const n = Number(kutuAdet);
+    if (!Number.isFinite(n) || n <= 0) return;
+    try {
+      await api.kutuCoz(son.kuyruk_id, son.kod, n);
+      bip("ok");
+      setSon(null);
+      setKutuAdet("");
+      setDurum(await api.durum(durum.oturum));
+    } catch (e) {
+      bip("uyari");
+      setHata(e instanceof Error ? e.message : String(e));
+    } finally {
+      odakla();
+    }
+  }
 
   async function fazlaAdKaydet() {
     const ad = fazlaAd.trim();
@@ -812,6 +881,71 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
               aslında eksik listesinde durduğunu orada görebilirsin.
             </p>
             <Dugme cocuk="Eşleştirmeye git" tur="ana" tikla={() => git("esleme")} />
+          </section>
+        )}
+
+        {/* Kap: "kaç adet?" cevabı burada verilir — ürün elde, kap açık.
+            Alan autoFocus DEĞİL: okuyucu barkod kutusuna yazmaya devam etmeli,
+            yoksa okutulan barkod adet alanına düşer. */}
+        {son?.tip === "kutu_sor" && (
+          <section className="girdi flex flex-wrap items-center gap-3 rounded-sm border
+            border-uyari bg-uyari-tint p-3">
+            <p className="min-w-0 flex-1 text-kucuk text-solgun">
+              <b className="text-yazi">{son.kutu}</b> · {son.kod} {son.aciklama}
+              {son.oneri_adet == null && son.adet != null && (
+                <> · son bilinen <b className="text-yazi">{son.adet}</b> adet, kayıt eski</>
+              )}
+            </p>
+            <input
+              type="number"
+              min={1}
+              value={kutuAdet}
+              onChange={(e) => setKutuAdet(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void kutuSay();
+                if (e.key === "Escape") e.currentTarget.blur();
+              }}
+              placeholder="adet"
+              className="rakam w-28 rounded-sm border border-cizgi-kuvvetli bg-zemin px-3
+                py-2 text-govde"
+            />
+            <Dugme
+              cocuk="Say"
+              tur="ana"
+              pasif={!(Number(kutuAdet) > 0)}
+              tikla={() => void kutuSay()}
+            />
+          </section>
+        )}
+
+        {/* Tanımsız / içeriği değişmiş kap: kuyrukta duruyor, oturum kapanmadan
+            cevaplanacak. Malzeme seçimi Kuyruk ekranında (arama + filtreler). */}
+        {(son?.tip === "kutu_tanimsiz" || son?.tip === "kutu_yabanci") && (
+          <section className="girdi flex flex-wrap items-center gap-3 rounded-sm border
+            border-uyari bg-uyari-tint p-3">
+            <p className="min-w-0 flex-1 text-kucuk text-solgun">
+              <b className="text-yazi">{son.kutu}</b> kuyrukta seni bekliyor. Kapta ne
+              olduğunu bir kez söyle — kayıt kalıcıdır, gelecek sayımda kap kendi
+              malzemesini söyler.
+            </p>
+            <Dugme cocuk="Kuyruğa git" tur="ana" tikla={() => git("kuyruk")} />
+          </section>
+        )}
+
+        {/* Seri takipli kap: sayımı seri numaraları yapar, kap yalnızca
+            malzemeyi getirir. Kilit tam da bu tekrarı kaldırmak için var. */}
+        {son?.tip === "kutu_seri" && son.kod && (
+          <section className="girdi flex flex-wrap items-center gap-3 rounded-sm border
+            border-bilgi bg-bilgi-tint p-3">
+            <p className="min-w-0 flex-1 text-kucuk text-solgun">
+              Şimdi cihazların seri numaralarını okut.
+              {son.adet != null && <> Kayıtta bu kapta <b className="text-yazi">{son.adet}</b> adet yazıyor.</>}
+            </p>
+            <Dugme
+              cocuk={`${son.kod} koduna kilitle`}
+              tur="ana"
+              tikla={() => void gonder(`##KILIT-${son.kod}##`)}
+            />
           </section>
         )}
 

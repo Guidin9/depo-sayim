@@ -10,6 +10,8 @@ import json
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
+from .. import etiketler
+from .. import kutu as kutum
 from .. import matching, norm
 from .ortak import DB, oturum_getir
 
@@ -33,6 +35,16 @@ class Not(BaseModel):
     adet: float | None = None
 
 
+class KutuCoz(BaseModel):
+    """Kap kaydının cevabı: içinde ne var, kaç tane sayıldı.
+
+    `malzeme` boşsa kuyruk kaydındaki öneri kullanılır. Seri takipli malzemede
+    `adet` istenmez — sayım seri numaralarıyla yapılır.
+    """
+    malzeme: str | None = None
+    adet: float | None = None
+
+
 class FazlaKapat(BaseModel):
     """Fazla olarak kapatma. Malzeme kodu bilinmiyorsa `ad` zorunludur."""
     ad: str | None = None
@@ -53,7 +65,31 @@ def _satir(c, r):
             "not_": r["not_"] or "", "beklet": bool(r["beklet"]), "fotolar": fotolar,
             "tur": r["tur"] or "bilinmiyor", "kod": r["kod"], "ad": r["ad"],
             "adet": float(r["adet"] or 0),
-            "aciklama": _aciklama(c, r["kod"])}
+            "aciklama": _aciklama(c, r["kod"]),
+            # Kap kaydında panel adedi kendisi önermeli: tazelik kararı
+            # sunucuda verilir (kutu.gorunum), arayüzde değil.
+            "kutu": _kutu(c, r)}
+
+
+def _kutu(c, r):
+    """Kap kaydının paneline gereken kap bilgisi. Kap kaydı değilse None."""
+    if (r["tur"] or "") != "kutu":
+        return None
+    kod = next((h for h in json.loads(r["barkodlar"])
+                if etiketler.etiket_turu(h) == "kutu"), None)
+    if not kod:
+        return None
+    o = c.execute("SELECT yukleme, ambar FROM oturum WHERE id=?",
+                  (r["oturum"],)).fetchone()
+    satir = kutum.getir(c, kod)
+    if not satir:
+        return {"kod": norm.norm(kod), "gosterim": str(kod).strip().upper(),
+                "malzeme": None, "aciklama": None, "adet": None, "izleme": None,
+                "raf": r["raf"], "yas_gun": None, "taze": False,
+                "tazelik_gun": kutum.TAZELIK_GUN, "oneri_adet": None,
+                "bu_ambarda": None, "ts": None, "ts_guncelle": None}
+    return kutum.gorunum(c, satir, o["yukleme"] if o else None,
+                         o["ambar"] if o else None)
 
 
 def _aciklama(c, kod):
@@ -77,6 +113,27 @@ def coz(kuyruk_id: int, istek: Coz, c=DB):
     sonuc = matching.kuyruk_coz(c, kuyruk_id, istek.beklenen_id)
     if "hata" in sonuc:
         raise HTTPException(404, sonuc["hata"])
+    c.commit()
+    return sonuc
+
+
+@router.post("/kuyruk/{kuyruk_id}/kutu")
+def kutu_coz(kuyruk_id: int, istek: KutuCoz, c=DB):
+    """Kap kaydını çöz: içeriği tanımla ve (serisizse) sayımı işle.
+
+    `kuyruk_coz`'un kap eşdeğeri. Ayrı uç, çünkü cevap ayrı: orada "bu hangi
+    kayıt", burada "bu kapta ne var, kaç tane".
+    """
+    _kuyruk_getir(c, kuyruk_id)
+    sonuc = matching.kutu_coz(c, kuyruk_id, malzeme=istek.malzeme, adet=istek.adet)
+    if sonuc.get("hata") in ("kap_malzeme_gerekli", "kap_adet_gerekli"):
+        raise HTTPException(400, {
+            "hata": sonuc["hata"],
+            "mesaj": ("Kapta ne olduğunu seçin." if sonuc["hata"] == "kap_malzeme_gerekli"
+                      else "Kapta kaç adet sayıldığını yazın — kayıttaki adet "
+                           "bir varsayımdır, sayım sonucu değil.")})
+    if "hata" in sonuc:
+        raise HTTPException(400, sonuc["hata"])
     c.commit()
     return sonuc
 

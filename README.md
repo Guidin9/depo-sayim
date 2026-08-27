@@ -203,15 +203,32 @@ Yazdırılabilir kart: `POST /api/komut-karti` gövdesinde `{"raflar":["A1","B2"
 ## Etiketi olmayan ürünler
 
 Kablo, fan, dökme parça gibi kalemlerde ne üretici parça numarası ne de okunabilir
-seri numarası var. **Etiket** ekranı bunlar için iki ayrı etiket basar:
+seri numarası var. **Etiket** ekranı bunlar için üç ayrı etiket basar:
 
 | Etiket | Ne söyler | Kaç farklı kod | Nereye |
 |---|---|---|---|
 | **Malzeme** `DM-000123` | Malzeme kodunun taranabilir hâli | Malzeme kodu sayısı | Raf gözüne / kutuya |
 | **Seri** `DS-000045` | Sadece sıralı numara | Etiketlenecek adet kadar | Okutulduğunda hangi ürüne yapıştıysa ona |
+| **Kap** `DK-000007` | Kabın kimliği: bu kapta ne var | Kap sayısı | Kabın üstüne, kalıcı |
 
 Bunlar `##RAF-A1##` konum barkodundan farklıdır: `##RAF-A1##` "neredeyim",
-`DM-` "ne bu", `DS-` "hangisi bu" der.
+`DM-` "ne bu", `DS-` "hangisi bu", `DK-` "bu kapta ne var" der.
+
+### Kap etiketi
+
+Aynı üründen 150 adedin durduğu kutular için. Kap bir kez okutulur, "içinde ne
+var" bir kez sorulur ve **kalıcı olarak** kaydedilir — gelecek sayımda kap
+malzemesini kendisi söyler, listede aramanız gerekmez.
+
+**Adet her sayımda yeniden sorulur** ve etikete basılmaz. Sebebi basit: kabın
+içeriği ayda bir değişiyor, sayım ise yılda bir yapılıyor. Kapta "150" yazıp
+içinde 130 olması hiç sayı yazmamaktan kötüdür — sayan kişi elindekine değil
+etikete inanır. Uygulama son bilinen adedi gösterir, ama 30 günden eskiyse
+alanı boş açar.
+
+Seri takipli üründe kap sayım yapmaz: kap malzemeyi getirir, siz cihazların
+seri numaralarını okutursunuz (kodu **kilitlerseniz** her cihazda malzemeyi
+tekrar okutmanız gerekmez).
 
 Malzeme etiketi kod başına **bir numaradır**, ama **kaç tane** basacağınızı siz
 seçersiniz. 160 malzemenin hepsine etiket gerekmez; bir sayfa basıp devam edin,
