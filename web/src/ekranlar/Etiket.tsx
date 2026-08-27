@@ -1,6 +1,14 @@
-/** Etiket basımı ve defteri (CLAUDE.md 12).
+/** Etiket ve barkod basımı (CLAUDE.md 12, 4.5 · KUTU_TASARIM.md 7).
  *
- * Depoda yazıcı yok: etiketler ofiste toplu basılıp elde götürülüyor.
+ * Depoda yazıcı yok: her şey ofiste toplu basılıp elde götürülüyor. Bu yüzden
+ * BASILAN HER ŞEY tek ekranda: kendi etiketlerimiz (DM / DS / DK), raf konum
+ * barkodları ve komut kartı.
+ *
+ * **Ekran açık oturum İSTEMEZ.** Barkod basmak Excel yüklemeden önce gelir:
+ * sayıma çıkmadan komut kartını ve raf etiketlerini basmak gerekiyor, hatta
+ * çoğu zaman Tiger raporu daha alınmamış oluyor. Yalnızca "ambardaki
+ * malzemelerin etiketi" seçeneği yükleme ister — o da ekranda söylenir,
+ * sessizce kaybolmaz.
  *
  * Ekrandaki sayılar TAVAN, hedef değil. Kesin bir sayı veremeyiz: depodaki
  * ürünlerin birçoğunun kutusunda üretici kodu ya da seri numarası zaten basılı,
@@ -37,11 +45,13 @@ export default function Etiket({
   tik,
   geri,
 }: {
-  yukleme: number;
-  ambar: string;
+  /** Açık oturum yoksa null — ekran yine çalışır (bkz. dosya başı). */
+  yukleme: number | null;
+  ambar: string | null;
   tik: number;
   geri: () => void;
 }) {
+  const oturumVar = yukleme != null && ambar != null;
   const [ihtiyac, setIhtiyac] = useState<EtiketIhtiyaci | null>(null);
   const [defter, setDefter] = useState<EtiketSatiri[]>([]);
   const [basimlar, setBasimlar] = useState<BasimOzeti[]>([]);
@@ -58,11 +68,22 @@ export default function Etiket({
   const [q, setQ] = useState("");
   const [hata, setHata] = useState<string | null>(null);
   const [mesgul, setMesgul] = useState(false);
+  /* Raf konum barkodları ve komut kartı (CLAUDE.md 4.5). Geçmiş ekranından
+     buraya taşındı: ikisi de basılan kâğıt, oturumla ilgileri yok. */
+  const [raflar, setRaflar] = useState("A1, A2, B1, B2");
+  const [rafKopya, setRafKopya] = useState(1);
+  const [rafAtla, setRafAtla] = useState(0);
 
   useEffect(() => {
     void (async () => {
       try {
-        setIhtiyac(await api.etiketIhtiyac(yukleme, ambar));
+        // İhtiyaç sayıları ambara bağlı; oturum yoksa hesaplanamaz ama
+        // ekranın geri kalanı çalışmaya devam eder.
+        setIhtiyac(
+          yukleme != null && ambar != null
+            ? await api.etiketIhtiyac(yukleme, ambar)
+            : null,
+        );
         setBasimlar(await api.basimlar());
         setKutuSayisi((await api.kutular(undefined, true)).length);
       } catch (e) {
@@ -70,6 +91,13 @@ export default function Etiket({
       }
     })();
   }, [yukleme, ambar, tik]);
+
+  /* Oturum yokken "ambardaki malzemeler" havuzu yok: yalnızca kodu HİÇ olmayan
+     ürünler için boş havuz basılabilir. Seçim sessizce değişmesin diye burada
+     zorlanıyor ve ekranda gerekçesi yazıyor. */
+  useEffect(() => {
+    if (!oturumVar && tur === "malzeme" && kapsam !== "bos") setKapsam("bos");
+  }, [oturumVar, tur, kapsam]);
 
   useEffect(() => {
     const zaman = setTimeout(() => {
@@ -94,8 +122,8 @@ export default function Etiket({
             : tur === "kutu" && kutuKapsam === "tanimli"
               ? "tanimli"
               : undefined,
-        yukleme: tur === "malzeme" ? yukleme : undefined,
-        ambar: tur === "malzeme" ? ambar : undefined,
+        yukleme: tur === "malzeme" ? (yukleme ?? undefined) : undefined,
+        ambar: tur === "malzeme" ? (ambar ?? undefined) : undefined,
         duzen,
         atla: duzen === "a4" ? atla : 0,
       });
@@ -108,13 +136,50 @@ export default function Etiket({
       p.document.close();
       p.focus();
       setTimeout(() => p.print(), 400);
-      setIhtiyac(await api.etiketIhtiyac(yukleme, ambar));
+      if (yukleme != null && ambar != null)
+        setIhtiyac(await api.etiketIhtiyac(yukleme, ambar));
       setBasimlar(await api.basimlar());
       setDefter(await api.etiketler(undefined, q.trim() || undefined));
     } catch (e) {
       setHata(e instanceof Error ? e.message : String(e));
     } finally {
       setMesgul(false);
+    }
+  }
+
+  /* Komut kartı ve raf etiketi: sunucudan hazır HTML, yeni sekmede yazdırılır
+     (etiket basımıyla aynı yol). */
+  function yazdirHtml(html: string) {
+    const p = window.open("", "_blank");
+    if (!p) {
+      setHata("Tarayıcı yeni sekmeyi engelledi — açılır pencerelere izin verin.");
+      return;
+    }
+    p.document.write(html);
+    p.document.close();
+    p.focus();
+    setTimeout(() => p.print(), 400);
+  }
+
+  const rafListesi = () =>
+    raflar
+      .split(/[,;\r\n]/)
+      .map((r) => r.trim())
+      .filter(Boolean);
+
+  async function rafEtiketYazdir() {
+    try {
+      yazdirHtml(await api.rafEtiketi(rafListesi(), rafKopya, rafAtla));
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function komutKartiYazdir() {
+    try {
+      yazdirHtml(await api.komutKarti(rafListesi()));
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -135,11 +200,24 @@ export default function Etiket({
           }
           tikla={geri}
         />
-        <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">Etiket basımı</h1>
+        <h1 className="text-4xl leading-[0.95] font-extrabold tracking-tight">
+          Etiket ve barkod basımı
+        </h1>
       </header>
 
       {hata && <Uyari cocuk={hata} />}
 
+      {!oturumVar && (
+        <p className="rounded-sm border border-bilgi bg-bilgi-tint p-3 text-kucuk
+          leading-snug">
+          Açık sayım yok — sorun değil. <b>Komut kartı, raf barkodları, kap ve seri
+          etiketleri</b> Tiger raporu yüklenmeden basılabilir; sayıma çıkmadan
+          yapılacak iş zaten bu. Yalnızca "ambardaki malzemelerin etiketi" bir
+          yükleme ister: hangi malzemelerin bastırılacağı o rapordan geliyor.
+        </p>
+      )}
+
+      {oturumVar && (
       <Panel
         baslik={`Ambar ${ambar} — en fazla ne kadar gerekebilir`}
         cocuk={
@@ -192,6 +270,7 @@ export default function Etiket({
           )
         }
       />
+      )}
 
       <Panel
         baslik="Bas ve yazdır"
@@ -213,14 +292,25 @@ export default function Etiket({
               <>
                 <Alan etiket="Hangi havuzdan">
                   <Secim
-                    secenekler={[
-                      ["eksik", `Etiketi olmayanlar (${ihtiyac?.malzeme.eksik ?? 0})`],
-                      ["hepsi", `Ambardaki tümü (${ihtiyac?.malzeme.tekil ?? 0})`],
-                      ["bos", "Boş havuz — kodu hiç olmayan ürünler"],
-                    ]}
+                    secenekler={
+                      oturumVar
+                        ? [
+                            ["eksik", `Etiketi olmayanlar (${ihtiyac?.malzeme.eksik ?? 0})`],
+                            ["hepsi", `Ambardaki tümü (${ihtiyac?.malzeme.tekil ?? 0})`],
+                            ["bos", "Boş havuz — kodu hiç olmayan ürünler"],
+                          ]
+                        : [["bos", "Boş havuz — kodu hiç olmayan ürünler"]]
+                    }
                     deger={kapsam}
                     degistir={(v) => setKapsam(v as Kapsam)}
                   />
+                  {!oturumVar && (
+                    <p className="mt-2 text-kucuk text-solgun">
+                      Ambardaki malzemelerin etiketi için önce Tiger raporu yüklenmeli —
+                      hangi malzemelerin bastırılacağı o rapordan geliyor. Kodu hiç
+                      olmayan ürünler (5 m kablo gibi) için boş havuz şimdi de basılır.
+                    </p>
+                  )}
                 </Alan>
                 <Alan etiket="Kaç malzeme">
                   <div className="flex flex-wrap items-center gap-2">
@@ -408,6 +498,84 @@ export default function Etiket({
               Numara okunuyor ama Tiger&apos;da yoksa aynı grupta elle yazıp Enter&apos;a
               bas; Tiger&apos;a o yazılır.
             </p>
+          </div>
+        }
+      />
+
+      {/* Raf konum barkodları ve komut kartı. Geçmiş ekranından buraya taşındı:
+          ikisi de BASILAN KÂĞIT ve hiçbiri oturuma bağlı değil — sayıma
+          çıkmadan, çoğu zaman Tiger raporu daha alınmadan basılıyorlar. */}
+      <Panel
+        baslik="Raf barkodları ve komut kartı"
+        cocuk={
+          <div className="flex flex-col gap-3">
+            <p className="text-kucuk text-solgun">
+              Raf adlarını virgülle ayırın. İki çıktı: <b>raf etiketi</b> yapışkanlı
+              24&apos;lük A4 sayfaya basılıp doğrudan rafa yapıştırılır; <b>komut kartı</b>
+              düz kâğıda basılıp kesilir ve laminatlanır (komutlar + raf barkodları +
+              1/5/10/25/50/100 adet barkodları birlikte).
+            </p>
+            <input
+              value={raflar}
+              onChange={(e) => setRaflar(e.target.value)}
+              placeholder="A1, A2, B1…"
+              className="w-full rounded-sm border border-cizgi bg-zemin px-4 py-3 font-mono
+                text-govde focus:border-vurgu focus:outline-none"
+            />
+            <div className="flex flex-wrap items-end gap-4">
+              <Alan etiket="Her raftan kaç kopya">
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={rafKopya}
+                  onChange={(e) => setRafKopya(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-24 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                    font-mono text-govde focus:border-vurgu focus:outline-none"
+                />
+              </Alan>
+              <Alan etiket="Kaçıncı hücreden başla">
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={rafAtla}
+                  onChange={(e) =>
+                    setRafAtla(Math.min(23, Math.max(0, Number(e.target.value) || 0)))
+                  }
+                  className="w-24 rounded-sm border border-cizgi bg-zemin px-4 py-3
+                    font-mono text-govde focus:border-vurgu focus:outline-none"
+                />
+              </Alan>
+              <span className="max-w-md text-kucuk text-solgun">
+                Kopya ve başlangıç hücresi yalnızca yapışkanlı raf etiketi içindir —
+                yarım kalmış sayfayı israf etmeyin. Türkçe harfler ASCII&apos;ye katlanır
+                (<span className="font-mono">ÜST-1</span> →{" "}
+                <span className="font-mono">UST-1</span>): Code128 ASCII dışını taşımıyor
+                ve basılan değerle sonradan elle yazılan değer <b>aynı olmalı</b>, yoksa
+                iki ayrı raf sayılır.
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Dugme
+                cocuk={
+                  <>
+                    <Ik.Yazdir /> Yapışkanlı raf etiketi yazdır
+                  </>
+                }
+                tur="ana"
+                pasif={rafListesi().length === 0}
+                tikla={() => void rafEtiketYazdir()}
+              />
+              <Dugme
+                cocuk={
+                  <>
+                    <Ik.Yazdir /> Komut kartı (laminat) yazdır
+                  </>
+                }
+                tikla={() => void komutKartiYazdir()}
+              />
+            </div>
           </div>
         }
       />

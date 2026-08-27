@@ -200,6 +200,20 @@ Yazdırılabilir kart: `POST /api/komut-karti` gövdesinde `{"raflar":["A1","B2"
 
 ---
 
+## Basılan her şey: Barkod ekranı
+
+Üst menüdeki **Barkod** düğmesi her şeyi tek yerde toplar: komut kartı, raf
+konum barkodları ve kendi etiketlerimiz (malzeme · seri · kap).
+
+**Excel yüklemeden de açılır.** Sayıma çıkmadan önce basılacakların çoğu
+Tiger raporuna bağlı değil; yalnızca "ambardaki malzemelerin etiketi" bir
+yükleme ister ve ekran bunu söyler.
+
+- **Komut kartı** — düz kâğıda basılır, kesilir, laminatlanır. Komutlar + raf
+  barkodları + 1/5/10/25/50/100 adet barkodları.
+- **Raf etiketi** — yapışkanlı 24'lük A4 sayfa, doğrudan rafa yapıştırılır.
+- **Etiketler** — aşağıdaki üç sınıf.
+
 ## Etiketi olmayan ürünler
 
 Kablo, fan, dökme parça gibi kalemlerde ne üretici parça numarası ne de okunabilir

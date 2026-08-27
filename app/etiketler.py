@@ -298,8 +298,19 @@ def bas(c, tur, adet=None, kopya=1, kapsam="eksik", yukleme=None, ambar=None,
 
 def defter(c, tur=None, basim=None, q=None, limit=500):
     """Etiket defteri — fiziksel etiketle dijital kaydı eşleyen tek kayıt."""
-    sql = ["""SELECT e.*, (SELECT aciklama FROM beklenen WHERE kod=e.malzeme
-                           ORDER BY yukleme DESC LIMIT 1) aciklama,
+    # Kap etiketinde malzeme `etiket` tablosunda DEĞİL `kutu` defterinde durur:
+    # kabın içeriği değişebilir, etiket numarası değişmez. COALESCE olmadan
+    # ekrandaki defter kap satırlarını malzemesiz gösteriyor, rapordaki
+    # Etiketler sekmesi ise doğru gösteriyordu — iki yerde iki ayrı gerçek.
+    # `e.*` zaten bir `malzeme` sütunu getiriyor; ikinci kez aynı adla
+    # seçilemez (sqlite3.Row ilk eşleşmeyi döner, yani hep NULL gelirdi).
+    # Kap malzemesi ayrı adla çekilip aşağıda birleştiriliyor.
+    sql = ["""SELECT e.*,
+                     (SELECT malzeme FROM kutu WHERE kod=e.kod) kutu_malzeme,
+                     (SELECT aciklama FROM beklenen
+                      WHERE kod=COALESCE(e.malzeme,
+                                (SELECT malzeme FROM kutu WHERE kod=e.kod))
+                      ORDER BY yukleme DESC LIMIT 1) aciklama,
                      (SELECT seri FROM beklenen WHERE id=e.beklenen_id) slot
               FROM etiket e WHERE 1=1"""]
     par = []
@@ -310,11 +321,18 @@ def defter(c, tur=None, basim=None, q=None, limit=500):
         sql.append("AND e.basim=?")
         par.append(basim)
     if q:
-        sql.append("AND (e.gosterim LIKE ? OR e.malzeme LIKE ?)")
-        par += ["%" + q + "%"] * 2
+        sql.append("AND (e.gosterim LIKE ? OR e.malzeme LIKE ? OR EXISTS("
+                   "SELECT 1 FROM kutu k WHERE k.kod=e.kod AND k.malzeme LIKE ?))")
+        par += ["%" + q + "%"] * 3
     sql.append("ORDER BY e.tur, e.kod LIMIT ?")
     par.append(limit)
-    return [dict(r) for r in c.execute(" ".join(sql), par)]
+    cikti = []
+    for r in c.execute(" ".join(sql), par):
+        d = dict(r)
+        d["malzeme"] = d["malzeme"] or d.pop("kutu_malzeme")
+        d.pop("kutu_malzeme", None)
+        cikti.append(d)
+    return cikti
 
 
 def basimlar(c, limit=50):

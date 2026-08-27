@@ -149,7 +149,10 @@ export default function App() {
               {durum && acikMi && (
                 <Dugme cocuk="Sayıma dön" tur="ana" tikla={() => setEkran("sayim")} />
               )}
-              {durum && <Dugme cocuk="Etiket" tikla={() => setEkran("etiket")} />}
+              {/* Barkod ekranı AÇIK OTURUM İSTEMEZ: komut kartı, raf barkodları
+                  ve kap/seri etiketleri Tiger raporu yüklenmeden basılır —
+                  sayıma çıkmadan yapılacak iş zaten bu (saha isteği). */}
+              <Dugme cocuk="Barkod" tikla={() => setEkran("etiket")} />
               {durum && <Dugme cocuk="Ayarlar" tikla={() => setEkran("ayarlar")} />}
               <Dugme cocuk="Geçmiş" tikla={() => setEkran("gecmis")} />
               {!acikMi && <Dugme cocuk="Yeni sayım" tikla={() => setEkran("kurulum")} />}
@@ -202,12 +205,15 @@ export default function App() {
             />
           )}
 
-          {/* Etiket basımı ofis işi: koridorda değil, sayıma çıkmadan önce
-              yapılır. Bu yüzden sayım ekranının başlığına konmadı. */}
-          {ekran === "etiket" && durum && (
+          {/* Etiket ve barkod basımı ofis işi: koridorda değil, sayıma çıkmadan
+              önce yapılır. Bu yüzden sayım ekranının başlığına konmadı — ama üst
+              menüde HER ZAMAN duruyor ve oturum istemiyor: yüklemeye bağlı olan
+              tek şey "ambardaki malzemelerin etiketi", ekran bunu kendisi
+              söylüyor. */}
+          {ekran === "etiket" && (
             <Etiket
-              yukleme={durum.yukleme}
-              ambar={durum.ambar}
+              yukleme={durum?.yukleme ?? null}
+              ambar={durum?.ambar ?? null}
               tik={tik}
               geri={() => setEkran(acikMi ? "sayim" : "gecmis")}
             />

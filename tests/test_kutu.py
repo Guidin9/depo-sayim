@@ -316,6 +316,18 @@ def test_kap_defteri_csvden_geri_gelir(c, ot):
     assert etiketler.sonraki_no(c, "kutu") > int(kap.split("-")[1])
 
 
+def test_defterde_kap_malzemesi_gorunur(c):
+    """Ekrandaki defter ile rapordaki Etiketler sekmesi aynı şeyi göstermeli."""
+    kod = _lot_malzeme(c)
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, kod, 150, "lot")
+
+    satir = next(x for x in etiketler.defter(c, tur="kutu") if x["gosterim"] == kap)
+    assert satir["malzeme"] == kod and satir["aciklama"]
+    # Kap malzemesiyle de aranabilmeli.
+    assert any(x["gosterim"] == kap for x in etiketler.defter(c, q=kod))
+
+
 # ------------------------------------------------------------- basılan etiket
 def test_kap_etiketi_adet_basmaz(c):
     """Etikete adet basmak, ayda bir değişen içerikte yalancı şahit olurdu."""
@@ -368,6 +380,29 @@ def test_api_kap_akisi(kurulu):
     # İçerik değişti: kap boşaltılır, numara kalır.
     assert ist.delete("/api/kutu/%s" % kap).json()["malzeme"] is None
     assert ist.get("/api/kutu/%s" % kap).status_code == 200
+
+
+def test_api_barkod_oturumsuz_basilir(istemci):
+    """Barkod ekranı Tiger raporu YÜKLENMEDEN çalışmalı (saha isteği).
+
+    Sayıma çıkmadan basılacak şeylerin çoğu yüklemeye bağlı değil: komut kartı,
+    raf barkodları, kap etiketi, seri etiketi ve kodu hiç olmayan ürünler için
+    boş malzeme havuzu. Yüklemeye bağlı olan tek şey "ambardaki malzemelerin
+    etiketi" — hangi malzemelerin bastırılacağı o rapordan geliyor.
+    """
+    pytest.importorskip("barcode")
+    kap = istemci.post("/api/etiket/basim", json={"tur": "kutu", "adet": 2})
+    assert kap.status_code == 200 and "DK-000001" in kap.text
+    assert istemci.post("/api/etiket/basim",
+                        json={"tur": "seri", "adet": 2}).status_code == 200
+    assert istemci.post("/api/etiket/basim",
+                        json={"tur": "malzeme", "adet": 2,
+                              "kapsam": "bos"}).status_code == 200
+    assert istemci.post("/api/raf-etiketi",
+                        json={"raflar": ["A1", "ÜST-1"], "kopya": 1,
+                              "atla": 0}).status_code == 200
+    assert istemci.post("/api/komut-karti",
+                        json={"raflar": ["A1"]}).status_code == 200
 
 
 def test_api_kap_tanimlama_ambar_disini_reddeder(kurulu):

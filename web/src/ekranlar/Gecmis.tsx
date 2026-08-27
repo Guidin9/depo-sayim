@@ -1,4 +1,10 @@
-/** 5. ekran — geçmiş sayımlar, tekrar rapor indirme, komut kartı üretimi. */
+/** 5. ekran — geçmiş sayımlar ve tekrar rapor indirme.
+ *
+ * Komut kartı ve raf barkodları buradan ALINDI (2026-08-27): ikisi de basılan
+ * kâğıt ve oturumla ilgileri yok. Artık basılan her şey tek ekranda —
+ * `ekranlar/Etiket.tsx`, üst menüdeki **Barkod** düğmesi. Orası açık oturum
+ * istemiyor, yani Tiger raporu yüklenmeden de barkod bastırılabiliyor.
+ */
 import { useEffect, useState } from "react";
 import { api, type OturumOzeti } from "../api";
 import { Bos, Dugme, Panel } from "../bilesenler";
@@ -14,36 +20,9 @@ export default function Gecmis({
   rapora: (oturum: number) => void;
 }) {
   const [liste, setListe] = useState<OturumOzeti[]>([]);
-  const [raflar, setRaflar] = useState("A1, A2, B1, B2");
-  const [kopya, setKopya] = useState(1);
-  const [atla, setAtla] = useState(0);
-
   useEffect(() => {
     void api.oturumlar().then(setListe);
   }, [tik]);
-
-  const rafListesi = () =>
-    raflar
-      .split(/[,\n;]/)
-      .map((r) => r.trim())
-      .filter(Boolean);
-
-  function yazdirHtml(html: string) {
-    const p = window.open("", "_blank");
-    if (!p) return;
-    p.document.write(html);
-    p.document.close();
-    p.focus();
-    setTimeout(() => p.print(), 400);
-  }
-
-  async function kartYazdir() {
-    yazdirHtml(await api.komutKarti(rafListesi()));
-  }
-
-  async function rafEtiketYazdir() {
-    yazdirHtml(await api.rafEtiketi(rafListesi(), kopya, atla));
-  }
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5 p-5">
@@ -114,81 +93,6 @@ export default function Gecmis({
         }
       />
 
-      <Panel
-        baslik="Komut ve raf barkodları"
-        cocuk={
-          <div className="flex flex-col gap-3">
-            <p className="text-kucuk text-solgun">
-              Raf adlarını virgülle ayırın. İki çıktı: <b>komut kartı</b> düz kâğıda
-              basılıp kesilir ve laminatlanır (komutlar + raf barkodları birlikte);{" "}
-              <b>raf etiketi</b> ise yapışkanlı 24&apos;lük A4 sayfaya basılıp doğrudan
-              rafa yapıştırılır.
-            </p>
-            <input
-              value={raflar}
-              onChange={(e) => setRaflar(e.target.value)}
-              placeholder="A1, A2, B1…"
-              className="w-full rounded-sm border border-cizgi bg-zemin px-4 py-3 font-mono
-                text-govde focus:border-vurgu focus:outline-none"
-            />
-            <div className="flex flex-wrap items-end gap-4">
-              <label className="flex flex-col gap-1">
-                <span className="text-mikro font-bold tracking-wider text-solgun uppercase">
-                  Her raftan kaç kopya
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={kopya}
-                  onChange={(e) => setKopya(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-24 rounded-sm border border-cizgi bg-zemin px-4 py-3
-                    font-mono text-govde focus:border-vurgu focus:outline-none"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-mikro font-bold tracking-wider text-solgun uppercase">
-                  Kaçıncı hücreden başla
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={atla}
-                  onChange={(e) => setAtla(Math.min(23, Math.max(0, Number(e.target.value) || 0)))}
-                  className="w-24 rounded-sm border border-cizgi bg-zemin px-4 py-3
-                    font-mono text-govde focus:border-vurgu focus:outline-none"
-                />
-              </label>
-              <span className="text-kucuk text-solgun">
-                Kopya ve başlangıç hücresi yalnızca yapışkanlı raf etiketi içindir —
-                yarım kalmış sayfayı israf etmeyin. Komut kartı ayrıca 1/5/10/25/50/100
-                adet barkodlarını da basar: lot ve dökme kalemlerde miktar girmek için.
-                Üst üste okutulursa toplanır.
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Dugme
-                cocuk={
-                  <>
-                    <Ik.Yazdir /> Yapışkanlı raf etiketi yazdır
-                  </>
-                }
-                tur="ana"
-                tikla={() => void rafEtiketYazdir()}
-              />
-              <Dugme
-                cocuk={
-                  <>
-                    <Ik.Yazdir /> Komut kartı (laminat) yazdır
-                  </>
-                }
-                tikla={() => void kartYazdir()}
-              />
-            </div>
-          </div>
-        }
-      />
     </div>
   );
 }

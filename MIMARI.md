@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-27 · 397 test geçiyor.
+Son güncelleme: 2026-08-27 · 399 test geçiyor.
 
 ---
 
@@ -547,11 +547,16 @@ alanının odaklanmasını engeller. `/telefon` rotasıyla ilgisi yoktur.
 | Sayım | `ekranlar/Sayim.tsx` | Barkod girişi, tampon, akış | PC |
 | Kuyruk | `ekranlar/Kuyruk.tsx` | Tanınmayanları rafa göre çöz; **kap kaydında malzeme + adet paneli** | PC |
 | Rapor | `ekranlar/Rapor.tsx` | 7 sekme önizleme, xlsx, oturumu bitir. **`SEKME` listesi `reports.SEKME`'nin kopyasıdır** — sekme eklerken ikisi de güncellenir | PC |
-| Geçmiş | `ekranlar/Gecmis.tsx` | Eski oturumlar, komut kartı | PC |
+| Geçmiş | `ekranlar/Gecmis.tsx` | Eski oturumlar, rapor indirme | PC |
 | Ayarlar | `ekranlar/Ayarlar.tsx` | Aktif raf, kurallar, ses, cihaz modu | PC |
-| Etiket | `ekranlar/Etiket.tsx` | Etiket basımı ve defteri (DM / DS / **DK kap**) | PC |
+| Barkod | `ekranlar/Etiket.tsx` | **Basılan her şey**: DM / DS / DK etiketleri, raf konum barkodları, komut kartı, etiket defteri. **Açık oturum İSTEMEZ** — yalnızca "ambardaki malzemelerin etiketi" yükleme ister, ekran bunu söyler | PC |
 | Eşleştirme | `ekranlar/Esleme.tsx` | Sayım sonu: fazla ↔ eksik elle eşleştirme, fazla fotoğrafı | PC |
 | Telefon | `ekranlar/Telefon.tsx` | Monitör + uzaktan kumanda + kuyruk çözme | `/telefon` |
+
+Üst menüdeki **Barkod** düğmesi her zaman görünür (2026-08-27): sayıma
+çıkmadan komut kartı ve raf barkodu basmak gerekiyor, çoğu zaman Tiger raporu
+daha alınmamış oluyor. Raf ve komut barkodları Geçmiş ekranından buraya
+taşındı — ikisi de basılan kâğıt, oturumla ilgileri yok.
 
 **Telefon modunda iç yönlendirme yoktur** — `App.tsx` tek bileşen render eder,
 nav yoktur. Telefona sekme gerekirse önce orada bir `useState` açılmalıdır.
@@ -605,7 +610,7 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **397 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **399 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
 
 | Dosya | Kapsam |
