@@ -132,12 +132,20 @@ export default function Kuyruk({
 
   /* Kabın içeriğini yaz ve (serisizse) say. Sunucu ikisini tek işlemde
      yapıyor: kap defteri kalıcı, sayım oturuma ait. */
+  /* Kap panelinde hangi malzeme geçerli: listeden seçilen > kabın BU AMBARDA
+     kayıtlı içeriği > kuyruk kaydındaki öneri. Kabın başka ambara ait eski
+     içeriği öneri sayılmaz — sunucu onu reddeder (CLAUDE.md 3.5). */
+  const kutuSecili = (k: KuyrukSatiri) =>
+    kutuMalzeme?.kod ?? (k.kutu?.bu_ambarda ? k.kutu.malzeme : null) ?? k.kod;
+  const kutuIzleme = (k: KuyrukSatiri) =>
+    kutuMalzeme?.izleme ?? (k.kutu?.bu_ambarda ? k.kutu.izleme : null);
+
   async function kutuKaydet() {
     if (!secili) return;
     // Kayıtlı içerik varsa yeniden seçtirmiyoruz: kap zaten "bende bu var"
     // diyor, eksik olan yalnızca adet. Listeden seçim onu EZER.
-    const kod = kutuMalzeme?.kod ?? secili.kutu?.malzeme;
-    const seriTakipli = (kutuMalzeme?.izleme ?? secili.kutu?.izleme) === "seri";
+    const kod = kutuSecili(secili);
+    const seriTakipli = kutuIzleme(secili) === "seri";
     if (!kod) return;
     const n = Number(kutuAdet);
     if (!seriTakipli && !(n > 0)) return;
@@ -615,13 +623,11 @@ export default function Kuyruk({
               {secili.tur === "kutu" && (
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="min-w-0 flex-1 text-kucuk">
-                    {kutuMalzeme || secili.kutu?.malzeme ? (
+                    {kutuSecili(secili) ? (
                       <>
-                        <b className="font-mono">
-                          {kutuMalzeme?.kod ?? secili.kutu?.malzeme}
-                        </b>{" "}
+                        <b className="font-mono">{kutuSecili(secili)}</b>{" "}
                         <span className="text-solgun">
-                          {kutuMalzeme?.aciklama ?? secili.kutu?.aciklama}
+                          {kutuMalzeme?.aciklama ?? secili.kutu?.aciklama ?? ""}
                         </span>
                         {!kutuMalzeme && (
                           <span className="text-solgun"> · kayıtlı içerik</span>
@@ -633,7 +639,7 @@ export default function Kuyruk({
                   </span>
                   {/* Seri takipli kapta adet SORULMAZ: her adet Tiger'da ayrı
                       satır, sayımı seri numaraları yapar. */}
-                  {(kutuMalzeme?.izleme ?? secili.kutu?.izleme) === "seri" ? (
+                  {kutuIzleme(secili) === "seri" ? (
                     <span className="text-kucuk text-bilgi">
                       seri takipli — kap kaydedilir, cihazlar tek tek okutulur
                     </span>
@@ -658,9 +664,8 @@ export default function Kuyruk({
                     cocuk="Kaydet ve say"
                     tur="ana"
                     pasif={
-                      !(kutuMalzeme?.kod ?? secili.kutu?.malzeme) ||
-                      ((kutuMalzeme?.izleme ?? secili.kutu?.izleme) !== "seri" &&
-                        !(Number(kutuAdet) > 0))
+                      !kutuSecili(secili) ||
+                      (kutuIzleme(secili) !== "seri" && !(Number(kutuAdet) > 0))
                     }
                     tikla={() => void kutuKaydet()}
                   />

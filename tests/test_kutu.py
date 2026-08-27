@@ -198,14 +198,43 @@ def test_seri_takipli_kapla_birlikte_seri_okutulursa_sayilir(c, ot):
     assert s["tip"] == "eslesti" and s["seri"] == r["seri"]
 
 
+def test_tanimsiz_kapla_birlikte_okutulan_urun_sayilir(c, ot):
+    """Kap tanımsız diye elindeki cihaz sayılmadan kalmamalı.
+
+    Eskiden grup kuyruğa düşüyordu ve kuyruk kabı olarak çözülünce de sayım
+    yapılmıyordu (seri takipli kapta sayım seri numaralarıyla olur) — okutma
+    sessizce buharlaşıyordu.
+    """
+    r = c.execute("""SELECT kod, seri FROM beklenen WHERE yukleme=1 AND ambar=?
+                     AND haric=0 AND izleme='seri' AND kirli=0 AND seri<>''
+                     ORDER BY id LIMIT 1""", (AMBAR,)).fetchone()
+    if not r:
+        pytest.skip("test verisinde temiz seri kaydı yok")
+    kap = _kap_bas(c)[0]
+
+    s = _yaz(c, ot, kap, r["seri"], SONRAKI)
+    assert s["tip"] == "eslesti" and s["seri"] == r["seri"]
+    assert matching.bekleyen_kuyruk(c, ot["id"]) == []
+    # Kap denetim izinde durur ama kayıt tanımlanmaz: içeriği SORULARAK
+    # yazılır, tahminle değil.
+    satir = c.execute("SELECT ham, not_ FROM okutma WHERE oturum=? ORDER BY id "
+                      "DESC LIMIT 1", (ot["id"],)).fetchone()
+    assert kap in satir["ham"] and "kutu: %s" % kap in satir["not_"]
+    assert kutum.getir(c, kap) is None
+
+
 def test_yabanci_kap_kuyruga_duser(c, ot):
     """Kayıtlı malzemesi bu ambarda yoksa uygulama tahmin yürütmez."""
     kap = _kap_bas(c)[0]
     kutum.tanimla(c, kap, "BASKA-DEPO-KODU", 5, "lot")
     s = _yaz(c, ot, kap, SONRAKI)
     assert s["tip"] == "kutu_yabanci" and s["eski_kod"] == "BASKA-DEPO-KODU"
-    assert c.execute("SELECT tur FROM kuyruk WHERE id=?",
-                     (s["kuyruk_id"],)).fetchone()["tur"] == "kutu"
+    q = c.execute("SELECT tur, kod, not_ FROM kuyruk WHERE id=?",
+                  (s["kuyruk_id"],)).fetchone()
+    assert q["tur"] == "kutu"
+    # Bu ambarda olmayan kod ÖNERİ DEĞİLDİR: arayüz onu doldurup gönderseydi
+    # sunucu 400 verirdi. Not alanında durur, öneri alanında durmaz.
+    assert q["kod"] is None and "BASKA-DEPO-KODU" in q["not_"]
 
 
 def test_ayni_kap_iki_kez_okutulunca_tek_soru(c, ot):
@@ -253,6 +282,22 @@ def test_elle_okutulan_kod_kabi_yener(c, ot):
     k = kutum.getir(c, kap)
     assert k["malzeme"] == kodlar[0] and k["adet"] == 150
 
+    # Adet girilmemişse de kabın adedi SORULMAZ: elindeki ürün başka.
+    s = _yaz(c, ot, kap, kodlar[1], SONRAKI)
+    assert s["tip"] == "adet" and s["kod"] == kodlar[1] and s["miktar"] == 1
+    assert matching.bekleyen_kuyruk(c, ot["id"]) == []
+
+
+def test_kap_okutup_kilit_karti_calisir(c, ot):
+    """Seri takipli kaptaki asıl akış: kabı okut, kilitle, S/N'leri okut."""
+    kod = _seri_malzeme(c)
+    kap = _kap_bas(c)[0]
+    kutum.tanimla(c, kap, kod, 21, "seri")
+
+    s = _yaz(c, ot, kap, "##KILIT##")
+    assert s["tip"] == "kilit" and s["kod"] == kod
+    assert oturum_taze(c, ot)["sabit_kod"] == kod
+
 
 # ------------------------------------------------------------------ geri al
 def test_gerial_kap_kaydini_da_geri_alir(c, ot):
@@ -293,7 +338,12 @@ def test_raporda_kutu_turu_ve_seri_onerisi(c, ot):
     kutum.tanimla(c, kap, kod, 150, "lot")
 
     assert reports._yeni_seri("%s + X9Y/0000Z" % kap) == "X9Y/0000Z"
-    assert reports._yeni_seri(kap) == kap        # tek parça: elemeye takılmaz
+    # TEK PARÇA da elenir: aday kalmadıysa öneri yoktur. Eskiden kısa devre
+    # buradaydı ve yalnızca kap kodu okutulmuş bir fazla kaydı Tiger'a kap
+    # numarasını seri no diye yazdırıyordu.
+    assert reports._yeni_seri(kap) == ""
+    assert matching._fazla_seri([kap], None) == ""
+    assert matching._fazla_seri([kap, "X9Y/0000Z"], None) == "X9Y/0000Z"
 
     veri = reports.rapor_verisi(c, ot["id"])
     satir = next(s for s in veri["Etiketler"]["satirlar"] if s[0] == kap)
@@ -326,6 +376,27 @@ def test_defterde_kap_malzemesi_gorunur(c):
     assert satir["malzeme"] == kod and satir["aciklama"]
     # Kap malzemesiyle de aranabilmeli.
     assert any(x["gosterim"] == kap for x in etiketler.defter(c, q=kod))
+
+
+def test_kap_defteri_basilmis_kaplari_gosterir(c):
+    """Basılmış ama içeriği sorulmamış kap da defterde görünmeli.
+
+    `kutu` satırı ilk tanımlamada doğuyor; defter yalnızca oraya bakarsaydı 24
+    kap etiketi basan kullanıcı "defter boş" görürdü.
+    """
+    kod = _lot_malzeme(c)
+    kaplar = _kap_bas(c, 3)
+    kutum.tanimla(c, kaplar[0], kod, 150, "lot")
+
+    hepsi = kutum.liste(c)
+    assert len(hepsi) == 3
+    dolu = next(x for x in hepsi if x["gosterim"] == kaplar[0])
+    bos = next(x for x in hepsi if x["gosterim"] == kaplar[1])
+    assert dolu["malzeme"] == kod and dolu["taze"] is True and dolu["aciklama"]
+    # Boş kapta tazelik anlamsız: `ts` basım tarihi, "adet doğrulandı" değil.
+    assert bos["malzeme"] is None and bos["taze"] is False and bos["yas_gun"] is None
+    assert len(kutum.liste(c, sadece_tanimli=True)) == 1
+    assert len(kutum.liste(c, q=kod)) == 1
 
 
 # ------------------------------------------------------------- basılan etiket

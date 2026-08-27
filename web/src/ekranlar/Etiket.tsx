@@ -16,7 +16,13 @@
  * vermez, öneri yapar; adedi kullanıcı seçer.
  */
 import { useEffect, useState } from "react";
-import { api, type BasimOzeti, type EtiketIhtiyaci, type EtiketSatiri } from "../api";
+import {
+  api,
+  type BasimOzeti,
+  type EtiketIhtiyaci,
+  type EtiketSatiri,
+  type KutuSatiri,
+} from "../api";
 import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
 import * as Ik from "../ikonlar";
 
@@ -62,7 +68,8 @@ export default function Etiket({
   const [kapsam, setKapsam] = useState<Kapsam>("eksik");
   const [kutuKapsam, setKutuKapsam] = useState<KutuKapsam>("yeni");
   const [kAdet, setKAdet] = useState(A4_HUCRE);
-  const [kutuSayisi, setKutuSayisi] = useState(0);
+  const [kutular, setKutular] = useState<KutuSatiri[]>([]);
+  const [kutuQ, setKutuQ] = useState("");
   const [duzen, setDuzen] = useState<Duzen>("a4");
   const [atla, setAtla] = useState(0);
   const [q, setQ] = useState("");
@@ -85,7 +92,7 @@ export default function Etiket({
             : null,
         );
         setBasimlar(await api.basimlar());
-        setKutuSayisi((await api.kutular(undefined, true)).length);
+        setKutular(await api.kutular());
       } catch (e) {
         setHata(e instanceof Error ? e.message : String(e));
       }
@@ -140,6 +147,10 @@ export default function Etiket({
         setIhtiyac(await api.etiketIhtiyac(yukleme, ambar));
       setBasimlar(await api.basimlar());
       setDefter(await api.etiketler(undefined, q.trim() || undefined));
+      // Yeni basılan kaplar defterde hemen görünsün: basıldıkları an anonimler
+      // ve içerikleri depoda sorulacak, ama kullanıcı kaç kap bastığını
+      // ekranda görmeli.
+      setKutular(await api.kutular());
     } catch (e) {
       setHata(e instanceof Error ? e.message : String(e));
     } finally {
@@ -182,6 +193,32 @@ export default function Etiket({
       setHata(e instanceof Error ? e.message : String(e));
     }
   }
+
+  /* Kabı boşaltmak KAYDI SİLMEZ, içerik bağını siler: kap hâlâ depoda ve
+     numarası tüketilmiş durumda. Bir sonraki okutmada "bu kapta ne var?" diye
+     sorulur. Numarayı serbest bırakmak, aynı kodun ikinci kez basılması
+     demekti (CLAUDE.md 12.7). */
+  async function kabiBosalt(k: KutuSatiri) {
+    if (!confirm(`${k.gosterim} boşaldı mı? İçerik bağı silinecek, numara kalacak.`))
+      return;
+    try {
+      await api.kutuBosalt(k.gosterim);
+      setKutular(await api.kutular());
+    } catch (e) {
+      setHata(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const tanimliKutu = kutular.filter((k) => k.malzeme);
+  const kutuSayisi = tanimliKutu.length;
+  const kutuSonuc = kutuQ.trim()
+    ? kutular.filter((k) =>
+        [k.gosterim, k.malzeme ?? "", k.aciklama ?? "", k.raf ?? ""]
+          .join(" ")
+          .toLocaleLowerCase("tr")
+          .includes(kutuQ.trim().toLocaleLowerCase("tr")),
+      )
+    : kutular;
 
   const bagli = defter.filter((e) => e.malzeme).length;
   const malzemeHavuz =
@@ -499,6 +536,92 @@ export default function Etiket({
               bas; Tiger&apos;a o yazılır.
             </p>
           </div>
+        }
+      />
+
+      {/* Kap defteri: hangi kapta ne var. Kabın İÇERİĞİ okutma anında
+          sorulup kalıcı yazılıyor (KUTU_TASARIM.md 3) — burası o kaydın tek
+          görünür yüzü. Adet bilerek "son bilinen" diye anılıyor: sayım
+          sonucu değil, bir sonraki sayımın varsayılanı. */}
+      <Panel
+        baslik="Kap defteri"
+        sag={
+          <span className="rakam text-kucuk text-solgun">
+            {kutuSayisi} dolu / {kutular.length} kap
+          </span>
+        }
+        cocuk={
+          kutular.length === 0 ? (
+            <Bos
+              cocuk="Henüz kap etiketi basılmadı. Yukarıdan 'Kap etiketi' basın; içeriği
+                depoda ilk okutmada sorulur ve kalıcı olarak kaydedilir."
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              <input
+                value={kutuQ}
+                onChange={(e) => setKutuQ(e.target.value)}
+                placeholder="kap kodu, malzeme, açıklama veya raf ara…"
+                className="w-full rounded-sm border border-cizgi bg-zemin px-4 py-3
+                  text-govde focus:border-vurgu focus:outline-none"
+              />
+              <ul className="flex flex-col gap-2">
+                {kutuSonuc.slice(0, 200).map((k) => (
+                  <li
+                    key={k.kod}
+                    className="flex flex-wrap items-center gap-3 rounded-sm border
+                      border-cizgi bg-panel2 px-4 py-3"
+                  >
+                    <span className="font-mono text-kucuk font-bold">{k.gosterim}</span>
+                    <span className="min-w-0 flex-1 text-kucuk">
+                      {k.malzeme ? (
+                        <>
+                          <b>{k.malzeme}</b>{" "}
+                          <span className="text-solgun">{k.aciklama ?? ""}</span>
+                        </>
+                      ) : (
+                        <span className="text-solgun italic">
+                          boş — içeriği ilk okutmada sorulacak
+                        </span>
+                      )}
+                    </span>
+                    {k.raf && (
+                      <span className="inline-flex items-center gap-1 text-mikro text-uyari">
+                        <Ik.Raf boy={12} /> {k.raf}
+                      </span>
+                    )}
+                    {k.malzeme && (
+                      <span
+                        className={`rounded-sm border px-2.5 py-0.5 text-mikro font-semibold
+                          ${k.taze ? "border-cizgi text-solgun" : "border-uyari bg-uyari-tint text-uyari"}`}
+                        title={
+                          k.taze
+                            ? "Adet yakın zamanda doğrulandı"
+                            : "Adet eski: sayımda alan boş açılır, son bilinen değer yalnızca ipucu olur"
+                        }
+                      >
+                        son bilinen <span className="rakam">{k.adet ?? "—"}</span>
+                        {k.yas_gun != null && ` · ${Math.round(k.yas_gun)} gün önce`}
+                      </span>
+                    )}
+                    {k.malzeme && (
+                      <Dugme cocuk="Boşalt" tikla={() => void kabiBosalt(k)} />
+                    )}
+                  </li>
+                ))}
+                {kutuSonuc.length === 0 && (
+                  <li className="py-3 text-center text-kucuk text-solgun">Sonuç yok.</li>
+                )}
+              </ul>
+              <p className="text-kucuk text-solgun">
+                <b>Boşalt</b>, kabın içerik bağını siler — numara kalır, kap bir sonraki
+                okutmada yeniden sorulur. Numarayı serbest bırakmıyoruz: aynı kod ikinci
+                kez basılırsa depoda iki ayrı kap aynı numarayı taşır. İçerik değişince
+                etiketi yeniden basmak için yukarıdan <b>Kap etiketi → içeriği belli
+                kapları yeniden bas</b> seçin; kod aynı kalır.
+              </p>
+            </div>
+          )
         }
       />
 

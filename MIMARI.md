@@ -10,7 +10,7 @@ numaraları, etiket mantığı, sahada doğrulanmış kurallar). Burası **koddu
 > **Kural:** Mimari değişiklikte bu dosya aynı commit'te güncellenir. Yeni bir
 > API ucu, tablo, sütun veya ekran eklendiğinde buradaki tablolara da işlenir.
 
-Son güncelleme: 2026-08-27 · 399 test geçiyor.
+Son güncelleme: 2026-08-27 · 402 test geçiyor.
 
 ---
 
@@ -292,7 +292,7 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `GET /etiket/ihtiyac` | Etiket ihtiyacı **üst sınırı** (hedef değil) |
 | `POST /etiket/basim` | Parti bas, HTML sayfa + defter + CSV |
 | `GET /etiket` · `GET /etiket/basimlar` | Defter ve partiler |
-| `GET /kutu` · `GET /kutu/{kod}` | Kap defteri / tek kap (`gorunum` tazelik kararını da verir) |
+| `GET /kutu` · `GET /kutu/{kod}` | Kap defteri / tek kap. Liste BASILMIŞ kaplardan türer (`etiket LEFT JOIN kutu`) — `kutu` satırı ilk tanımlamada doğduğu için yalnızca ona bakmak yeni basılmış kapları görünmez yapardı. Tek kap ucu tazelik kararını da verir (`gorunum`) |
 | `POST /kutu/{kod}` | `{malzeme, adet?, yukleme, ambar}` — içeriği yaz. İzleme **malzemeden kopyalanır**, sorulmaz. Malzeme bu ambarda yoksa 400 |
 | `DELETE /kutu/{kod}` | Kap boşaldı: içerik bağı silinir, **numara kalır** |
 
@@ -549,7 +549,7 @@ alanının odaklanmasını engeller. `/telefon` rotasıyla ilgisi yoktur.
 | Rapor | `ekranlar/Rapor.tsx` | 7 sekme önizleme, xlsx, oturumu bitir. **`SEKME` listesi `reports.SEKME`'nin kopyasıdır** — sekme eklerken ikisi de güncellenir | PC |
 | Geçmiş | `ekranlar/Gecmis.tsx` | Eski oturumlar, rapor indirme | PC |
 | Ayarlar | `ekranlar/Ayarlar.tsx` | Aktif raf, kurallar, ses, cihaz modu | PC |
-| Barkod | `ekranlar/Etiket.tsx` | **Basılan her şey**: DM / DS / DK etiketleri, raf konum barkodları, komut kartı, etiket defteri. **Açık oturum İSTEMEZ** — yalnızca "ambardaki malzemelerin etiketi" yükleme ister, ekran bunu söyler | PC |
+| Barkod | `ekranlar/Etiket.tsx` | **Basılan her şey**: DM / DS / DK etiketleri, raf konum barkodları, komut kartı, etiket defteri, **kap defteri** (hangi kapta ne var + tazelik + Boşalt). **Açık oturum İSTEMEZ** — yalnızca "ambardaki malzemelerin etiketi" yükleme ister, ekran bunu söyler | PC |
 | Eşleştirme | `ekranlar/Esleme.tsx` | Sayım sonu: fazla ↔ eksik elle eşleştirme, fazla fotoğrafı | PC |
 | Telefon | `ekranlar/Telefon.tsx` | Monitör + uzaktan kumanda + kuyruk çözme | `/telefon` |
 
@@ -610,7 +610,7 @@ self-host) ve font **latin-ext subset'i içermeli** — yoksa `ğ Ğ ş Ş İ` b
 
 ## 7. Test paketi
 
-`.\.venv\Scripts\python -m pytest -q` ile **399 test**. `pytest.ini` yok,
+`.\.venv\Scripts\python -m pytest -q` ile **402 test**. `pytest.ini` yok,
 `sys.path` `tests/conftest.py` içinde elle ayarlanıyor.
 
 | Dosya | Kapsam |

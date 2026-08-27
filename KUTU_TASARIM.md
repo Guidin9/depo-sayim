@@ -4,7 +4,7 @@
 Seri takipli dal, `##KUTUKAPAT##` ve otomatik kilit **bilerek yazılmadı**:
 I2 kilidi sahada denenmeden yazılması gerekip gerekmediği bilinmiyor (§9.2).
 
-**Gerçek depoda HENÜZ DENENMEDİ.** 399 test geçiyor, arayüz derleniyor.
+**Gerçek depoda HENÜZ DENENMEDİ.** 402 test geçiyor, arayüz derleniyor.
 
 Kaynak: `depo_sayim_bugs_improvements.md` I3. Dosya kendi içinde "ayrı bir
 tasarım/akış dokümanı gerektirebilir" diyor; bu o doküman.
@@ -250,8 +250,9 @@ Kodlandı (kap akışının serisiz yarısı):
 - `barkod._etiket()` kap dalı, adetsiz büyük etiket + yeniden basım (§7)
 - `okutma.not_` = `"kutu: DK-000007"` (§8)
 - Arayüz: Sayım ekranında kap panelleri (adet cevabı orada verilir), Kuyruk ve
-  Telefon ekranlarında malzeme + adet paneli, Etiket ekranında kap basımı
-- `tests/test_kutu.py` — 25 test
+  Telefon ekranlarında malzeme + adet paneli, Barkod ekranında kap basımı ve
+  **kap defteri** (hangi kapta ne var, son doğrulama yaşı, Boşalt)
+- `tests/test_kutu.py` — 28 test
 
 Kodlanmadı (I2 saha testine kadar):
 

@@ -155,22 +155,36 @@ def gorunum(c, satir, yukleme=None, ambar=None):
 
 
 def liste(c, q=None, sadece_tanimli=False, limit=500):
-    sql = ["""SELECT k.*, (SELECT aciklama FROM beklenen WHERE kod=k.malzeme
-                           ORDER BY yukleme DESC LIMIT 1) aciklama
-              FROM kutu k WHERE 1=1"""]
+    """Kap defteri: BASILMIŞ her kap, içeriği varsa içeriğiyle.
+
+    Kaynak `etiket` tablosu, `kutu` değil. Sebep: kap etiketi basıldığında
+    anonimdir (`kutu` satırı ilk tanımlamada doğar). Yalnızca `kutu`ya
+    bakılsaydı 24 kap etiketi basan kullanıcı "kap defteri boş" görürdü —
+    oysa kaplar elinde duruyor, yalnızca içerikleri henüz sorulmadı.
+    """
+    sql = ["""SELECT e.kod, e.gosterim, k.malzeme, k.adet, k.izleme,
+                     COALESCE(k.raf, e.raf) raf, COALESCE(k.ts, e.ts) ts,
+                     k.ts_guncelle, k.oturum,
+                     (SELECT aciklama FROM beklenen WHERE kod=k.malzeme
+                      ORDER BY yukleme DESC LIMIT 1) aciklama
+              FROM etiket e LEFT JOIN kutu k ON k.kod=e.kod
+              WHERE e.tur='kutu'"""]
     par = []
     if q:
-        sql.append("AND (k.gosterim LIKE ? OR k.malzeme LIKE ?)")
+        sql.append("AND (e.gosterim LIKE ? OR k.malzeme LIKE ?)")
         par += ["%" + q + "%"] * 2
     if sadece_tanimli:
         sql.append("AND COALESCE(k.malzeme,'')<>''")
-    sql.append("ORDER BY k.kod LIMIT ?")
+    sql.append("ORDER BY e.kod LIMIT ?")
     par.append(limit)
     cikti = []
     for r in c.execute(" ".join(sql), par):
         d = dict(r)
-        d["yas_gun"] = None if yas_gun(r) is None else round(yas_gun(r), 1)
-        d["taze"] = taze_mi(r)
+        # Tazelik yalnızca İÇERİĞİ olan kap için anlamlı: boş kapta `ts`
+        # basım tarihidir, "adet ne zaman doğrulandı" değil.
+        y = yas_gun(r) if r["malzeme"] else None
+        d["yas_gun"] = None if y is None else round(y, 1)
+        d["taze"] = bool(r["malzeme"]) and taze_mi(r)
         cikti.append(d)
     return cikti
 

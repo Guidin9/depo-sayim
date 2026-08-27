@@ -86,13 +86,19 @@ def _yeni_seri(ham):
     from .etiketler import etiket_turu
     from .norm import upc_mi
     parcalar = [p.strip() for p in str(ham or "").split(" + ") if p.strip()]
-    if len(parcalar) <= 1:
-        return ham
-    # KAP KODU HİÇBİR ZAMAN SERİ NUMARASI ADAYI DEĞİLDİR ve son çare bile
-    # olamaz: DK-000007 bir cihazın kimliği değil, durduğu kabın numarasıdır.
-    # Tiger'a "bu cihazın S/N'i DK-000007" diye yazmak, kap ertesi ay
-    # boşaldığında hiçbir şeye karşılık gelmeyen bir seri numarası bırakır.
-    parcalar = [p for p in parcalar if etiket_turu(p) != "kutu"] or parcalar
+    # KAP KODU HİÇBİR ZAMAN SERİ NUMARASI ADAYI DEĞİLDİR ve son çare de olamaz:
+    # DK-000007 bir cihazın kimliği değil, durduğu kabın numarasıdır. Tiger'a
+    # "bu cihazın S/N'i DK-000007" demek, kap ertesi ay boşaldığında hiçbir
+    # şeye karşılık gelmeyen bir seri numarası bırakır.
+    #
+    # Eleme TEK PARÇALI girdide de yapılmalı. Kısa devre yukarıdayken
+    # `_fazla_seri` tam bu deliğe düşüyordu: malzeme kodunu eledikten sonra
+    # elinde yalnızca kap kodu kalan bir fazla kaydı, kap numarasını seri no
+    # olarak yazıyordu. Aday kalmazsa öneri YOKTUR — boş dize, `reports` de
+    # `matching` de boş öneriyi atlar.
+    parcalar = [p for p in parcalar if etiket_turu(p) != "kutu"]
+    if not parcalar:
+        return ""
     if len(parcalar) == 1:
         return parcalar[0]
     adaylar = [p for p in parcalar if not upc_mi(p)] or parcalar

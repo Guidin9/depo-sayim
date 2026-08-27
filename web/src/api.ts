@@ -226,6 +226,26 @@ export type KuyrukSatiri = {
   kutu: KutuBilgi | null;
 };
 
+/** Kap defteri satırı — `GET /api/kutu` ne dönüyorsa o.
+ *
+ * `KutuBilgi` ile karıştırmayın: orası TEK kap için tazelik kararını da verir
+ * (`oneri_adet`, `tazelik_gun`, `bu_ambarda`), liste ucu vermez. İkisini tek
+ * tip saymak, listede olmayan alanları varmış gibi okumak demekti. */
+export type KutuSatiri = {
+  kod: string;
+  gosterim: string;
+  malzeme: string | null;
+  adet: number | null;
+  izleme: "seri" | "lot" | "yok" | null;
+  raf: string | null;
+  ts: string | null;
+  ts_guncelle: string | null;
+  oturum: number | null;
+  aciklama: string | null;
+  yas_gun: number | null;
+  taze: boolean;
+};
+
 export type AramaSonucu = {
   id: number;
   kod: string;
@@ -519,7 +539,7 @@ export const api = {
     const p = new URLSearchParams();
     if (q) p.set("q", q);
     if (sadece_tanimli) p.set("sadece_tanimli", "true");
-    return istek<(KutuBilgi & { aciklama: string | null })[]>(`/api/kutu?${p}`);
+    return istek<KutuSatiri[]>(`/api/kutu?${p}`);
   },
   kutu: (kod: string, yukleme?: number, ambar?: string) => {
     const p = new URLSearchParams();

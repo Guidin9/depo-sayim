@@ -475,14 +475,27 @@ def grup_coz(c, ot, raf=None):
     kutu_h = next((x for x in coz_list if str(x[1]["t"]).startswith("kutu")), None)
     kutu_t = kutu_h[1] if kutu_h else None
     kutu_ad = kutu_t.get("kutu") if kutu_t else None
-    if kutu_t and kutu_t["t"] in ("kutu_bos", "kutu_yabanci"):
+    if (kutu_t and kutu_t["t"] in ("kutu_bos", "kutu_yabanci")
+            and not seri_h and not kod_h):
+        # Bu dala YALNIZCA grupta başka hiçbir şey tanınmadıysa girilir. Kap
+        # tanınan bir ürünle birlikte okutulduysa (kap + gerçek S/N gibi) o
+        # ürün normal yoldan SAYILIR ve kap yalnızca denetim izine girer:
+        # eskiden buraya düşülüyor, grup kuyruğa yazılıyor ve seri takipli
+        # cihaz hiç sayılmıyordu — kuyruk kaydı kap olarak çözülünce de
+        # sayılmıyor, çünkü seri takipli kapta sayım seri numaralarıyla olur.
+        # Okutma sessizce buharlaşıyordu.
+        #
         # Tanımsız kap KUYRUĞA yazılır, doğrudan bir tanımlama ekranına
         # DEĞİL. Arayüz paneli hemen açar; ama kullanıcı cevaplamadan raftan
         # ayrılırsa kayıt kuyrukta durur ve oturum kapanmadan sorulur. Ekrana
         # bırakılsaydı kap sessizce sayılmamış olurdu — uygulamanın hiçbir
         # yerde yapmadığı şey.
         yabanci = kutu_t["t"] == "kutu_yabanci"
-        oneri = (kod_h[1]["kod"] if kod_h else None) or kutu_t.get("kod")
+        # Kayıtlı ama BU AMBARDA OLMAYAN malzeme öneri değildir: arayüz onu
+        # doldurup gönderirse sunucu 400 verir (ambar dışına çıkmıyoruz,
+        # CLAUDE.md 3.5). Eski kod yalnızca notta ve yanıtta durur, kullanıcı
+        # ne olduğunu görsün diye.
+        oneri = kod_h[1]["kod"] if kod_h else None
         notu = (("kap %s: kayıtlı malzemesi (%s) bu ambarda yok"
                  % (kutu_ad, kutu_t.get("kod"))) if yabanci
                 else "kap %s tanımsız: içinde ne var?" % kutu_ad)
@@ -530,12 +543,16 @@ def grup_coz(c, ot, raf=None):
             return {"tip": "kutu_seri", "kutu": kutu_ad, "kod": kutu_t["kod"],
                     "aciklama": kutu_t.get("aciklama"),
                     "adet": kutu_t.get("adet"), "taze": kutu_t.get("taze"),
+                    # Girilen adet burada uygulanamaz (her cihaz Tiger'da ayrı
+                    # satır) ama sessizce yutulmaz — grup_coz'un her yerinde
+                    # aynı sözleşme.
+                    "adet_yersiz": bekleyen_adet if bekleyen_adet > 1 else None,
                     "raf": raf, "ses": "uyari"}
         elif kutu_t.get("izleme") == "seri" and seri_h:
             # Kap + gerçek S/N: sayımı seri numarası yapıyor, kap yalnızca
             # bağlam. Kabın açık sorusu varsa burada kapanır.
             _kutu_kuyrugu_kapat(c, oturum, kutu_ad)
-        elif kutu_t.get("izleme") != "seri" and not bekleyen_adet:
+        elif kutu_kaynak and kutu_t.get("izleme") != "seri" and not bekleyen_adet:
             # "Kapta 150 yazıyor" bir sayım sonucu değil, bir varsayımdır:
             # içerik ayda bir değişiyor, sayım yılda bir yapılıyor. Kaydı
             # sorusuz uygulamak, uygulamanın kendi bayat verisini onaylaması
@@ -543,6 +560,10 @@ def grup_coz(c, ot, raf=None):
             #
             # Sabit 1 yazmak da yanlış: kabın içinde 1 tane olduğu bilgisi
             # hiçbir yerden gelmiyor.
+            #
+            # Soru YALNIZCA sayım kaptan geliyorsa sorulur (`kutu_kaynak`).
+            # Kullanıcı grupta başka bir malzeme kodu okuttuysa elindeki o
+            # üründür; kabın adedini sormak yanlış soruyu sormak olurdu.
             notu = "kap %s: kaç adet sayıldı?" % kutu_ad
             var = _acik_kutu_kuyrugu(c, oturum, kutu_ad)
             if var:
@@ -608,8 +629,8 @@ def grup_coz(c, ot, raf=None):
                    and kaynak[1].get("izleme") == "seri" else None)
     # Kaptan gelen sayım denetim izinde görünmek zorunda: rapordaki satıra
     # bakan kişi "bu 150 adet nereden geldi" diye sorduğunda cevabı kap
-    # numarasıdır (KUTU_TASARIM.md 8).
-    kutu_notu = (" | kutu: %s" % kutu_kaynak) if kutu_kaynak else ""
+    # numarasıdır (KUTU_TASARIM.md 8). Kap TANIMSIZ olsa da yazılır — okutuldu.
+    kutu_notu = (" | kutu: %s" % kutu_ad) if kutu_ad else ""
 
     # bilinmeyen barkodları bu malzemeye öğret
     ogrenilen = []
@@ -828,7 +849,13 @@ def okut(c, ot, ham, zorla=False):
             for r in c.execute("SELECT ham FROM tampon WHERE oturum=? ORDER BY id",
                                (oturum,)):
                 t = coz(c, r["ham"], yukleme, ambar, oturum)
-                if t["t"] in ("kod", "ogrenilmis"):
+                # Tanımlı kap da bir malzeme kodudur (KUTU_TASARIM.md 5):
+                # "kabı okut, kilitle, seri numaralarını okut" seri takipli
+                # kaptaki asıl akış. Kart PARAMETRESİZ basıldığı için kilit
+                # tampondan okunuyor; kap burada tanınmazsa kartla kilit
+                # kurulamaz ve kullanıcı `kilit_yok` uyarısı alırdı —
+                # arayüzdeki düğme (##KILIT-<kod>##) çalışırken kart çalışmaz.
+                if t["t"] in ("kod", "ogrenilmis", "kutu"):
                     aday, kaynak = r["ham"], t
                     break
             if not aday:

@@ -20,6 +20,7 @@ export default function Gecmis({
   rapora: (oturum: number) => void;
 }) {
   const [liste, setListe] = useState<OturumOzeti[]>([]);
+
   useEffect(() => {
     void api.oturumlar().then(setListe);
   }, [tik]);
@@ -92,7 +93,6 @@ export default function Gecmis({
           )
         }
       />
-
     </div>
   );
 }

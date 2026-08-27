@@ -189,8 +189,9 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
      değişiyor, kayıttaki adet bir varsayımdır (KUTU_TASARIM.md 3, 6). */
   async function kutuSay(k: KuyrukSatiri) {
     const secim = kutuSecim?.kid === k.id ? kutuSecim.malzeme : null;
-    const kod = secim?.kod ?? k.kutu?.malzeme ?? k.kod;
-    const izleme = secim?.izleme ?? k.kutu?.izleme;
+    const kayitli = k.kutu?.bu_ambarda ? k.kutu.malzeme : null;
+    const kod = secim?.kod ?? kayitli ?? k.kod;
+    const izleme = secim?.izleme ?? (kayitli ? k.kutu?.izleme : null);
     if (!kod) return;
     // Alanın gösterdiği değerle gönderilen değer AYNI olmalı: öneri dolu
     // gelip kullanıcı hiç dokunmadığında `kutuAdet` boş kalır.
@@ -813,8 +814,12 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
             {k.tur === "kutu" &&
               (() => {
                 const secim = kutuSecim?.kid === k.id ? kutuSecim.malzeme : null;
-                const kod = secim?.kod ?? k.kutu?.malzeme ?? k.kod;
-                const izleme = secim?.izleme ?? k.kutu?.izleme;
+                // Kayıtlı içerik yalnızca BU AMBARDA kayıtlıysa önerilir:
+                // kabın içeriği değişmiş olabilir ve başka depoya ait bir kod
+                // sunucudan 400 döner (CLAUDE.md 3.5).
+                const kayitli = k.kutu?.bu_ambarda ? k.kutu.malzeme : null;
+                const kod = secim?.kod ?? kayitli ?? k.kod;
+                const izleme = secim?.izleme ?? (kayitli ? k.kutu?.izleme : null);
                 const seriTakipli = izleme === "seri";
                 const deger =
                   kutuAdet[k.id] ??
