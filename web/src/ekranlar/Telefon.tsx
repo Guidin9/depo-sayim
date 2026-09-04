@@ -333,6 +333,30 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
     }
   }
 
+  /* ##IPTAL## onayı — Sayım ekranındakiyle aynı kural, aynı metin.
+   *
+   * YALNIZCA kaybedilecek bir şey varken sorar: boş tamponda modal açmak,
+   * maliyeti olmayan bir işlem için engel koymak olurdu ve her gereksiz onay
+   * bir sonrakinin refleksle geçilmesini öğretir.
+   *
+   * Komut barkodu (`##IPTAL##` kartı) bu onaya girmez: karttan doğru olanı
+   * seçip okutmak zaten bilinçli bir eylem. Escape ve bu düğme birer refleks
+   * / yanlış dokunuş riski taşıyor, kart taşımıyor.
+   */
+  function iptalOnayi() {
+    const t = durum?.tampon ?? [];
+    const adet = durum?.bekleyen_adet ?? 0;
+    if (!t.length && !adet) return true;
+    const ne = [
+      t.length ? `${t.length} okutulan barkod:\n  ${t.map((x) => x.ham).join("\n  ")}` : "",
+      adet ? `girilen adet: ${adet}` : "",
+    ].filter(Boolean);
+    return window.confirm(
+      `Bu ürün için okutulanlar silinsin mi?\n\n${ne.join("\n\n")}\n\n` +
+        "Geri alınamaz — barkodları yeniden okutman gerekir.",
+    );
+  }
+
   async function komut(ham: string, zorla = false) {
     if (!oturum || mesgul) return;
     setMesgul(true);
@@ -1208,7 +1232,11 @@ Kayıt tamamen kaldırılır — kuyruğa geri DÜŞMEZ.
             f: () => void yedekModu(!durum.yedek_parca),
             etkin: durum.yedek_parca,
           },
-          { e: "İptal", I: Ik.Kapat, f: () => void komut("##IPTAL##") },
+          // İptal geri alınamaz (tampon satırları siliniyor, ##GERIAL## onları
+          // geri getirmiyor) ve bu ızgarada Raf/Adet/Atla/Fazla ile yan yana —
+          // eldivenle yanlış tuşa basmak sahada olağan. Kaybedilecek bir şey
+          // varsa sorulur (DENETIM_20260904.md Dx3).
+          { e: "İptal", I: Ik.Kapat, f: () => iptalOnayi() && void komut("##IPTAL##") },
           { e: "Atla", I: Ik.Soru, f: () => void komut("##ATLA##") },
           { e: "Fazla", I: Ik.Uyari, f: () => void komut("##FAZLA##") },
         ].map((x) => (

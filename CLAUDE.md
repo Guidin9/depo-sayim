@@ -401,7 +401,7 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 | Kod | İşlev |
 |---|---|
 | `##SONRAKI##` | Grubu kapat ve çözümle |
-| `##IPTAL##` | Mevcut grubu sil |
+| `##IPTAL##` | Mevcut grubu sil. Arayüzden (Escape / telefondaki düğme) verilirse ve tamponda bir şey varsa ONAY sorulur — geri alınamaz, `##GERIAL##` tamponu geri getirmez. Komut barkodu sormaz: kartı seçip okutmak zaten bilinçli bir eylem ve modal okuyucuyu odaktan düşürür |
 | `##GERIAL##` | Son GRUBU geri al (öğrenilen barkodu unutur, etiketi çözer). Kart **GERİ AL** diye basılır — bir dönem "SON OKUTMAYI SİL" yazıyordu ve kullanıcı bir barkod sildiğini sanıp ürünün tamamını siliyordu |
 | `##FAZLA##` | Grubu fazla olarak işaretle |
 | `##ATLA##` | Grubu kuyruğa at |

@@ -669,6 +669,33 @@ Kayıt tamamen kaldırılır — kuyruğa geri DÜŞMEZ.
     [setDurum, odakla],
   );
 
+  /* ##IPTAL## onayı — YALNIZCA kaybedilecek bir şey varken.
+   *
+   * Boş tamponda sormak, hiçbir maliyeti olmayan bir işlem için modal açmak
+   * olurdu; sahada her gereksiz onay bir sonrakinin refleksle geçilmesini
+   * öğretiyor. Onay tam olarak neyin gideceğini YAZAR: okutulan barkodlar ve
+   * varsa girilen adet.
+   *
+   * Komut barkodu (`##IPTAL##` kartı) bu onaya girmez ve girmemeli: laminatlı
+   * karttan doğru olanı seçip okutmak zaten bilinçli bir eylem, üstelik açık
+   * bir modal okuyucunun yazdığı yeri odaktan düşürür — kartla iptal eden
+   * kullanıcı onayı okutamaz. Risk profili farklı: Escape bir refleks,
+   * kart bir karar.
+   */
+  const iptalOnayi = useCallback(() => {
+    const t = durum.tampon ?? [];
+    const adet = durum.bekleyen_adet ?? 0;
+    if (!t.length && !adet) return true;
+    const ne = [
+      t.length ? `${t.length} okutulan barkod:\n  ${t.map((x) => x.ham).join("\n  ")}` : "",
+      adet ? `girilen adet: ${adet}` : "",
+    ].filter(Boolean);
+    return window.confirm(
+      `Bu ürün için okutulanlar silinsin mi?\n\n${ne.join("\n\n")}\n\n` +
+        "Geri alınamaz — barkodları yeniden okutman gerekir.",
+    );
+  }, [durum.tampon, durum.bekleyen_adet]);
+
   const kilitAc = useCallback(async () => {
     try {
       const r = await api.sabitKod(durum.oturum, null);
@@ -704,6 +731,12 @@ Kayıt tamamen kaldırılır — kuyruğa geri DÜŞMEZ.
       if (!komut) return;
       e.preventDefault();
       if (komut === "##BITIR##" && !confirm("Sayımı bitirip oturumu kapatalım mı?")) return;
+      // Escape KÜRESEL ##IPTAL## ve geri alınamaz: tampon satırları
+      // veritabanından siliniyor, `##GERIAL##` onları geri getirmiyor.
+      // Üstelik Escape evrensel "bu kutuyu kapat" refleksi ve okuyucu kutusu
+      // bu filtreden bilerek muaf — yani odak ORADAYKEN de çalışıyor.
+      // Kaybedilecek bir şey varsa sorulur (DENETIM_20260904.md Dx3).
+      if (komut === "##IPTAL##" && !iptalOnayi()) return;
       void gonder(komut);
     }
     window.addEventListener("keydown", tus);
