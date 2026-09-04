@@ -189,6 +189,18 @@ export type OkutmaSonucu = {
   ogrenilmedi?: string[];
   /** Grupta hem yeni bir seri hem DAHA ÖNCE okutulmuş bir barkod vardı. */
   tekrar_seri?: string | null;
+  /** tip="kuyruk": aynı barkod kümesi bu oturumda ZATEN çözülmemiş kuyrukta.
+   *  Kayıt yine yazılır (iki fiziksel ürün olabilir), kullanıcı uyarılır —
+   *  birleştirmek aynı barkodlu ikinci ürünü kaybettirirdi. */
+  kuyruk_tekrar?: { id: number; raf: string | null; ts: string } | null;
+  /** tip="tekrar" / "haric": hiçbir satır yazılmadı, TAMPON DURUYOR.
+   *  Kullanıcı aynı ürün için ##FAZLA## / ##ATLA## ile devam edebilir —
+   *  eskiden tampon tükeniyor ve ürün buharlaşıyordu (saha bildirimi S4). */
+  tampon_duruyor?: boolean;
+  /** tip="fazla_bilinen": Tiger'da karşılığı olmayan, daha önce adlandırılmış
+   *  ürün. Kuyruğa düşmez, adı sorulmaz — bir kez öğrenildi (S2). */
+  ad?: string | null;
+  fazla_ad?: string[];
   /** tip="bitir_uyari": engel değil, bilgi. Sayım doğru; eksik olan bilgi. */
   eksik_lot?: EksikLot[];
   sn_secilmemis?: SeriSecimi[];
@@ -201,9 +213,13 @@ export type OkutmaSonucu = {
   /** ##GERIAL## ve okutma silme, geri alınan yan etkileri bildirir. */
   unutulan?: string[];
   etiket_cozuldu?: string | null;
-  /** tip="silindi": kaç okutma satırı gitti, kuyruk kaydı yeniden açıldı mı. */
+  /** tip="silindi": kaç okutma satırı gitti, kuyruk kaydı ne oldu.
+   *  `kuyruk_acildi` ve `kuyruk_kapali` birbirini dışlar: biri "kuyruğa geri
+   *  gönderdim", diğeri "tamamen kaldırdım". Kullanıcı hangisinin olduğunu
+   *  görmek zorunda (saha bildirimi S5). */
   silinen?: number;
   kuyruk_acildi?: number | null;
+  kuyruk_kapali?: number | null;
   barkodlar?: string[];
   ogrenilen?: string[];
   raf?: string;
@@ -355,6 +371,10 @@ export type FazlaKaydi = {
   kod: string | null;
   seri: string | null;
   ad: string | null;
+  /** Kaç adet. Kaptan sayılan bir fazla 150 taşıyabilir; tek cihazlık bir
+   *  kayda bağlanırsa geri kalanı buharlaşırdı. Sunucu artık reddediyor,
+   *  ekran da adedi göstermek zorunda — yoksa red anlaşılmaz. */
+  miktar: number;
   raf: string | null;
   not_: string;
   fotolar: number[];
@@ -402,7 +422,11 @@ export type OturumOzeti = {
   bitir: string | null;
   durum: string;
   dosya_adi: string | null;
+  /** ADET bazında, satır değil — Sayım ekranındaki sayaçla aynı ifade.
+   *  Bir dönem `COUNT(DISTINCT beklenen_id)` idi ve iki ekran aynı oturum için
+   *  farklı sayı gösteriyordu (171 / 107). */
   okutulan: number;
+  toplam: number;
   fazla: number;
   kuyruk: number;
 };
@@ -453,7 +477,22 @@ export type BasimIstegi = {
   atla?: number;
 };
 
-export class ApiHatasi extends Error {}
+/** Sunucu hatası. `detay` sunucunun `detail` sözlüğüdür (varsa).
+ *
+ * `detay` ŞART: `/bitir` dört ayrı kapıdan 409 dönüyor ve hangisinin
+ * aşılabilir olduğu yalnızca sözlüğün ANAHTARINDAN anlaşılıyor. Arayüz bir
+ * dönem bunu mesaj metninde `"çözülmemiş"` arayarak yapıyordu; yumuşak uyarı
+ * kapısının mesajı ("Bitirmeden önce bakın: …") o kelimeyi içermediği için
+ * Rapor ekranındaki "Sayımı bitir" düğmesi ÇIKMAZ SOKAK oluyordu — oysa o kapı
+ * bilerek engel değil (DENETIM_20260904.md Y3).
+ */
+export class ApiHatasi extends Error {
+  detay?: Record<string, unknown>;
+  constructor(mesaj: string, detay?: Record<string, unknown>) {
+    super(mesaj);
+    this.detay = detay;
+  }
+}
 
 async function istek<T>(yol: string, secenek?: RequestInit): Promise<T> {
   // Her istek kendi kimliğini taşır ki canlı yayın kendi olayımızı ayırt etsin.
@@ -463,19 +502,22 @@ async function istek<T>(yol: string, secenek?: RequestInit): Promise<T> {
   });
   if (!y.ok) {
     let mesaj = `${y.status} ${y.statusText}`;
+    let detay: Record<string, unknown> | undefined;
     try {
       const g = await y.json();
       // Kapı yanıtlarında detail bir sözlük ve içinde okunabilir `mesaj` var
       // (kuyruk / fotoğraf kapıları). Kullanıcıya JSON göstermeyelim.
-      if (g?.detail)
-        mesaj =
-          typeof g.detail === "string"
-            ? g.detail
-            : (g.detail.mesaj ?? JSON.stringify(g.detail));
+      if (g?.detail) {
+        if (typeof g.detail === "string") mesaj = g.detail;
+        else {
+          mesaj = g.detail.mesaj ?? JSON.stringify(g.detail);
+          detay = g.detail as Record<string, unknown>;
+        }
+      }
     } catch {
       /* gövde JSON değilse durum metni kalsın */
     }
-    throw new ApiHatasi(mesaj);
+    throw new ApiHatasi(mesaj, detay);
   }
   return (await y.json()) as T;
 }
@@ -531,9 +573,26 @@ export const api = {
   /** Fazla kaydına elle ürün adı (Tiger'da karşılığı olmayan ürünler için). */
   okutmaAd: (okutmaId: number, ad: string) =>
     gonder<{ id: number; ad: string }>(`/api/okutma/${okutmaId}`, { ad }, "PATCH"),
-  /** Akıştaki bir okutmayı sil. Varsayılan kapsam: grubun tamamı. */
-  okutmaSil: (okutmaId: number, kapsam: "grup" | "satir" = "grup") =>
-    gonder<OkutmaSonucu>(`/api/okutma/${okutmaId}`, { kapsam }, "DELETE"),
+  /** Kaydedilmiş fazla / yedek satırının miktarını düzelt.
+   *
+   * 2026-08-28 sayımında bir kap kaydına adet yerine ADINA "35 tane" yazıldı
+   * ve satır 1 olarak kaydedildi; 34 adet raporun dışında kaldı. Düzeltmenin
+   * hiçbir yolu yoktu. Eşleşen satırlarda sunucu 400 döner — oradaki miktar
+   * bir `beklenen` kaydına bağlı, düzeltme yolu silip yeniden okutmaktır. */
+  okutmaMiktar: (okutmaId: number, miktar: number) =>
+    gonder<{ id: number; miktar: number }>(`/api/okutma/${okutmaId}`, { miktar }, "PATCH"),
+  /** Akıştaki bir okutmayı sil. Varsayılan kapsam: grubun tamamı.
+   *
+   * `kuyrugaGeri` VARSAYILAN OLARAK FALSE: Sil "bu satır hiç olmasın"
+   * demektir. True'yken kayıt siliniyor ama doğduğu kuyruk satırı yeniden
+   * açılıyor ve ürün "Tiger'da kaydı yok" kuyruğunda tekrar beliriyordu —
+   * kullanıcı Sil tuşunun çalışmadığını sanıyordu (saha bildirimi S5). */
+  okutmaSil: (okutmaId: number, kapsam: "grup" | "satir" = "grup", kuyrugaGeri = false) =>
+    gonder<OkutmaSonucu>(
+      `/api/okutma/${okutmaId}`,
+      { kapsam, kuyruga_geri: kuyrugaGeri },
+      "DELETE",
+    ),
 
   esleme: (id: number) => istek<EslemeVerisi>(`/api/oturum/${id}/esleme`),
   fazlaBagla: (okutmaId: number, beklenen_id: number) =>

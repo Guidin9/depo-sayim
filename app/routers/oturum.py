@@ -38,12 +38,21 @@ class OkutmaGuncelle(BaseModel):
     """Kısmi güncelleme: sadece gönderilen alan değişir."""
     ad: str | None = None
     not_: str | None = None
+    # Kaydedilmiş miktarın düzeltilmesi. 2026-08-28 sayımında bir kap kaydına
+    # "35 tane" ADI yazıldı ama adet kutusu boş kaldı ve satır 1 olarak
+    # kaydedildi — 34 adet raporun dışında kalıyordu. Düzeltmenin hiçbir yolu
+    # yoktu: bu uç yalnızca `ad` ve `not_` alıyordu.
+    miktar: float | None = None
 
 
 class ElleSay(BaseModel):
     """Listeden seçerek sayma (I5). `ham` varsa öğrenilir."""
     beklenen_id: int
     ham: str | None = None
+    # Lot / izlemesiz kalemde adet. Bu yol bir dönem SABİT 1 yazıyordu ve elle
+    # saymanın asıl müşterisi tam da bu kalemlerdi (barkodsuz = dökme):
+    # 77 adetlik lotu listeden saymak 77 tıklama demekti.
+    adet: float | None = None
 
 
 class SabitKod(BaseModel):
@@ -58,6 +67,10 @@ class YedekMod(BaseModel):
 class OkutmaSil(BaseModel):
     """Varsayılan kapsam GRUP: bir grup bir üründür (CLAUDE.md 4.4)."""
     kapsam: str = "grup"        # "grup" | "satir"
+    # Kayıt bir kuyruk satırından doğduysa o satır yeniden AÇILSIN mı?
+    # Varsayılan HAYIR: Sil "bu satır hiç olmasın" demektir. True gönderen
+    # "kararı geri al, yeniden çözeyim" demiş olur (matching.okutma_sil).
+    kuyruga_geri: bool = False
 
 
 class Coz(BaseModel):
@@ -111,7 +124,7 @@ def okut(oturum_id: int, istek: Okutma, c=DB):
 
 @router.post("/oturum/{oturum_id}/gerial")
 def gerial(oturum_id: int, istek: GeriAl, c=DB):
-    o = oturum_getir(oturum_id, c)
+    o = oturum_getir(oturum_id, c, acik=True)
     sonuc = matching.gerial(c, o, kapsam=istek.kapsam)
     c.commit()
     sonuc["durum"] = matching.durum(c, o)
@@ -126,12 +139,34 @@ def okutma_guncelle(okutma_id: int, istek: OkutmaGuncelle, c=DB):
     boş kalır ve rapordaki açıklama üretilemez. Adı kullanıcı yazar; yoksa
     kayıt sonradan hiçbir işe yaramıyor (DEMO_FEEDBACK.md 3).
     """
-    if not c.execute("SELECT 1 FROM okutma WHERE id=?", (okutma_id,)).fetchone():
+    x = c.execute("SELECT oturum FROM okutma WHERE id=?", (okutma_id,)).fetchone()
+    if not x:
         raise HTTPException(404, "Okutma #%s bulunamadı" % okutma_id)
+    # Kapalı oturumun raporu üretilmiş olabilir — bkz. `oturum_getir(acik=True)`.
+    oturum_getir(x["oturum"], c, acik=True)
     if istek.ad is not None:
         c.execute("UPDATE okutma SET ad=? WHERE id=?", (istek.ad.strip(), okutma_id))
     if istek.not_ is not None:
         c.execute("UPDATE okutma SET not_=? WHERE id=?", (istek.not_.strip(), okutma_id))
+    if istek.miktar is not None:
+        # Yalnızca `fazla` ve `yedek` satırlarında. `eslesti` satırının miktarı
+        # bir `beklenen` kaydına bağlı (lot dağıtımı, kapasite, sayaçlar) ve
+        # elle değiştirilirse ekranla rapor iki ayrı gerçek söylemeye başlar;
+        # oradaki düzeltme yolu satırı silip yeniden okutmaktır.
+        r = c.execute("SELECT tip FROM okutma WHERE id=?", (okutma_id,)).fetchone()
+        if r["tip"] not in ("fazla", "yedek"):
+            raise HTTPException(
+                400, "Miktar yalnızca fazla ve yedek parça kayıtlarında "
+                     "düzeltilebilir; eşleşen kaydı silip yeniden okutun.")
+        if istek.miktar <= 0:
+            raise HTTPException(400, "Miktar sıfırdan büyük olmalı.")
+        c.execute("UPDATE okutma SET miktar=? WHERE id=?", (istek.miktar, okutma_id))
+    # Ad YAZILDIKTAN sonra öğrenme: `##FAZLA##` komutu satırı adsız yazıyor
+    # (arayüz adı hemen sonra soruyor), yani öğrenilecek ad o an henüz yok.
+    # Tiger'da karşılığı olmayan ürünün adı ancak burada `fazla_ad`'a girer —
+    # olmazsa aynı ürün her okutmada yeniden sorulur (saha bildirimi S2).
+    if istek.ad is not None:
+        matching.fazla_ogren(c, okutma_id)
     c.commit()
     return dict(c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone())
 
@@ -146,9 +181,11 @@ def okutma_sil(okutma_id: int, istek: OkutmaSil | None = None, c=DB):
     x = c.execute("SELECT oturum FROM okutma WHERE id=?", (okutma_id,)).fetchone()
     if not x:
         raise HTTPException(404, "Okutma #%s bulunamadı" % okutma_id)
-    o = oturum_getir(x["oturum"], c)
-    sonuc = matching.okutma_sil(c, o, okutma_id,
-                                kapsam=(istek.kapsam if istek else "grup"))
+    o = oturum_getir(x["oturum"], c, acik=True)
+    sonuc = matching.okutma_sil(
+        c, o, okutma_id,
+        kapsam=(istek.kapsam if istek else "grup"),
+        kuyruga_geri=(istek.kuyruga_geri if istek else False))
     if sonuc.get("hata"):
         raise HTTPException(400, sonuc["hata"])
     c.commit()
@@ -167,7 +204,15 @@ def okutma_bagla(okutma_id: int, istek: Coz, c=DB):
     """Fazla kaydını eksik bir kayda bağla (sayım sonu eşleştirmesi)."""
     sonuc = matching.fazla_bagla(c, okutma_id, istek.beklenen_id)
     if "hata" in sonuc:
-        raise HTTPException(400, sonuc["hata"])
+        # `mesaj` VARSA O GİDER, kod adı değil. `matching` kullanıcıya ne
+        # yapacağını anlatan bir metin döndürüyor ("Bu fazla kaydı 150 adet,
+        # seçilen kayda 1 adet sığıyor…") ve burası onu atıp yerine
+        # `miktar_sigmiyor` slug'ını gönderiyordu — Eşleştirme ekranı o slug'ı
+        # olduğu gibi kırmızı kutuya basıyordu (DENETIM_20260904.md O1).
+        # `routers/kuyruk.py` aynı durumu zaten böyle yapıyor; iki router aynı
+        # sözleşmede olsun.
+        raise HTTPException(400, ({"hata": sonuc["hata"], "mesaj": sonuc["mesaj"]}
+                                  if sonuc.get("mesaj") else sonuc["hata"]))
     c.commit()
     return sonuc
 
@@ -253,6 +298,7 @@ def seri_sec(okutma_id: int, istek: SeriSec, c=DB):
     x = c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone()
     if not x:
         raise HTTPException(404, "Okutma #%s bulunamadı" % okutma_id)
+    oturum_getir(x["oturum"], c, acik=True)
     try:
         adaylar = json.loads(x["sn_adaylar"] or "[]")
     except ValueError:
@@ -310,9 +356,11 @@ def elle_say(oturum_id: int, istek: ElleSay, c=DB):
     o = oturum_getir(oturum_id, c)
     if o["durum"] != "acik":
         raise HTTPException(409, "Oturum kapalı")
-    sonuc = matching.elle_say(c, o, istek.beklenen_id, ham=istek.ham)
+    sonuc = matching.elle_say(c, o, istek.beklenen_id, ham=istek.ham,
+                              adet=istek.adet)
     if sonuc.get("hata"):
-        raise HTTPException(400, sonuc["hata"])
+        raise HTTPException(400, ({"hata": sonuc["hata"], "mesaj": sonuc["mesaj"]}
+                                  if sonuc.get("mesaj") else sonuc["hata"]))
     c.commit()
     sonuc["durum"] = matching.durum(c, oturum_getir(oturum_id, c))
     return sonuc

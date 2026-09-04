@@ -88,9 +88,27 @@ Tiger'da malzeme kartı > İzleme ve Sıralama > İzleme Yöntemi:
 
 | Mod | Davranış | Ambar 1'de |
 |---|---|---|
-| `Seri No.` | Her adet ayrı satır, miktar hep 1 | 801 satır / 152 malzeme |
+| `Seri No.` | Her adet ayrı satır, miktar **genelde** 1 | 801 satır / 152 malzeme |
 | `Lot Numarası` | Tek lot altında çok adet | 69 satır / 9 malzeme (271 adet) |
 | `İzleme Yapılmayacak` | Sadece adet | Seri/Lot raporunda hiç gelmez |
+
+**"Seri satırında miktar hep 1" DEĞİLDİR — bu satır bir dönem öyle yazıyordu
+ve yanlıştı.** Aynı örnek Tiger çıktısında `İzleme Yöntemi = Seri No.` olduğu
+hâlde `Envanter Miktarı` 2 ve 4 olan **32 satır** var (ambar 0, 13, 14).
+
+Kod bu varsayıma göre yazılmıştı: `kapasite_kaldi` seri takiplide `miktar`a hiç
+bakmıyor, "bir kez okutuldu mu" diye soruyordu. Sonuç 2026-09-02 denetiminde
+üretildi: 2 adetlik bir satır TEK okutmayla kapanıyor, ikinci cihaz `tekrar`
+deyip sayılmıyor ve **eksik listesine de girmiyordu** — bir adet ne sayaçta, ne
+Eksik sekmesinde, ne Fazla'da görünüyordu. Ambar 1'de bu satırlardan yok, yani
+yarım kalan sayım etkilenmedi; sıradaki ambarlar etkilenecekti.
+
+Artık tek ölçüt var (`matching.beklenen_adet`): **sayılan < beklenen**, seri ve
+lot için aynı. Seri takiplide beklenen en az 1'dir — Tiger'dan 0 miktarla gelen
+bir satır hiç sayılamaz hâle gelmesin.
+
+**Ders bu tablonun kendisinde:** buradaki "hep" ve "her zaman" ifadelerini kendi
+Tiger çıktınızda doğrulayın. §3.4'teki tür uyarısı bunun aynısıydı.
 
 Lot örneği: `0C5RNH` SFP, `0C5RNHLOT1221` lot numarası altında 77 adet. Bunları
 tek tek okutmak anlamsız — lot okut, adet gir (`##ADET-N##` ya da telefondaki
@@ -384,7 +402,7 @@ Code128 ile basılır, laminatlı kart olarak sahada taşınır.
 |---|---|
 | `##SONRAKI##` | Grubu kapat ve çözümle |
 | `##IPTAL##` | Mevcut grubu sil |
-| `##GERIAL##` | Son GRUBU geri al (öğrenilen barkodu unutur, etiketi çözer) |
+| `##GERIAL##` | Son GRUBU geri al (öğrenilen barkodu unutur, etiketi çözer). Kart **GERİ AL** diye basılır — bir dönem "SON OKUTMAYI SİL" yazıyordu ve kullanıcı bir barkod sildiğini sanıp ürünün tamamını siliyordu |
 | `##FAZLA##` | Grubu fazla olarak işaretle |
 | `##ATLA##` | Grubu kuyruğa at |
 | `##BITIR##` | Oturumu kapat — **iki kez okut** (aşağıya bakın) |
@@ -437,7 +455,10 @@ Adet **birikir**: `##ADET-25##` iki kez okutulursa 50 olur. Kartta sabit
 değerler basılı (1/5/10/25/50/100), ara değere ancak böyle ulaşılır. Telefondaki
 Adet paneli aynı işi yapar ve her sayıyı girer — ikisi de `POST /oturum/{id}/adet`
 ile aynı koddan geçer. Adet grup kapanınca (ya da `##IPTAL##` ile) tükenir,
-sonraki ürüne sızmaz. **Boş tamponda `##SONRAKI##`'ye basmak adedi yakmaz.**
+sonraki ürüne sızmaz. **Boş tamponda `##SONRAKI##`, `##FAZLA##` ve `##ATLA##`
+adedi yakmaz** — üçü de "okutulmuş barkod yok" der ve hiçbir şey tüketmez.
+`##ATLA##` bu kontrolü bir dönem yapmıyordu: kuyruğa hiçbir şey yazmadan
+adedi sıfırlıyor ve ekrana "kuyruğa atıldı" diyordu.
 
 Seri takipli kalemde adet uygulanmaz — her cihaz Tiger'da ayrı bir satır.
 Girilmişse sessizce yutulmaz, sonuçta `adet_yersiz` olarak bildirilir.
@@ -573,6 +594,69 @@ Excel çıktısı üretiyoruz.
 
 **Sahada yapılacaklar `SAHA_TESTI.md`'dedir** — "ne yapmamız lazım?" sorusunun
 cevabı o dosyadır.
+
+### 7.0 GERÇEK SAYIM SÜRÜYOR — `data/sayim.db` canlı veridir
+
+2026-08-28'de Ambar 1'de gerçek envanter sayımı başladı ve **yarım duruyor**:
+oturum #2 açık, 255 okutma, 171/1075 adet, `aktif_raf='A3'`. 2026-09-04
+civarında kaldığı yerden devam edilecek.
+
+Bu yüzden artık "boş veritabanı" varsayımıyla çalışılmıyor:
+
+- `sifirla.bat` **çalıştırılmaz**, yeni oturum **açılmaz**, Tiger raporu
+  **yeniden yüklenmez** — eşleşme oturum bazlıdır (§5), yeni oturum o ana
+  kadar sayılan her şeyi "eksik"e çevirir.
+- **Hariç kurallarına (`haric_kural`) sayım sürerken dokunulmaz.** Kural
+  değişince hariç bayrakları tüm yüklemelerde yeniden hesaplanıyor
+  (`db.lic_kuralini_duzelt` bunu bilerek yapıyor) ve yarım sayımın
+  `toplam` / `kalan` sayaçları oynar.
+- **Motor değişiklikleri geriye dönük çalışmaz.** `matching` dallarını
+  değiştirmek yazılmış 255 satırı düzeltmez; sayım yarı eski yarı yeni
+  kuralla tamamlanır. Rapor/düzeltme tarafındaki değişiklikler güvenli,
+  karar mantığındakiler değil.
+- Göçler bu veriyle güvenli: `goc()` yalnızca eksik sütun ekler,
+  `bolunmus_fazlalari_birlestir()` ve `lic_kuralini_duzelt()` bu veritabanında
+  hâlihazırda no-op (doğrulandı, 2026-09-02).
+
+**Yedek alındı (2026-09-02), iki kopya, SHA256 doğrulandı:**
+`data/yedek-20260902-092138-sayim-yarim/` ve depo dışında
+`%USERPROFILE%\Desktop\depo-sayim-yedek-20260902\`. Motora dokunmadan önce
+tazeleyin.
+
+**Sahadan bildirilen beş hata (S1–S5)** ve **bağımsız kod denetiminden çıkan
+beş hata daha (D1–D5)** `SAHA_TESTI.md`'de listeleniyor. S1/S2/S4/S5 ve
+D1–D5 kapatıldı; **S3 bilinçli olarak açık** (§4.4'ün "tahmin yürütmez"
+kuralına dokunuyor, karar kullanıcının).
+
+**2026-09-04'te üçüncü bir bağımsız denetim yapıldı ve 11 hata daha buldu —
+478 test geçerken.** Tamamı `DENETIM_20260904.md`'de; hepsi kapatıldı,
+`tests/test_denetim_20260904.py`. İkisi canlı veride ZATEN gerçekleşmişti
+(DS-000054 iki fazla kaydında; iki okutmanın seri numarası UPC).
+
+Bu denetimin dersi öncekilerden farklı ve bu dosyayı doğrudan ilgilendiriyor:
+**hataların çoğu düzeltmenin YARIM UYGULANMASINDAN çıktı.** Bir kural bir
+dalda kapatılmış, aynı kuralı kullanan öteki dallara taşınmamıştı:
+
+| Kapatılan hata | Düzeltme nereye kondu | Nereye konmadı |
+|---|---|---|
+| B2 (UPC seri no önerilir) | `matching._sn_karar` | `reports._yeni_seri` |
+| B4 (sayaç satır bazlı) | `sayaclar`, `ara`, `eksik_lotlar` | `oturumlar.gecmis` |
+| D1 (seri satırında miktar>1) | `kapasite_kaldi`, `sayaclar` | `slot` sorgusu, `coz()` 5 |
+
+**Bir kuralı düzeltirken o kuralı kullanan bütün çağrı yerlerini arayın.** Tek
+güvenilir yol kuralı tek bir sabite ya da işleve indirmektir — `KAPASITE_VAR`
+ve `BEKLENEN_ADET` bu yüzden `matching.py`'nin başında tek yerde duruyor.
+
+Dördüncüsü ters yöndeydi: **S2'nin düzeltmesi yeni bir sessiz çift sayım
+açtı.** Fazla yolunda DS- etiketini deftere işlemek doğruydu, ama `coz()` o
+yeni bilgiyi okumuyordu ve aynı etiket ikinci kez okutulduğunda ikinci bir
+fazla satırı doğuyordu. **Bir alanı doldurmak, onu okuyan tarafı da gözden
+geçirmeyi gerektirir.**
+
+Denetimin kalıcı dersi: **476 test geçerken beş hata vardı ve üçü sessiz
+yanlış sayım üretiyordu.** Beşinin de kaynağı koddaki bir mantık hatası değil,
+BU DOSYADAKİ bir varsayımdı — D1 doğrudan §2.4'te yazılı olan "seri satırında
+miktar hep 1" cümlesinden doğdu.
 
 **"Kodda bilinen açık hata yok" cümlesine güvenmeyin.** 2026-08-27'de yapılan
 bağımsız denetim, 413 testin hepsi geçerken **sekiz hata** buldu; beşi sessiz
@@ -1070,6 +1154,15 @@ Bu yüzden her basım partisi `data/etiket/basim-<id>.csv` olarak da yazılır.
 `sifirla.bat` yalnızca `data\*.db`, `data\yuklenen` ve `data\rapor` taşıdığı için
 `data/etiket` hayatta kalır ve `db.baglan()` açılışta defteri geri yükler.
 **`data/etiket` klasörünü elle silmeyin.**
+
+Defter yolu bağlantının veritabanı dosyasından türetilir
+(`etiketler.klasor`), sabit değil — geçici veritabanları gerçek deftere
+yazmasın diye. **Bellek veritabanı (`:memory:`) için `None` döner ve yazma
+yolları atlanır.** Eskiden bu durumda `data/etiket`e düşüyordu, yani amacının
+tam tersini yapıyordu: `baglan(":memory:")` ile açılan her bağlantı gerçek
+defteri okuyor ve üstüne yazıyordu. 2026-09-02'de bir denetim betiği
+`basim-1.csv` (240 seri etiketi) ve `basim-2.csv` (24 malzeme etiketi)
+dosyalarını ezdi; yedekten geri alındı.
 
 Yükleme özeti `etiket_cakisma` alanında, Tiger'da etiket desenine uyup defterde
 karşılığı olmayan kayıtları bildirir — defter kaybının sessiz kalmaması için.

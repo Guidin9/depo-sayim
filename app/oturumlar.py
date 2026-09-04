@@ -81,12 +81,35 @@ def yeniden_ac(c, oturum_id):
 
 
 def gecmis(c):
-    rs = c.execute("""SELECT o.*, y.dosya_adi,
-                      (SELECT COUNT(DISTINCT beklenen_id) FROM okutma
-                       WHERE oturum=o.id AND beklenen_id IS NOT NULL) okutulan,
+    """Geçmiş ekranının oturum listesi.
+
+    `okutulan` ADET bazındadır, satır değil — `matching.sayaclar` ile BİREBİR
+    aynı ifade. Burası bir dönem `COUNT(DISTINCT beklenen_id)` diyordu ve B4
+    düzeltmesi (2026-08-27) `sayaclar`, `ara` ve `eksik_lotlar`'a uygulanırken
+    buraya uygulanmamıştı: canlı oturum #2 için Sayım ekranı 171, Geçmiş ekranı
+    107 gösteriyordu — aynı oturum, aynı an, iki sayı
+    (DENETIM_20260904.md Y2). Lot satırı tek satırda çok adet taşıdığı için
+    (CLAUDE.md 2.4) satır saymak 77 adetlik bir lotu "bitmiş" gösteriyor.
+
+    `haric=0` süzgeci de `sayaclar` ile aynı: sayım dışı kalemler sayaca girmez.
+
+    Dış takma ad `s` (oturum), `o` DEĞİL: `SAYILAN_ADET` içindeki alt sorgu
+    `okutma` tablosuna `o` diyor ve dış tabloya da `o` demek onu gölgelerdi.
+    """
+    from .matching import BEKLENEN_ADET, SAYILAN_ADET
+    # `SAYILAN_ADET` parametreli (`o.oturum=?`); burada ilişkili alt sorgu
+    # olarak dış oturuma bağlanıyor, yani parametre yerine `s.id` giriyor.
+    sayilan = SAYILAN_ADET.replace("o.oturum=?", "o.oturum=s.id")
+    rs = c.execute("""SELECT s.*, y.dosya_adi,
+                      (SELECT COALESCE(SUM(%s),0) FROM beklenen b
+                       WHERE b.yukleme=s.yukleme AND b.ambar=s.ambar
+                         AND b.haric=0) toplam,
+                      (SELECT COALESCE(SUM(%s),0) FROM beklenen b
+                       WHERE b.yukleme=s.yukleme AND b.ambar=s.ambar
+                         AND b.haric=0) okutulan,
                       (SELECT COUNT(*) FROM okutma
-                       WHERE oturum=o.id AND tip='fazla') fazla,
-                      (SELECT COUNT(*) FROM kuyruk WHERE oturum=o.id AND cozuldu=0) kuyruk
-                      FROM oturum o LEFT JOIN yukleme y ON y.id=o.yukleme
-                      ORDER BY o.id DESC""").fetchall()
+                       WHERE oturum=s.id AND tip='fazla') fazla,
+                      (SELECT COUNT(*) FROM kuyruk WHERE oturum=s.id AND cozuldu=0) kuyruk
+                      FROM oturum s LEFT JOIN yukleme y ON y.id=s.yukleme
+                      ORDER BY s.id DESC""" % (BEKLENEN_ADET, sayilan)).fetchall()
     return [dict(r) for r in rs]

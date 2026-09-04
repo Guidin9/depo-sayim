@@ -347,6 +347,33 @@ def bagla(c, etiket_kod, malzeme, beklenen_id, oturum, ts, raf):
               (malzeme, beklenen_id, oturum, ts, raf, norm(etiket_kod)))
 
 
+def malzeme_etiketi_isle(c, barkodlar, malzeme, oturum=None, ts=None, raf=None):
+    """Boş havuzdan basılmış DM- etiketini bir malzemeye bağlar (defter kaydı).
+
+    Boş havuz etiketi (`bas(kapsam="bos")`) basılırken hiçbir şeye ait değildir;
+    hangi malzemeye yapıştığı ancak okutma çözülünce belli olur. O an
+    `eslesme`'ye yazmak motorun tanıması için yeterli, ama DEFTER için değil:
+    `bas(kapsam="eksik")` "bu malzemenin etiketi var mı" diye `etiket.malzeme`
+    alanına bakıyor. Boş kalırsa aynı malzemeye İKİNCİ bir numara basılır ve
+    depoda tek ürünün üstünde iki farklı kod dolaşır.
+
+    Bağlanmış bir etiketin malzemesi DEĞİŞTİRİLMEZ: numara bir kez bir
+    malzemeye ait olur (CLAUDE.md §12.1). Bağlanan etiketi döner.
+    """
+    for h in barkodlar or ():
+        n = norm(h)
+        if etiket_turu(n) != "malzeme":
+            continue
+        r = c.execute("SELECT malzeme FROM etiket WHERE kod=?", (n,)).fetchone()
+        if not r or r["malzeme"]:
+            continue                      # defterde yok ya da zaten bağlı
+        c.execute("""UPDATE etiket SET malzeme=?, oturum=COALESCE(oturum,?),
+                     ts_bagla=COALESCE(ts_bagla,?), raf=COALESCE(raf,?)
+                     WHERE kod=?""", (malzeme, oturum, ts, raf, n))
+        return h
+    return None
+
+
 def coz_bagla(c, etiket_kod):
     """Bağlamayı çözer — etiket havuza geri döner. `##GERIAL##` kullanır.
 
@@ -364,6 +391,18 @@ def klasor(c):
 
     Sabit bir yol yerine bağlantıdan türetiliyor ki testler ve geçici
     veritabanları proje `data/` klasörüne yazmasın.
+
+    BELLEK VERİTABANI (`:memory:`) İÇİN KLASÖR YOKTUR — None döner ve yazma
+    yolları sessizce atlanır.
+
+    Eski hâli bu durumda `data/etiket`e düşüyordu, yani amacının tam tersini
+    yapıyordu: `baglan(":memory:")` ile açılan HER bağlantı gerçek etiket
+    defterini okuyor ve üstüne yazıyordu. Bir denetim betiği 2026-09-02'de
+    `basim-1.csv` (240 seri etiketi) ve `basim-2.csv` (24 malzeme etiketi)
+    dosyalarını iki satırlık deneme verisiyle EZDİ; yedekten geri alındı.
+
+    Defterin tek işi basılmış fiziksel numarayı korumak (CLAUDE.md §12.7) —
+    kalıcı olmayan bir veritabanının ona dokunacak hiçbir işi yok.
     """
     yol = None
     for r in c.execute("PRAGMA database_list"):
@@ -371,8 +410,7 @@ def klasor(c):
             yol = r[2]
             break
     if not yol:
-        from .db import VERI
-        return os.path.join(VERI, "etiket")
+        return None
     return os.path.join(os.path.dirname(os.path.abspath(yol)), "etiket")
 
 
@@ -388,6 +426,8 @@ def csv_yaz(c, basim_id, satirlar, ts=None):
     numarayı asla yeniden vermez.
     """
     kl = klasor(c)
+    if not kl:                     # bellek veritabanı: kalıcı defter yok
+        return None
     os.makedirs(kl, exist_ok=True)
     yol = os.path.join(kl, "basim-%s.csv" % basim_id)
     with open(yol, "w", newline="", encoding="utf-8") as f:
@@ -409,7 +449,7 @@ def csv_geri_yukle(c):
     yaşıyor. Buradaki amaç yalnızca sayacın basılı numarayı tekrar vermemesi.
     """
     kl = klasor(c)
-    if not os.path.isdir(kl):
+    if not kl or not os.path.isdir(kl):
         return 0
     if c.execute("SELECT 1 FROM etiket LIMIT 1").fetchone():
         return 0

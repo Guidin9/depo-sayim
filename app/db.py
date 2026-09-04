@@ -81,6 +81,23 @@ CREATE INDEX IF NOT EXISTS ix_ok_grup ON okutma(oturum, grup);
 CREATE TABLE IF NOT EXISTS eslesme(
   barkod TEXT PRIMARY KEY, kod TEXT, seri TEXT, ts TEXT);
 
+-- TIGER'DA HIC OLMAYAN urunun adi. `eslesme`nin karsiligi, ama malzeme kodu
+-- yerine kullanicinin yazdigi serbest ad tutar.
+--
+-- Neden ayri tablo: `eslesme` barkodu bir Tiger MALZEME KODUNA baglar ve
+-- Barkod Tablosu sekmesinden Tiger'in malzeme kartina yazilir. Tiger'da
+-- karsiligi olmayan urunun yazilacak bir kodu yoktur; oraya bos kodla satir
+-- atmak Barkod Tablosu'nu kirletirdi.
+--
+-- Olmadigi surece kendi bastigimiz DM- etiketiyle giren urun HER SEFERINDE
+-- taninmiyor ve kullanici adini tekrar tekrar yaziyordu: 2026-08-28 sayiminda
+-- `DM-000001` 47 kez fazla yazildi ve 47 kez "DM-160 bas konus" elle girildi
+-- (saha bildirimi S2).
+CREATE TABLE IF NOT EXISTS fazla_ad(
+  barkod TEXT PRIMARY KEY,   -- norm() edilmis
+  ad TEXT,                   -- kullanicinin yazdigi urun adi
+  ts TEXT);
+
 CREATE TABLE IF NOT EXISTS tampon(
   id INTEGER PRIMARY KEY, oturum INT, ts TEXT, ham TEXT);
 
@@ -243,6 +260,7 @@ def baglan(yol=None):
     goc(c)
     bolunmus_fazlalari_birlestir(c)
     lic_kuralini_duzelt(c)
+    malzeme_etiket_defterini_onar(c)
     kurallari_tohumla(c)
     etiketleri_geri_yukle(c)
     kutulari_geri_yukle(c)
@@ -314,6 +332,31 @@ def bolunmus_fazlalari_birlestir(c):
             c.execute("UPDATE kuyruk_foto SET okutma=? WHERE okutma=?",
                       (kalan["id"], r["id"]))
             c.execute("DELETE FROM okutma WHERE id=?", (r["id"],))
+
+
+def malzeme_etiket_defterini_onar(c):
+    """`eslesme`'de bağlı olan DM- etiketlerini `etiket.malzeme` alanına yazar.
+
+    Boş havuzdan basılan malzeme etiketi (`etiketler.bas(kapsam="bos")`) bir
+    ürüne yapıştırılıp kuyruktan çözüldüğünde YALNIZCA `eslesme`'ye
+    yazılıyordu. Motor onu tanıyordu, ama DEFTER boş kalıyordu.
+
+    Sonucu fiziksel: `etiketler.bas(kapsam="eksik")` "bu malzemenin etiketi
+    var mı" diye tam bu alana bakıyor. Boş görünce aynı malzemeye İKİNCİ bir
+    numara basıyor ve depoda tek ürünün üstünde iki farklı kod dolaşıyor —
+    CLAUDE.md §12.1 bunun olmamasını şart koşuyor.
+
+    Gerçek veriyle doğrulandı (2026-09-02): `DM-000002 -> SR335` eşleşmede
+    yazılıydı, defterde boştu; yeniden basımda SR335'e `DM-000174` veriliyordu.
+
+    Yalnızca BOŞ olanı doldurur — bağlı bir etiketin malzemesi değişmez.
+    Idempotent.
+    """
+    c.execute("""UPDATE etiket SET malzeme=(SELECT e.kod FROM eslesme e
+                                            WHERE e.barkod=etiket.kod)
+                 WHERE tur='malzeme' AND COALESCE(malzeme,'')=''
+                   AND EXISTS(SELECT 1 FROM eslesme e WHERE e.barkod=etiket.kod
+                              AND COALESCE(e.kod,'')<>'')""")
 
 
 def lic_kuralini_duzelt(c):

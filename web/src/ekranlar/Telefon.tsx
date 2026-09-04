@@ -374,9 +374,14 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
   async function okutmaSil(a: AkisSatiri) {
     if (!oturum || mesgul) return;
     const ne = a.kod ?? a.ham ?? "bu okutma";
-    if (!confirm(`${ne} okutması silinsin mi?
+    // "Silindi" gerçekten SİLİNDİ demeli: kayıt kuyruğa geri DÜŞMEZ.
+    // Eskiden düşüyordu ve kullanıcı tuşun çalışmadığını sanıyordu (S5).
+    if (
+      !confirm(`${ne} okutması silinsin mi?
 
-Öğrenilen barkod unutulur, bağlanan etiket havuza döner.`))
+Kayıt tamamen kaldırılır — kuyruğa geri DÜŞMEZ.
+Öğrenilen barkod unutulur, bağlanan etiket havuza döner.`)
+    )
       return;
     setMesgul(true);
     try {
@@ -430,7 +435,15 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
     try {
       const r = await api.okut(oturum, "##KILIT##");
       if (r.tip === "kilit_yok") {
-        setHata("Önce malzeme kodunu okut, sonra kilitle.");
+        // Neden kilitlenmediği YAZILIR. Eskiden bu durumda kilit sessizce BİR
+        // ÖNCEKİ ürünün koduna kuruluyordu (saha bildirimi S1) ve sonraki
+        // bütün seri numaraları yanlış malzemeye gidiyordu.
+        setHata(
+          (r.barkodlar ?? []).length
+            ? `${(r.barkodlar ?? []).join(", ")} tanınmadı — kilit kurulmadı. ` +
+              "Malzeme kodunu okut, ya da Fazla ile yaz."
+            : "Önce malzeme kodunu okut, sonra kilitle.",
+        );
       } else {
         setHata(null);
         navigator.vibrate?.(60);
@@ -1277,6 +1290,16 @@ export default function Telefon({ durum, canli, tik, tazele }: Props) {
                 className="border-cizgi-kuvvetli bg-zemin w-full rounded-sm border px-3
                   py-3 text-govde"
               />
+              {/* Girilen adet elle saymada da geçerli: okutma akışıyla aynı
+                  yoldan geçiyor ve seçimle birlikte tükeniyor. Söylenmezse
+                  kullanıcı 77'yi girip tek adet saydığını sanır. */}
+              {durum.bekleyen_adet > 0 && (
+                <p className="border-uyari bg-uyari-tint text-uyari rounded-sm border
+                  px-3 py-2 text-mikro font-semibold">
+                  Seçilen ürüne <span className="rakam">{durum.bekleyen_adet}</span> adet
+                  yazılacak. Seri takipli kalemde uygulanmaz.
+                </p>
+              )}
               {/* Yalnızca AÇIK kayıtlar gelir (`sadece_acik`): sayılmış kayda
                   ikinci fiziksel ürün bağlanmasın (CLAUDE.md 5). */}
               <ul className="border-cizgi max-h-72 overflow-y-auto rounded-sm border">

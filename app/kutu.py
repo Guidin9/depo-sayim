@@ -197,8 +197,10 @@ def liste(c, q=None, sadece_tanimli=False, limit=500):
 
 # ------------------------------------------------------- sıfırlamaya dayanma
 def _yol(c):
+    """Kap defterinin dosya yolu — bellek veritabanında None (bkz. etiketler.klasor)."""
     from .etiketler import klasor
-    return os.path.join(klasor(c), "kutu.csv")
+    kl = klasor(c)
+    return os.path.join(kl, "kutu.csv") if kl else None
 
 
 def csv_yaz(c):
@@ -213,8 +215,10 @@ def csv_yaz(c):
     Defter küçük (kap sayısı kadar satır), o yüzden her değişiklikte tamamı
     yeniden yazılıyor — artımlı yazmanın tutarsız kalma riski yok.
     """
-    satirlar = c.execute("SELECT * FROM kutu ORDER BY kod").fetchall()
     yol = _yol(c)
+    if not yol:                    # bellek veritabanı: kalıcı defter yok
+        return None
+    satirlar = c.execute("SELECT * FROM kutu ORDER BY kod").fetchall()
     os.makedirs(os.path.dirname(yol), exist_ok=True)
     with open(yol, "w", newline="", encoding="utf-8") as f:
         y = csv.DictWriter(f, BASLIK, extrasaction="ignore")
@@ -227,7 +231,7 @@ def csv_yaz(c):
 def csv_geri_yukle(c):
     """Kap defteri boşsa CSV'den geri okur. Dolu defterde hiçbir şey yapmaz."""
     yol = _yol(c)
-    if not os.path.isfile(yol):
+    if not yol or not os.path.isfile(yol):
         return 0
     if c.execute("SELECT 1 FROM kutu LIMIT 1").fetchone():
         return 0

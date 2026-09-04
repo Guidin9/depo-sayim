@@ -20,8 +20,35 @@ from . import etiketler
 from . import kutu as kutum
 from .norm import ADET_TAVAN, komut_coz, norm, sifirsiz, upc_mi
 
-SAYILMADI = ("AND NOT EXISTS(SELECT 1 FROM okutma o WHERE o.oturum=? "
-             "AND o.beklenen_id=b.id)")
+# Beklenen adet: satırın kendi miktarı. Seri takiplide en az 1 — Tiger'dan
+# 0 miktarla gelen bir satır hiç sayılamaz hâle gelmesin.
+#
+# Eskiden seri takiplide SABİT 1 sayılıyordu ("Tiger'da miktar hep 1"). Gerçek
+# veride yanlış: `izleme='seri'` olduğu hâlde miktarı 2 ve 4 olan 32 satır var.
+# O satırlarda bir okutma satırı kapatıyor, ikinci cihaz "tekrar" deyip
+# sayılmıyor ve eksik listesine de girmiyordu — adet sessizce buharlaşıyordu.
+#
+# `beklenen_adet()` bunun Python karşılığıdır; ikisi AYNI KURALI söylemeli.
+BEKLENEN_ADET = ("CASE WHEN b.izleme='seri' THEN MAX(COALESCE(b.miktar,0),1) "
+                 "ELSE COALESCE(b.miktar,0) END")
+
+# "Bu beklenen satırına hâlâ yazılabilir mi?" — `kapasite_kaldi()`nin SQL
+# karşılığı. Aday satır arayan sorgulara `AND` olarak eklenir; tek parametre
+# alır (oturum).
+#
+# BURASI BİR DÖNEM `SAYILMADI` İDİ ("hiç okutulmamış"). D1 düzeltmesi ölçütü
+# `beklenen_adet`e taşırken `kapasite_kaldi`, `sayaclar`, `ara`, `eksik_lotlar`
+# ve `reports.eksik_kayitlar` geçirildi; ADAY ARAYAN İKİ SORGU geçirilmedi —
+# `grup_coz`'un slot sorgusu ve `coz()` 5. adımı (DENETIM_20260904.md Y1).
+# Sonuç: miktarı 2 olan kirli bir seri satırında ilk cihaz slotu dolduruyor,
+# İKİNCİ cihaz kapasite dururken `fazla_onay` kuyruğuna düşüyordu — satır hem
+# 1 adet eksik hem 1 adet onay bekler görünüyordu.
+#
+# miktar=1 satırlarda (Ambar 1'in tamamı) davranış eskisiyle BİREBİR aynı:
+# bir okutmadan sonra kapasite 0. Fark yalnızca D1'in bulduğu 32 satırda —
+# ambar 0/13/14, yani sıradaki ambarlarda.
+KAPASITE_VAR = ("AND COALESCE((SELECT SUM(o.miktar) FROM okutma o "
+                "WHERE o.oturum=? AND o.beklenen_id=b.id), 0) < " + BEKLENEN_ADET)
 
 
 def _ts():
@@ -33,30 +60,50 @@ def _sayildi(c, oturum, bid):
                           (oturum, bid)).fetchone())
 
 
+def beklenen_adet(b):
+    """Bu beklenen satırında Tiger kaç adet diyor?
+
+    Seri takiplide satır normalde bir cihazdır (miktar=1) ama GERÇEK VERİDE
+    2 ve 4 miktarlı seri satırları da var. `miktar` neyse o geçerlidir; 0 ya
+    da eksik miktar seri takiplide 1'e yuvarlanır, yoksa satır hiç sayılamazdı.
+    """
+    m = b["miktar"] or 0
+    if b["izleme"] == "seri":
+        return m if m > 0 else 1
+    return m
+
+
 def kapasite_kaldi(c, oturum, b):
     """Bu beklenen kayda bu oturumda HÂLÂ bağlanabilir mi?
 
     Elle eşleştirmenin tek doğruluk ölçütü. `_sayildi` tek başına yetmez:
 
-    - `izleme='seri'`: her satır bir tekil cihaz, bir kez okutulur. Sayıldıysa
-      kapasite bitmiştir.
-    - `lot` / `yok`: tek satır çok adet taşır. 77 adetlik bir lotun bir kez
-      okutulmuş olması bittiği anlamına GELMEZ; sayılan < beklenen olduğu
-      sürece bağlanabilir.
+    Ölçüt tek: **sayılan adet < beklenen adet** (`beklenen_adet`). Seri
+    takiplide beklenen normalde 1'dir, o yüzden davranış "bir kez okutulur"la
+    aynı kalır.
 
-    Bu ayrım `ara(sadece_acik=True)` içindeki SQL ile birebir aynı olmalı —
+    SERİ TAKİPLİDE DE `miktar` OKUNUR — "seri satırında miktar hep 1"
+    varsayımı GERÇEK VERİDE YANLIŞ. Örnek Tiger çıktısında `izleme='seri'`
+    olduğu hâlde miktarı 2 ve 4 olan 32 satır var (ambar 0/13/14). Eski
+    ölçüt `not _sayildi()` idi: 2 adetlik satır TEK okutmayla kapanıyor,
+    ikinci cihaz "tekrar" deyip sayılmıyor, eksik listesine de girmiyordu —
+    bir adet ne sayaçta ne eksikte ne fazlada görünüyordu.
+
+    `beklenen_adet` seri takiplide en az 1 döner: Tiger'dan 0 miktarla gelen
+    bir satır bu yüzden hiç sayılamaz hâle gelmesin.
+
+    Bu ölçüt `ara(sadece_acik=True)` içindeki SQL ile birebir aynı olmalı —
     arayüzün gösterdiği liste ile sunucunun kabul ettiği bağlama aynı kuralı
     kullanmazsa kullanıcı listede gördüğü kaydı bağlayamaz.
     """
-    if b["izleme"] == "seri":
-        return not _sayildi(c, oturum, b["id"])
     sayilan = c.execute("SELECT COALESCE(SUM(miktar),0) n FROM okutma "
                         "WHERE oturum=? AND beklenen_id=?",
                         (oturum, b["id"])).fetchone()["n"]
-    return sayilan < (b["miktar"] or 0)
+    return sayilan < beklenen_adet(b)
 
 
-def _geri_json(ogrenilen=None, etiket=None, kuyruk=None, kutu=None):
+def _geri_json(ogrenilen=None, etiket=None, kuyruk=None, kutu=None,
+               fazla_ad=None, malzeme_etiket=None):
     """`okutma.geri` gövdesi: bu okutmanın KENDİ SATIRI DIŞINDA ne yarattığı.
 
     `##GERIAL##` bunu okuyup temizler. Olmadan geri alma yarım kalıyordu:
@@ -68,8 +115,14 @@ def _geri_json(ogrenilen=None, etiket=None, kuyruk=None, kutu=None):
     d = {}
     if ogrenilen:
         d["ogrenilen"] = list(ogrenilen)
+    if fazla_ad:
+        d["fazla_ad"] = list(fazla_ad)
     if etiket:
         d["etiket"] = etiket
+    # Boş havuzdan bir malzemeye bağlanan DM- etiketi. `etiket`ten AYRI
+    # anahtar: ikisi aynı grupta birlikte bulunabilir (DM-000001 + DS-000045).
+    if malzeme_etiket:
+        d["malzeme_etiket"] = malzeme_etiket
     if kuyruk:
         d["kuyruk"] = kuyruk
     if kutu:
@@ -80,19 +133,73 @@ def _geri_json(ogrenilen=None, etiket=None, kuyruk=None, kutu=None):
     return json.dumps(d, ensure_ascii=False) if d else None
 
 
-def _yan_etkileri_geri_al(c, satir):
-    """`okutma.geri` içindeki yan etkileri temizler. Ne temizlendiğini döner."""
+def _geri_ekle(c, okutma_id, **yeni):
+    """`okutma.geri`ye anahtar EKLER — üzerine yazmaz.
+
+    `geri` bir satırın kendi dışında ne yarattığının tek kaydı ve birden çok
+    adımda büyüyebiliyor: kayıt kuyruktan doğar (`kuyruk`), fazla yazılırken
+    etiket bağlar ve ad öğrenir (`etiket`, `fazla_ad`), sayım sonunda bir
+    malzemeye bağlanır (`ogrenilen`). Her adım kendi anahtarını EKLEMELİ.
+
+    `fazla_bagla` bunu yapmıyordu: `geri`yi düpedüz yeni bir JSON'la
+    değiştiriyor ve önceki anahtarların hepsini düşürüyordu. Sonuç, bağlanmış
+    bir fazla satırı silindiğinde ortaya çıkıyordu — öğrenilen ad `fazla_ad`da
+    kalıyor (yanlış ürün bir daha sorulmadan fazla yazılıyor), etiket defterde
+    bağlı görünmeye devam ediyor (numara boşa gidiyor) ve kuyruk kaydı
+    kayboluyordu.
+    """
+    r = c.execute("SELECT geri FROM okutma WHERE id=?", (okutma_id,)).fetchone()
+    if not r:
+        return None
+    try:
+        d = json.loads(r["geri"] or "") or {}
+    except (TypeError, ValueError):
+        d = {}
+    for k, v in yeni.items():
+        if not v:
+            continue
+        if k in ("ogrenilen", "fazla_ad"):
+            d[k] = sorted(set((d.get(k) or []) + list(v)))
+        else:
+            d[k] = v
+    g = json.dumps(d, ensure_ascii=False) if d else None
+    c.execute("UPDATE okutma SET geri=? WHERE id=?", (g, okutma_id))
+    return d
+
+
+def _yan_etkileri_geri_al(c, satir, kuyruga_geri=True):
+    """`okutma.geri` içindeki yan etkileri temizler. Ne temizlendiğini döner.
+
+    `kuyruga_geri`: kaydı doğuran kuyruk satırı yeniden AÇILSIN mı?
+
+    İki ayrı niyet var ve 2026-08-28'e kadar ikisi de tek yola bağlıydı:
+
+      * ##GERIAL## / "yanlış çözdüm"  -> True. Ürün gerçek, karar yanlıştı;
+        kayıt kuyruğa dönmeli ve yeniden çözülmeli.
+      * Akış listesindeki Sil tuşu    -> False. Kullanıcı "bu satır hiç
+        olmasın" diyor (yanlış okuma, çift okutma). True'da kayıt siliniyor
+        ama kuyrukta yeniden beliriyordu ve kullanıcı Sil tuşunun ÇALIŞMADIĞINI
+        düşünüyordu — sahada bildirildi (S5). Üstelik oturum kapanmadan
+        kuyruk boşalmak zorunda olduğu için kayıttan kurtulmanın yolu yoktu.
+    """
     try:
         d = json.loads(satir["geri"] or "") or {}
     except (TypeError, ValueError):
         return {}
     for h in d.get("ogrenilen") or []:
         c.execute("DELETE FROM eslesme WHERE barkod=?", (norm(h),))
+    # Tiger'da karşılığı olmayan ürünün öğrenilmiş adı (`fazla_ad`) da bir yan
+    # etkidir: geri alınmazsa silinen kaydın adı sonraki okutmalarda yaşamaya
+    # devam eder ve yanlış ürün otomatik "fazla" yazılır.
+    for h in d.get("fazla_ad") or []:
+        c.execute("DELETE FROM fazla_ad WHERE barkod=?", (norm(h),))
     if d.get("etiket"):
         etiketler.coz_bagla(c, d["etiket"])
+    if d.get("malzeme_etiket"):
+        etiketler.coz_bagla(c, d["malzeme_etiket"])
     if d.get("kutu"):
         kutum.geri_al(c, d["kutu"]["kod"], d["kutu"].get("onceki"))
-    if d.get("kuyruk"):
+    if d.get("kuyruk") and kuyruga_geri:
         # Kuyruktan çözülmüş / fazla yazılmış kayıt yeniden açılır. Yoksa
         # okutma siliniyor ama kuyruk kaydı "çözüldü" kalıyor ve ürün hem
         # sayımdan hem kuyruktan düşüyordu.
@@ -306,6 +413,32 @@ def coz(c, ham, yukleme, ambar, oturum):
                         "seri": r["seri"], "izleme": r["izleme"], "birim": r["birim"],
                         "haric": r["haric"], "haric_sebep": r["haric_sebep"],
                         "not": "etiket %s" % e["gosterim"]}
+        # 1c-2) TIGER KAYDI OLMADAN TÜKENMİŞ ETİKET — bu oturumda fazla yazıldı.
+        #
+        # `beklenen_id` yalnızca Tiger'da karşılığı OLAN kayda bağlanınca
+        # dolar. Fazla yolundan geçen etikette NULL kalır, ama `oturum` dolar
+        # (`fazla_ogren` -> `etiketler.bagla(..., beklenen_id=None)`): yani
+        # uygulama etiketin tükendiğini BİLİYOR ve o bilgiyi hiç okumuyordu.
+        #
+        # Sonuç sessiz çift sayımdı (DENETIM_20260904.md K2, gerçek veriyle
+        # üretildi): aynı DS- etiketi ikinci kez okutulunca ikinci bir fazla
+        # satırı doğuyor, `ad` da öğrenilmiş olduğu için `fazla_bilinen` dalı
+        # onu sorusuz yazıyor — ne `ad_engel` ne `fotosuz` kapısı yakalıyor.
+        # Canlı sayımda oldu: DS-000054 -> okutma #23 ve #26, 36 saniye arayla.
+        #
+        # DS- ETİKETİNE ÖZEL, DM-/UPC'ye değil: seri etiketi TEKİL cihaza
+        # aittir, ikinci kez okutulması ikinci cihaz olamaz. Aynı DM- etiketi
+        # ya da UPC ikinci kez okutulduğunda ikinci kayıt DOĞRU olabilir —
+        # aynı üründen iki adet olabilir.
+        #
+        # OTURUMA BAĞLI: gelecek yılın sayımında aynı etiket ürünün üstünde
+        # duruyor ve normal okutulabilmeli. `coz()`'un bütün `tekrar`
+        # kararları gibi ölçüt bu oturumdur.
+        if e["oturum"] == oturum:
+            return {"t": "tekrar", "kod": e["malzeme"] or e["gosterim"],
+                    "seri": e["gosterim"], "aciklama": None,
+                    "not": "etiket %s bu oturumda zaten kullanıldı — seri "
+                           "etiketi tek cihaza aittir" % e["gosterim"]}
         return {"t": "etiket_bos", "ham": ham, "etiket": e["gosterim"]}
 
     # 1d) Kendi bastığımız KUTU etiketi (KUTU_TASARIM.md 5)
@@ -399,11 +532,30 @@ def coz(c, ham, yukleme, ambar, oturum):
                     "izleme": r["izleme"], "birim": r["birim"],
                     "haric": r["haric"], "haric_sebep": r["haric_sebep"]}
 
+    # 4b) Tiger'da karşılığı OLMAYAN, daha önce fazla yazılıp adlandırılmış ürün
+    #
+    # Kendi bastığımız DM- etiketiyle sisteme giren ürünlerin yolu bu. Tiger'da
+    # kaydı yok, dolayısıyla 1-4 arası hiçbir adım tutmuyor ve her okutmada
+    # kuyruğa düşüp adı yeniden soruluyordu: 2026-08-28 sayımında `DM-000001`
+    # 47 kez okutuldu, 47 kez "DM-160 bas konuş" yazıldı (saha bildirimi S2).
+    #
+    # 4. adımdan SONRA duruyor, çünkü Tiger her zaman kazanır: ürün sonradan
+    # Tiger'a girilirse (fazla fişi işlendikten sonra) 2/3/4 tutar ve bu adım
+    # hiç çalışmaz. Öğrenilmiş ad yalnızca boşluğu doldurur, kural koymaz.
+    f = c.execute("SELECT * FROM fazla_ad WHERE barkod=?", (n,)).fetchone()
+    if f:
+        return {"t": "fazla_bilinen", "ham": ham, "ad": f["ad"]}
+
     # 5) İçerme: gerçek S/N kirli kaydın içine gömülmüş olabilir
+    #
+    # Ölçüt `KAPASITE_VAR`, "hiç okutulmamış" DEĞİL — miktarı 2 olan bir kirli
+    # satır ikinci cihazı da almalı (D1 / Y1). Aynı değerin ikinci kez
+    # okutulması buraya hiç gelmez: 3b adımı `yeni_seri` üzerinden `tekrar`
+    # döndürüyor ve bu adımdan ÖNCE duruyor.
     if len(n) >= 6:
         r = c.execute("""SELECT * FROM beklenen b WHERE yukleme=? AND ambar=?
                          AND izleme='seri' AND kirli=1 AND INSTR(seri_n, ?)>0
-                         AND kod_n<>? """ + SAYILMADI + " ORDER BY id LIMIT 1",
+                         AND kod_n<>? """ + KAPASITE_VAR + " ORDER BY id LIMIT 1",
                       (yukleme, ambar, n, n, oturum)).fetchone()
         if r:
             return {"t": "seri", "id": r["id"], "kod": r["kod"],
@@ -524,6 +676,37 @@ def _acik_kutu_kuyrugu(c, oturum, kutu_ad):
     return None
 
 
+def _ayni_kuyruk(c, oturum, hamlar):
+    """Bu barkod kümesi bu oturumda ZATEN çözülmemiş kuyrukta duruyor mu?
+
+    UYARIR, ENGELLEMEZ ve BİRLEŞTİRMEZ. Üç seçenekten doğru olan bu:
+
+      * birleştirmek -> aynı barkodlu İKİ fiziksel ürün varsa biri kaybolur
+      * engellemek   -> aynısı, üstelik kullanıcı ikinciyi hiç kaydedemez
+      * susmak       -> kazara iki kez okutulan ürün iki kez sayılır ve bu
+                        ancak Excel'de görülür
+
+    Canlı sayımda oldu (DENETIM_20260904.md O5): `kuyruk#125` ve `#126` birebir
+    aynı (`MIC-75GF10-00A1 + KMAA700581`), 16:05 ve 16:07. Kap kayıtlarında bu
+    koruma zaten vardı (`_acik_kutu_kuyrugu`), normal kuyrukta yoktu.
+
+    Ölçüt normalize edilmiş KÜME: okutma sırası ürünü değiştirmez.
+    """
+    hedef = {norm(h) for h in hamlar if norm(h)}
+    if not hedef:
+        return None
+    for r in c.execute("SELECT * FROM kuyruk WHERE oturum=? AND cozuldu=0 "
+                       "ORDER BY id", (oturum,)):
+        try:
+            var = {norm(h) for h in json.loads(r["barkodlar"]) if norm(h)}
+        except (TypeError, ValueError):
+            continue
+        if var == hedef:
+            return {"id": r["id"], "raf": r["raf"],
+                    "ts": (r["ts"] or "")[:19].replace("T", " ")}
+    return None
+
+
 def _kutu_kuyrugu_kapat(c, oturum, kutu_ad):
     """Kap sayıldı: o kaba ait açık soru varsa kapanır."""
     r = _acik_kutu_kuyrugu(c, oturum, kutu_ad)
@@ -539,7 +722,8 @@ def _yeni_grup(c, oturum):
     return r["g"]
 
 
-def _celiskili_grup(c, ot, farkli, hamlar, raf, ts, bilinmeyen=(), tekrar=None):
+def _celiskili_grup(c, ot, farkli, hamlar, raf, ts, bilinmeyen=(), tekrar=None,
+                    bekleyen_adet=0):
     """##SONRAKI## unutulmuş: tek grupta birden çok cihaz. Hepsini sayar.
 
     Her cihaz KENDİ grup numarasıyla ayrı satır olur — grup numarası "bir ürün"
@@ -555,6 +739,12 @@ def _celiskili_grup(c, ot, farkli, hamlar, raf, ts, bilinmeyen=(), tekrar=None):
     Tanınmayan barkodlar ÖĞRENİLMEZ: hangi cihaza ait oldukları belirsiz ve
     yanlış malzemeye bağlanan bir barkod gelecek yılın sayımına taşınır
     (CLAUDE.md 12.6 ile aynı gerekçe). Sonuçta `ogrenilmedi` ile bildirilir.
+
+    `bekleyen_adet` BURADA DA UYGULANMAZ ama SESSİZ KALMAZ: her satır bir
+    cihazdır (Tiger'da ayrı satır), yani ##ADET-25## anlamsızdır — `eslesti` ve
+    `slot` dallarındaki `adet_yersiz` sözleşmesinin aynısı. Bu dal tek başına
+    onu bildirmiyordu ve girilen adet sessizce yanıyordu
+    (DENETIM_20260904.md Y5).
     """
     oturum = ot["id"]
     izi = " + ".join(hamlar)
@@ -574,7 +764,32 @@ def _celiskili_grup(c, ot, farkli, hamlar, raf, ts, bilinmeyen=(), tekrar=None):
     return {"tip": "coklu", "sayi": len(kayitlar), "kayitlar": kayitlar,
             "barkodlar": hamlar, "raf": raf,
             "tekrar": tekrar[1]["seri"] if tekrar else None,
+            "adet_yersiz": bekleyen_adet if bekleyen_adet > 1 else None,
             "ogrenilmedi": ogrenilmedi, "ses": "uyari"}
+
+
+def _tamponu_geri_yaz(c, oturum, hamlar, bekleyen_adet, ts):
+    """Grup HİÇBİR SATIR YAZMADAN döndüyse tamponu ve adedi geri koyar.
+
+    `grup_coz` tamponu en başta siliyor. Yazan dallarda bu doğru, ama iki dal
+    hiçbir şey yazmadan dönüyor — `tekrar` ve `haric` — ve orada tamponun
+    tükenmesi ürünü BUHARLAŞTIRIYORDU: kullanıcı elindeki cihaz için hâlâ bir
+    karar vermek isterken (##FAZLA##, ##ATLA##) tampon boş kaldığı için
+    ##FAZLA## `bos` dönüyordu.
+
+    Sahada üretildi (2026-08-28, S4): daha önce bağlanmış bir DS- etiketi
+    okutulup ##SONRAKI## denince `tekrar` dönüyor, ardından Fazla'ya basmak
+    hiçbir şey yapmıyordu. Kullanıcı etiketi söküp yenisini yapıştırınca
+    çalışıyordu — çünkü yeni etiket `tekrar` dalına hiç girmiyor.
+
+    Grup numarası `_yeni_grup` ile zaten tüketildi; onu geri almaya gerek yok
+    (grup numarası yalnızca satırları kümeler, sıralı olmak zorunda değil).
+    """
+    for h in hamlar:
+        c.execute("INSERT INTO tampon(oturum,ts,ham) VALUES(?,?,?)", (oturum, ts, h))
+    if bekleyen_adet:
+        c.execute("UPDATE oturum SET bekleyen_adet=? WHERE id=?",
+                  (bekleyen_adet, oturum))
 
 
 def grup_coz(c, ot, raf=None):
@@ -624,8 +839,26 @@ def grup_coz(c, ot, raf=None):
     # seri numaraları geliyor. Kilit yalnızca grupta kod YOKKEN devreye girer —
     # elle okutulan kod her zaman kilidi yener, yoksa kullanıcı kilidi açmadan
     # başka bir ürünü sayamazdı.
+    #
+    # KİLİT, "BU ÜRÜN TIGER'DA YOK" BİLGİSİNİ DE YENEMEZ.
+    #
+    # Kilidin dayanağı tek cümle: "grupta malzeme kodu yok, demek ki elimdeki
+    # kilitli malzemenin bir cihazı." Grupta `fazla_ad`'a yazılmış bir barkod
+    # varsa o dayanak YANLIŞTIR — kullanıcı o barkod için "Tiger'da karşılığı
+    # yok, adı şudur" kararını zaten açıkça vermiştir.
+    #
+    # Eskiden kilit `kod_h`'yi doldurup `kaynak`'ı doğru yapıyor ve aşağıdaki
+    # `fazla_bilinen` dalı (`if not kaynak`) hiç çalışmıyordu. Sonuç sessiz
+    # yanlış sayım (DENETIM_20260904.md K3, üretildi): adı "SARF KABLO" diye
+    # öğrenilmiş bir kablo, kilitli `04RW5H` (SQL Server lisansı) kirli
+    # slotuna yazılıyor, ekran YEŞİL yanıyordu. Kilit kalıcı bir kip; bir rafta
+    # unutulursa bütün raf bu yoldan gider.
+    #
+    # Açık karar, ortam kipini yener. ELLE OKUTULAN kod ise hâlâ her ikisini de
+    # yener: `kod_h` doluysa buraya zaten girilmiyor.
     sabit = None
-    if not kod_h and ot["sabit_kod"]:
+    if not kod_h and ot["sabit_kod"] and not any(
+            r["t"] == "fazla_bilinen" for _, r in coz_list):
         t = coz(c, ot["sabit_kod"], yukleme, ambar, oturum)
         if t.get("kod"):
             sabit = ot["sabit_kod"]
@@ -667,12 +900,17 @@ def grup_coz(c, ot, raf=None):
             farkli.append(x)
     if len(farkli) > 1:
         return _celiskili_grup(c, ot, farkli, hamlar, raf, ts,
-                               bilinmeyen=bilinmeyen, tekrar=tekrar)
+                               bilinmeyen=bilinmeyen, tekrar=tekrar,
+                               bekleyen_adet=bekleyen_adet)
 
     if tekrar and not seri_h:
+        # Hiçbir satır yazılmadı: tampon TÜKENMEZ (bkz. `_tamponu_geri_yaz`).
+        # Kullanıcı elinde ikinci bir fiziksel cihaz tutuyor olabilir ve
+        # ##FAZLA## ile devam edebilmeli.
+        _tamponu_geri_yaz(c, oturum, hamlar, bekleyen_adet, ts)
         return {"tip": "tekrar", "kod": tekrar[1]["kod"], "seri": tekrar[1]["seri"],
                 "aciklama": tekrar[1].get("aciklama"), "not": tekrar[1].get("not"),
-                "ses": "uyari"}
+                "tampon_duruyor": True, "barkodlar": hamlar, "ses": "uyari"}
 
     # KAP OKUTMASI (KUTU_TASARIM.md 5-6)
     #
@@ -812,6 +1050,31 @@ def grup_coz(c, ot, raf=None):
 
     kaynak = seri_h or kod_h
     if not kaynak:
+        # ÖĞRENİLMİŞ FAZLA: Tiger'da karşılığı olmayan, daha önce adlandırılmış
+        # ürün. Kuyruğa DÜŞMEZ, doğrudan fazla yazılır ve adı hazır gelir.
+        #
+        # "Fazla onaydan geçmeden oluşmaz" kuralını (CLAUDE.md 4.4) delmiyor:
+        # o kural malzemesi Tiger'da BULUNAN kayıt için — orada "eşleşmedi"
+        # ile "stokta yok" farklı şeyler. Burada malzeme Tiger'da hiç yok ve
+        # kullanıcı bu barkod için kararını bir kez zaten verdi, adını da
+        # yazdı. İkinci, üçüncü, kırk yedinci kez sormak o kararı tekrarlatmak
+        # olurdu — sahada tam olarak bu oldu (S2).
+        bilinen = next((r for _, r in coz_list if r["t"] == "fazla_bilinen"), None)
+        if bilinen:
+            oid = c.execute(
+                """INSERT INTO okutma(oturum,ts,ham,seri,miktar,tip,raf,grup,not_,ad,
+                   yeni_seri) VALUES(?,?,?,?,?,'fazla',?,?,?,?,'')""",
+                (oturum, ts, " + ".join(hamlar), _fazla_seri(hamlar, None),
+                 bekleyen_adet or 1, raf, grup, "öğrenilmiş fazla",
+                 bilinen["ad"])).lastrowid
+            # Bu gruptaki YENİ barkodlar da aynı ada bağlanır ve DS- etiketi
+            # deftere işlenir — kutunun üstündeki her barkod bir sonraki sefere
+            # tanınsın diye.
+            yan = fazla_ogren(c, oid, ts)
+            return dict({"tip": "fazla_bilinen", "okutma": [oid], "ad": bilinen["ad"],
+                         "barkodlar": hamlar, "raf": raf,
+                         "miktar": bekleyen_adet or 1, "ses": "uyari"}, **yan)
+
         # Girilen adet kuyruk satırına TAŞINIR, burada harcanmaz.
         #
         # Malzeme bilinmiyor, yani seri takipli mi lot mu bilinmiyor; adedin
@@ -819,6 +1082,9 @@ def grup_coz(c, ot, raf=None):
         # Eskiden `bekleyen_adet` grup kapanırken sıfırlanıyor ve buraya hiç
         # yazılmıyordu: kullanıcı "150 tane var" diyor, ürün tanınmıyor,
         # 150 hiçbir yere düşmeden kayboluyordu (saha bildirimi 2026-08-27).
+        # Aynı barkod kümesi kuyrukta zaten duruyorsa kayıt YİNE yazılır
+        # (iki fiziksel ürün olabilir) ama kullanıcı UYARILIR — `_ayni_kuyruk`.
+        onceki = _ayni_kuyruk(c, oturum, hamlar)
         kid = c.execute("INSERT INTO kuyruk(oturum,ts,barkodlar,raf,not_,adet) "
                         "VALUES(?,?,?,?,?,?)",
                         (oturum, ts, json.dumps(hamlar, ensure_ascii=False), raf,
@@ -828,7 +1094,7 @@ def grup_coz(c, ot, raf=None):
         # söylüyor (satır ~741), buradaki ise kaç ÜRÜN olduğunu.
         return {"tip": "kuyruk", "kuyruk_id": kid, "barkodlar": hamlar, "raf": raf,
                 "bos_etiket": bos_etiket, "miktar": bekleyen_adet or None,
-                "ses": "kuyruk"}
+                "kuyruk_tekrar": onceki, "ses": "kuyruk"}
 
     # SAYIM DIŞI KALEM: hiçbir şey yazmadan uyar.
     #
@@ -841,9 +1107,14 @@ def grup_coz(c, ot, raf=None):
     # Doğrusu kararı kullanıcıya bırakmak: sayması gerekiyorsa Kurulum
     # ekranından o kuralı kapatıp yeniden okutur.
     if kaynak[1].get("haric"):
+        # Burada da hiçbir satır yazılmıyor — tampon korunur. Kullanıcı
+        # Kurulum'dan kuralı kapatıp ##SONRAKI## diyebilsin, ürünü yeniden
+        # okutmak zorunda kalmasın.
+        _tamponu_geri_yaz(c, oturum, hamlar, bekleyen_adet, ts)
         return {"tip": "haric", "kod": kaynak[1]["kod"],
                 "aciklama": kaynak[1]["aciklama"],
                 "sebep": kaynak[1].get("haric_sebep") or "",
+                "tampon_duruyor": True,
                 "barkodlar": hamlar, "raf": raf, "ses": "uyari"}
 
     kod = kaynak[1]["kod"]
@@ -917,8 +1188,12 @@ def grup_coz(c, ot, raf=None):
     # Malzeme belli ama seri eşleşmedi
     izleme = kaynak[1].get("izleme", "yok")
     if izleme == "seri":
+        # Ölçüt `KAPASITE_VAR`, "hiç okutulmamış" DEĞİL (D1 / Y1). Miktarı 2
+        # olan kirli bir satırda ilk cihaz slotu doldurduktan sonra ikincisi
+        # kapasite dururken `fazla_onay` kuyruğuna düşüyor, satır hem eksik hem
+        # onay bekler görünüyordu. miktar=1 satırlarda davranış aynı.
         slot = c.execute("""SELECT * FROM beklenen b WHERE yukleme=? AND ambar=? AND kod=?
-                            AND kirli=1 """ + SAYILMADI + " ORDER BY id LIMIT 1",
+                            AND kirli=1 """ + KAPASITE_VAR + " ORDER BY id LIMIT 1",
                          (yukleme, ambar, kod, oturum)).fetchone()
         # Tiger'a yazılacak seri numarası seçimi. Üretici S/N okutulduysa ya da
         # elle yazıldıysa O kazanır; havuz etiketi son çaredir. Cihazın gerçek
@@ -1096,9 +1371,10 @@ def okut(c, ot, ham, zorla=False):
         if deger:
             aday, kaynak = deger, coz(c, deger, yukleme, ambar, oturum)
         else:
-            aday, kaynak = None, None
+            aday, kaynak, tamponda_var = None, None, False
             for r in c.execute("SELECT ham FROM tampon WHERE oturum=? ORDER BY id",
                                (oturum,)):
+                tamponda_var = True
                 t = coz(c, r["ham"], yukleme, ambar, oturum)
                 # Tanımlı kap da bir malzeme kodudur (KUTU_TASARIM.md 5):
                 # "kabı okut, kilitle, seri numaralarını okut" seri takipli
@@ -1109,8 +1385,19 @@ def okut(c, ot, ham, zorla=False):
                 if t["t"] in ("kod", "ogrenilmis", "kutu"):
                     aday, kaynak = r["ham"], t
                     break
-            if not aday:
-                # Son çare: kilitten önce zaten bir ürün sayılmışsa onun kodu.
+            # Son çare YALNIZCA tampon BOŞKEN: "az önce saydığım ürüne kilitle".
+            #
+            # Tamponda bir şey varsa kullanıcı ELİNDEKİ ürünü kilitlemek
+            # istiyor demektir. O ürün tanınmadıysa doğru cevap `kilit_yok`;
+            # son çareye düşmek BİR ÖNCEKİ ürünün koduna kilitler ve bunu
+            # yeşil "ok" sesiyle yapardı.
+            #
+            # Sahada üretildi (2026-08-28, S2/S1): Tiger'da olmayan bir ürünün
+            # DM- etiketi okutulup ##KILIT## denince, bir önceki ürün olan
+            # `0C5RNH` (SFP, lot takipli) kilitlendi. Ardından okutulan her
+            # seri numarası o malzemeye gider ve sayım sessizce bozulur —
+            # kullanıcı kilidin doğru kurulduğunu sanır.
+            if not aday and not tamponda_var:
                 x = c.execute("SELECT kod FROM okutma WHERE oturum=? AND kod<>'' "
                               "AND kod IS NOT NULL ORDER BY id DESC LIMIT 1",
                               (oturum,)).fetchone()
@@ -1119,7 +1406,12 @@ def okut(c, ot, ham, zorla=False):
         if not kaynak or not kaynak.get("kod"):
             # Sessizce kilitlememek şart: kullanıcı kilitlendiğini sanıp
             # onlarca seri numarası okutur ve hepsi kuyruğa düşerdi.
-            return {"tip": "kilit_yok", "ses": "uyari"}
+            #
+            # Tampon KORUNUR: kullanıcı ürünü yeniden okutmak zorunda kalmasın,
+            # ##FAZLA## / ##ATLA## ile devam edebilsin.
+            bekleyen = [r["ham"] for r in c.execute(
+                "SELECT ham FROM tampon WHERE oturum=? ORDER BY id", (oturum,))]
+            return {"tip": "kilit_yok", "barkodlar": bekleyen, "ses": "uyari"}
         kod = kaynak["kod"]
         c.execute("UPDATE oturum SET sabit_kod=? WHERE id=?", (kod, oturum))
         # Kilitlenen kod tampondan düşer: kilit onu zaten temsil ediyor, grupta
@@ -1181,7 +1473,7 @@ def okut(c, ot, ham, zorla=False):
     if komut == "fazla":
         hs = [r["ham"] for r in c.execute(
             "SELECT ham FROM tampon WHERE oturum=? ORDER BY id", (oturum,))]
-        # Boş tampon kontrolü — `##ATLA##` bunu yapıyordu, `##FAZLA##` yapmıyordu.
+        # Boş tampon kontrolü.
         # Barkodu olmayan bir "fazla" kaydı oluşuyor, ne olduğu sorulamıyor
         # (sorulacak bir şey yok) ama `adsiz_fazlalar` onu adsız sayıp bitirme
         # kapısını kilitliyordu. Yanlışlıkla F3'e basmak yetiyordu.
@@ -1207,24 +1499,35 @@ def okut(c, ot, ham, zorla=False):
             "VALUES(?,?,?,?,?,'fazla',?,?,'elle işaretlendi','')",
             (oturum, ts, " + ".join(hs), _fazla_seri(hs, None), adet or 1,
              ot["aktif_raf"], grup)).lastrowid]
-        return {"tip": "fazla_elle", "barkodlar": hs, "okutma": idler,
-                "miktar": adet or 1, "ses": "uyari"}
+        # Ad HENÜZ yok (arayüz hemen sonra soruyor), o yüzden burada yalnızca
+        # etiket bağlanır ve kod biliniyorsa öğrenilir. Ad yazılınca
+        # `okutma_guncelle` aynı yardımcıyı bir daha çağırır.
+        yan = fazla_ogren(c, idler[0], ts)
+        return dict({"tip": "fazla_elle", "barkodlar": hs, "okutma": idler,
+                     "miktar": adet or 1, "ses": "uyari"}, **yan)
 
     if komut == "atla":
         hs = [r["ham"] for r in c.execute(
             "SELECT ham FROM tampon WHERE oturum=? ORDER BY id", (oturum,))]
+        # BOŞ TAMPONDA HİÇBİR ŞEY TÜKETİLMEZ — `##SONRAKI##` ve `##FAZLA##` ile
+        # aynı sözleşme. Eskiden bu dal kuyruğa hiçbir şey yazmadan `adet`i
+        # sıfırlıyor ve ekrana "kuyruğa atıldı" diyordu: kullanıcının girdiği
+        # 150 buharlaşıyor, `kuyruk_id` de None dönüyordu
+        # (DENETIM_20260904.md Y4). 2026-08-27'de kapatılan "adet sessizce
+        # kayboluyor" hatasının kalan tek dalı.
+        if not hs:
+            return {"tip": "bos", "ses": "uyari"}
         c.execute("DELETE FROM tampon WHERE oturum=?", (oturum,))
         adet = int(ot["bekleyen_adet"] or 0)
         if adet:
             c.execute("UPDATE oturum SET bekleyen_adet=0 WHERE id=?", (oturum,))
-        kid = None
-        if hs:
-            kid = c.execute("INSERT INTO kuyruk(oturum,ts,barkodlar,raf,adet) "
-                            "VALUES(?,?,?,?,?)",
-                            (oturum, ts, json.dumps(hs, ensure_ascii=False),
-                             ot["aktif_raf"], adet)).lastrowid
+        onceki = _ayni_kuyruk(c, oturum, hs)
+        kid = c.execute("INSERT INTO kuyruk(oturum,ts,barkodlar,raf,adet) "
+                        "VALUES(?,?,?,?,?)",
+                        (oturum, ts, json.dumps(hs, ensure_ascii=False),
+                         ot["aktif_raf"], adet)).lastrowid
         return {"tip": "kuyruk", "kuyruk_id": kid, "barkodlar": hs,
-                "miktar": adet or None, "ses": "kuyruk"}
+                "miktar": adet or None, "kuyruk_tekrar": onceki, "ses": "kuyruk"}
 
     if komut == "bitir":
         # TAMPON ÖNCE KAPANIR, KAPILAR SONRA BAKAR.
@@ -1400,7 +1703,7 @@ def gerial(c, ot, kapsam="okutma"):
     return {"tip": "bos", "ses": "uyari"}
 
 
-def okutma_sil(c, ot, okutma_id, kapsam="grup"):
+def okutma_sil(c, ot, okutma_id, kapsam="grup", kuyruga_geri=False):
     """Akış listesinden tek bir okutmayı (varsayılan: tüm grubunu) siler.
 
     `gerial`den farkı: o yalnızca SONUNCUYU alır, bu herhangi bir satırı.
@@ -1413,7 +1716,17 @@ def okutma_sil(c, ot, okutma_id, kapsam="grup"):
 
     Yan etkiler `##GERIAL##` ile aynı yoldan geri alınır
     (`_yan_etkileri_geri_al`): öğrenilen barkod unutulur, etiket bağlaması
-    çözülür, kuyruk kaydı yeniden açılır. Ayrı bir temizleme kodu YOKTUR.
+    çözülür. Ayrı bir temizleme kodu YOKTUR.
+
+    TEK FARK KUYRUKTA. `kuyruga_geri` varsayılan olarak FALSE: Sil tuşu
+    "bu satır hiç olmasın" demektir, "kararı geri al" değil. True'yken kayıt
+    siliniyor ama doğduğu kuyruk satırı yeniden açılıyor ve ürün "Tiger'da
+    kaydı yok" kuyruğunda tekrar beliriyordu — kullanıcı Sil tuşunun
+    çalışmadığını sanıyordu (saha bildirimi 2026-08-28, S5). Kayıttan
+    kurtulmanın hiçbir yolu yoktu: oturum, kuyruk boşalmadan kapanmıyor.
+
+    Kararı gerçekten geri almak isteyen (yanlış çözdüm, yeniden çözeyim)
+    `kuyruga_geri=True` gönderir; ##GERIAL## zaten varsayılan True ile çağırır.
     """
     x = c.execute("SELECT * FROM okutma WHERE id=? AND oturum=?",
                   (okutma_id, ot["id"])).fetchone()
@@ -1431,51 +1744,57 @@ def okutma_sil(c, ot, okutma_id, kapsam="grup"):
 
     temiz = {}
     for r in satirlar:
-        temiz.update(_yan_etkileri_geri_al(c, r))
+        temiz.update(_yan_etkileri_geri_al(c, r, kuyruga_geri=kuyruga_geri))
     c.execute("DELETE FROM okutma WHERE id IN (%s)"
               % ",".join("?" * len(satirlar)), [r["id"] for r in satirlar])
     return {"tip": "silindi", "silinen": len(satirlar),
             "barkodlar": [r["ham"] for r in satirlar],
-            "unutulan": temiz.get("ogrenilen") or [],
+            "unutulan": (temiz.get("ogrenilen") or []) + (temiz.get("fazla_ad") or []),
             "etiket_cozuldu": temiz.get("etiket"),
-            "kuyruk_acildi": temiz.get("kuyruk"), "ses": "uyari"}
+            # Kuyruk kaydı ne oldu: yeniden açıldı mı, kapalı mı kaldı. Arayüz
+            # bunu söylemek zorunda — "sildim" ile "kuyruğa geri gönderdim"
+            # iki ayrı sonuçtur.
+            "kuyruk_acildi": temiz.get("kuyruk") if kuyruga_geri else None,
+            "kuyruk_kapali": temiz.get("kuyruk") if not kuyruga_geri else None,
+            "ses": "uyari"}
 
 
 # ---------------------------------------------------------------- durum / sayaçlar
-# Bir beklenen satırı için "kaç adet sayıldı" — sayaç ve eksik-lot sorguları
-# aynı ifadeyi paylaşsın diye tek yerde. Seri takiplide satır bir cihazdır
-# (okutuldu = 1), lot / izlemesizde tek satır çok adet taşır.
-SAYILAN_ADET = """CASE WHEN b.izleme='seri'
-                       THEN (CASE WHEN EXISTS(SELECT 1 FROM okutma o
-                                              WHERE o.oturum=? AND o.beklenen_id=b.id)
-                                  THEN 1 ELSE 0 END)
-                       ELSE MIN(COALESCE((SELECT SUM(o.miktar) FROM okutma o
-                                          WHERE o.oturum=? AND o.beklenen_id=b.id), 0),
-                                COALESCE(b.miktar,0))
-                  END"""
-# Beklenen adet: seri takiplide satır başına 1 (Tiger'da miktar hep 1),
-# lot / izlemesizde satırın kendi miktarı.
-BEKLENEN_ADET = "CASE WHEN b.izleme='seri' THEN 1 ELSE COALESCE(b.miktar,0) END"
+# Bir beklenen satırı için "kaç adet sayıldı" — sayaç, eksik-lot ve aday arama
+# sorguları aynı ifadeyi paylaşsın diye tek yerde. `BEKLENEN_ADET` ve
+# `KAPASITE_VAR` dosyanın başında (bkz. oradaki not).
+# Sayılan adet: okutulan miktar, beklenen adedi geçemez (fazlalık `reports`
+# tarafında "adet fazlası" olarak ayrıca raporlanır). Seri ve lot için TEK
+# ifade — ayrıştıkları anda ekranla rapor iki ayrı gerçek söylemeye başlıyor.
+SAYILAN_ADET = """MIN(COALESCE((SELECT SUM(o.miktar) FROM okutma o
+                                WHERE o.oturum=? AND o.beklenen_id=b.id), 0),
+                      """ + BEKLENEN_ADET + ")"
 
 
 def eksik_lotlar(c, ot):
-    """Sayılan < beklenen kalan lot / izlemesiz satırlar — bitirme uyarısı.
+    """YARIM KALMIŞ satırlar — bitirme uyarısı: dokunulmuş ama tamamlanmamış.
 
-    Seri takipli satırlar burada YOK: onlarda "okutulmadı" zaten sayaçta
-    görünüyor. Sorun lot satırında: 77 adetlik bir lot bir kez okutulunca
-    `COUNT(DISTINCT beklenen_id)` onu "okutulmuş" sayıyor ve ekran
-    "KALAN 0" diyordu — kullanıcı depodan çıkıyor, eksik 202 adet ancak
-    Excel açılınca görülüyordu (gerçek veriyle üretildi, 2026-08-27).
+    77 adetlik bir lot bir kez okutulunca eskiden "okutulmuş" sayılıyor ve
+    ekran "KALAN 0" diyordu; eksik 202 adet ancak Excel açılınca görülüyordu
+    (gerçek veriyle üretildi, 2026-08-27).
+
+    ÇOK ADETLİ SERİ SATIRLARI DA BURADA. "Seri satırında miktar hep 1"
+    varsayımı gerçek veride yanlış: örnek Tiger çıktısında miktarı 2 ve 4 olan
+    32 seri satırı var. O satırlar da yarım kalabilir ve kullanıcı depodan
+    çıkmadan önce bunu duymalı. Ölçüt tek: `sayılan < beklenen_adet`.
+
+    Hiç dokunulmamış satır burada YOK — o zaten sayaçtaki `kalan`'da görünüyor.
+    Bu liste "başladın, bitirmedin" listesidir.
     """
     return [dict(r) for r in c.execute(
-        """SELECT b.kod, b.seri, b.aciklama, b.izleme, COALESCE(b.miktar,0) beklenen,
+        """SELECT b.kod, b.seri, b.aciklama, b.izleme, """ + BEKLENEN_ADET + """ beklenen,
                   COALESCE((SELECT SUM(o.miktar) FROM okutma o
                             WHERE o.oturum=? AND o.beklenen_id=b.id), 0) sayilan
            FROM beklenen b
-           WHERE b.yukleme=? AND b.ambar=? AND b.haric=0 AND b.izleme<>'seri'
+           WHERE b.yukleme=? AND b.ambar=? AND b.haric=0
              AND COALESCE((SELECT SUM(o.miktar) FROM okutma o
                            WHERE o.oturum=? AND o.beklenen_id=b.id), 0)
-                 < COALESCE(b.miktar,0)
+                 < """ + BEKLENEN_ADET + """
              AND EXISTS(SELECT 1 FROM okutma o WHERE o.oturum=? AND o.beklenen_id=b.id)
            ORDER BY b.id""",
         (ot["id"], ot["yukleme"], ot["ambar"], ot["id"], ot["id"]))]
@@ -1500,7 +1819,7 @@ def sayaclar(c, ot):
                      FROM beklenen b
                      WHERE b.yukleme=? AND b.ambar=? AND b.haric=0"""
                   % (BEKLENEN_ADET, SAYILAN_ADET),
-                  (oturum, oturum, yukleme, ambar)).fetchone()
+                  (oturum, yukleme, ambar)).fetchone()
     top, ok = r["top"], r["ok"]
     fz = c.execute("SELECT COUNT(*) n FROM okutma WHERE oturum=? AND tip='fazla'",
                    (oturum,)).fetchone()["n"]
@@ -1589,14 +1908,13 @@ def ara(c, yukleme, ambar, q="", limit=0, offset=0, oturum=None,
         kosul.append("b.izleme=?")
         par.append(izleme)
     if sadece_acik:
-        kosul.append("""CASE WHEN b.izleme='seri'
-                             THEN NOT EXISTS(SELECT 1 FROM okutma o
-                                             WHERE o.oturum=? AND o.beklenen_id=b.id)
-                             ELSE COALESCE((SELECT SUM(o.miktar) FROM okutma o
-                                            WHERE o.oturum=? AND o.beklenen_id=b.id), 0)
-                                  < COALESCE(b.miktar, 0)
-                        END""")
-        par += [oturum, oturum]
+        # `kapasite_kaldi()` ile BİREBİR aynı ölçüt. Kopya SQL yazılmıyor:
+        # ikisi ayrıştığı anda kullanıcı listede gördüğü kaydı bağlayamaz
+        # (ya da göremediği kayda bağlayabilir).
+        kosul.append("""COALESCE((SELECT SUM(o.miktar) FROM okutma o
+                                  WHERE o.oturum=? AND o.beklenen_id=b.id), 0)
+                        < """ + BEKLENEN_ADET)
+        par += [oturum]
     nere = " AND ".join(kosul)
 
     toplam = c.execute("SELECT COUNT(*) n FROM beklenen b WHERE " + nere,
@@ -1635,6 +1953,21 @@ def fazla_bagla(c, okutma_id, beklenen_id):
         return {"hata": "malzeme yok"}
     if not kapasite_kaldi(c, x["oturum"], b):
         return {"hata": "bu kayıt bu oturumda zaten sayıldı"}
+    # MİKTAR KAPASİTEYE SIĞMALI.
+    #
+    # Fazla kaydı 150 adet taşıyabiliyor (kaptan sayılmış olabilir) ama
+    # bağlanacak satır tek cihazlık olabilir. Eskiden kontrol yoktu: 150'lik
+    # kayıt seri takipli bir satıra bağlanınca sayaç 1 sayıyor, kalan 149
+    # adet ne eksikte ne fazlada görünüyordu. Üstelik eşleştirme ekranı
+    # miktarı GÖSTERMİYORDU bile, yani kullanıcı 150 olduğunu bilmiyordu.
+    kalan = beklenen_adet(b) - c.execute(
+        "SELECT COALESCE(SUM(miktar),0) n FROM okutma WHERE oturum=? AND beklenen_id=?",
+        (x["oturum"], b["id"])).fetchone()["n"]
+    if (x["miktar"] or 1) > kalan:
+        return {"hata": "miktar_sigmiyor",
+                "mesaj": "Bu fazla kaydı %g adet, seçilen kayda %g adet sığıyor. "
+                         "Ya kaydın adedini düzeltin ya da daha büyük bir "
+                         "kayda bağlayın." % (x["miktar"] or 1, kalan)}
 
     ts = _ts()
     hs = [p.strip() for p in str(x["ham"] or "").split(" + ") if p.strip()]
@@ -1644,6 +1977,17 @@ def fazla_bagla(c, okutma_id, beklenen_id):
         if etiketler.ogrenilebilir(h):
             c.execute("INSERT OR REPLACE INTO eslesme VALUES(?,?,?,?)",
                       (norm(h), b["kod"], "", ts))
+    # Fazla yolunda bağlanmış DS- etiketi ARTIK BİR KAYDA AİT: defterde de
+    # öyle görünmeli, yoksa Etiketler sekmesi "hangi satıra yapıştı" sorusunu
+    # cevaplayamaz ve Tiger Düzeltme satırıyla eşleşmez.
+    for h in hs:
+        if etiketler.etiket_turu(norm(h)) == "seri" and c.execute(
+                "SELECT 1 FROM etiket WHERE kod=? AND beklenen_id IS NULL",
+                (norm(h),)).fetchone():
+            etiketler.bagla(c, h, b["kod"], b["id"], x["oturum"], ts, x["raf"])
+            break
+    malzeme_et = etiketler.malzeme_etiketi_isle(c, hs, b["kod"], x["oturum"], ts,
+                                                x["raf"])
     # `yeni_seri` BURADA da yazılmalı: fazla satırının `beklenen_id`'si şimdi
     # doluyor, yani satır Tiger Düzeltme sorgusuna ilk kez giriyor. Boş
     # bırakılırsa (NULL) rapor eski kurala düşer ve `ham`'daki malzeme kodunu
@@ -1652,15 +1996,20 @@ def fazla_bagla(c, okutma_id, beklenen_id):
     if norm(yeni_es) == norm(b["seri"] or ""):
         yeni_es = ""
     c.execute("""UPDATE okutma SET tip='eslesti', beklenen_id=?, kod=?, seri=?,
-                 not_='sayım sonu eşleştirildi', geri=?, yeni_seri=? WHERE id=?""",
-              (b["id"], b["kod"], b["seri"],
-               _geri_json([h for h in hs if etiketler.ogrenilebilir(h)]),
-               yeni_es, okutma_id))
+                 not_='sayım sonu eşleştirildi', yeni_seri=? WHERE id=?""",
+              (b["id"], b["kod"], b["seri"], yeni_es, okutma_id))
+    # `geri` EZİLMEZ, EKLENİR. Eskiden burada yeni bir JSON yazılıyor ve
+    # kaydın önceki yan etkileri (kuyruk bağı, öğrenilmiş ad, bağlanmış
+    # etiket) sessizce düşüyordu — kayıt sonradan silinince hiçbiri geri
+    # alınamıyordu.
+    _geri_ekle(c, okutma_id,
+               ogrenilen=[h for h in hs if etiketler.ogrenilebilir(h)],
+               malzeme_etiket=malzeme_et)
     return {"tip": "eslesti", "okutma": okutma_id, "kod": b["kod"],
             "aciklama": b["aciklama"], "seri": b["seri"]}
 
 
-def elle_say(c, ot, beklenen_id, ham=None):
+def elle_say(c, ot, beklenen_id, ham=None, adet=None):
     """Bir beklenen kaydı listeden seçerek "sayıldı" işaretler (I5).
 
     Barkodu olmayan ürünler için: cihazın üstünde yalnızca seri numarası ya da
@@ -1673,6 +2022,24 @@ def elle_say(c, ot, beklenen_id, ham=None):
         kayda düşer
       * yazılan değer öğrenilir, DS- seri etiketi HARİÇ (tekil cihaza ait,
         malzeme seviyesine yükseltilemez)
+
+    `adet` LOT / İZLEMESİZ KALEMDE UYGULANIR. Bu yol bir dönem SABİT 1
+    yazıyordu ve elle saymanın asıl müşterisi tam da bu kalemlerdi (barkodsuz
+    = dökme): 77 adetlik bir lotu listeden saymak 77 ayrı tıklama, 77 ayrı grup
+    demekti (DENETIM_20260904.md O3). Seri takiplide adet uygulanmaz — her
+    cihaz Tiger'da ayrı satır — ama sessizce yutulmaz, `adet_yersiz` ile
+    bildirilir (`grup_coz` / `kuyruk_coz` ile aynı sözleşme).
+
+    `adet` VERİLMEZSE `oturum.bekleyen_adet` KULLANILIR ve tüketilir —
+    ##ADET-N## / telefondaki Adet paneli okutma akışında ne yapıyorsa burada da
+    onu yapar. Ayrı bir adet kutusu açmak ikinci bir giriş yolu, dolayısıyla
+    ikinci bir davranış demekti; sahadaki akış zaten "adedi gir, sonra ürünü
+    seç".
+
+    Kapasiteyi aşan adet REDDEDİLİR: `fazla_bagla`'daki `miktar_sigmiyor`
+    kapısının aynısı — 77'lik lota 150 yazmak 73 adedi hiçbir yerde
+    görünmeyecek şekilde yutardı. Reddedilen çağrıda adet TÜKENMEZ, kullanıcı
+    düzeltip yeniden seçebilsin.
     """
     b = c.execute("SELECT * FROM beklenen WHERE id=?", (beklenen_id,)).fetchone()
     if not b:
@@ -1683,6 +2050,25 @@ def elle_say(c, ot, beklenen_id, ham=None):
         return {"hata": "bu kalem sayım dışı"}
     if not kapasite_kaldi(c, ot["id"], b):
         return {"hata": "bu kayıt bu oturumda zaten sayıldı"}
+
+    seri_takipli = b["izleme"] == "seri"
+    bekleyen = int(ot["bekleyen_adet"] or 0)
+    istenen = float(adet) if adet is not None else float(bekleyen)
+    adet_yersiz = istenen if (seri_takipli and istenen > 1) else None
+    miktar = 1.0 if (seri_takipli or istenen <= 0) else istenen
+    if miktar > 1:
+        kalan = beklenen_adet(b) - c.execute(
+            "SELECT COALESCE(SUM(miktar),0) n FROM okutma WHERE oturum=? "
+            "AND beklenen_id=?", (ot["id"], b["id"])).fetchone()["n"]
+        if miktar > kalan:
+            # Adet TÜKENMEZ: kullanıcı düzeltip yeniden seçebilmeli.
+            return {"hata": "miktar_sigmiyor",
+                    "mesaj": "Bu kayda %g adet sığıyor, %g yazdınız."
+                             % (kalan, miktar)}
+    # Adet, okutma akışındaki gibi bu "grup"la birlikte tükenir — sonraki
+    # ürüne sızmamalı (CLAUDE.md 4.5).
+    if bekleyen and adet is None:
+        c.execute("UPDATE oturum SET bekleyen_adet=0 WHERE id=?", (ot["id"],))
 
     ts = _ts()
     deger = (ham or "").strip()
@@ -1705,13 +2091,20 @@ def elle_say(c, ot, beklenen_id, ham=None):
     yeni_es = "" if norm(deger) == norm(b["seri"] or "") else deger
     oid = c.execute("""INSERT INTO okutma(oturum,ts,ham,kod,seri,miktar,beklenen_id,tip,
                        raf,grup,not_,geri,yeni_seri)
-                       VALUES(?,?,?,?,?,1,?,'eslesti',?,?,'elle işaretlendi',?,?)""",
-                    (ot["id"], ts, deger, b["kod"], b["seri"], b["id"],
+                       VALUES(?,?,?,?,?,?,?,'eslesti',?,?,?,?,?)""",
+                    (ot["id"], ts, deger, b["kod"], b["seri"], miktar, b["id"],
                      ot["aktif_raf"], grup,
+                     "elle işaretlendi" + ("" if miktar == 1 else " — %g adet" % miktar),
                      _geri_json(ogrenilen, etiket_bagli), yeni_es)).lastrowid
+    # Satırın güncel toplamı: lot kaleminde "77'nin 40'ı" ekranda görünmeli,
+    # yoksa kullanıcı kaç kez daha basacağını bilemez.
+    top = c.execute("SELECT COALESCE(SUM(miktar),0) s FROM okutma WHERE oturum=? "
+                    "AND beklenen_id=?", (ot["id"], b["id"])).fetchone()["s"]
     return {"tip": "eslesti", "okutma": oid, "kod": b["kod"],
             "aciklama": b["aciklama"], "seri": b["seri"],
             "ogrenilen": ogrenilen, "etiket": etiket_bagli,
+            "miktar": miktar, "toplam": top, "beklenen": beklenen_adet(b),
+            "adet_yersiz": adet_yersiz,
             "raf": ot["aktif_raf"], "ses": "ok"}
 
 
@@ -1739,9 +2132,13 @@ def esleme_verisi(c, ot):
     """
     from .reports import eksik_kayitlar
     eksik, _, _ = eksik_kayitlar(c, ot["id"])
+    # `miktar` GÖRÜNMEK ZORUNDA: fazla kaydı 150 adet taşıyabiliyor (kaptan
+    # sayılmış olabilir) ve tek cihazlık bir kayda bağlanırsa geri kalanı
+    # buharlaşırdı. Sunucu artık reddediyor (`fazla_bagla` -> miktar_sigmiyor)
+    # ama kullanıcı reddi anlamak için adedi görmeli.
     fazla = [{"id": r["id"], "ts": (r["ts"] or "")[:19].replace("T", " "),
               "ham": r["ham"], "kod": r["kod"], "seri": r["seri"], "ad": r["ad"],
-              "raf": r["raf"], "not_": r["not_"] or "",
+              "miktar": r["miktar"], "raf": r["raf"], "not_": r["not_"] or "",
               "fotolar": [f["id"] for f in c.execute(
                   "SELECT id FROM kuyruk_foto WHERE okutma=? ORDER BY id", (r["id"],))]}
              for r in c.execute("SELECT * FROM okutma WHERE oturum=? AND tip='fazla' "
@@ -1806,6 +2203,74 @@ def _fazla_seri(hamlar, kod):
     if not kalan:
         return ""
     return _yeni_seri(" + ".join(kalan))
+
+
+def fazla_ogren(c, okutma_id, ts=None):
+    """Fazla kaydının ÖĞRENMESİ ve ETİKET BAĞLAMASI — üç yol da buradan geçer.
+
+    `kuyruk_coz` bunları hep yapıyordu, fazla yazan üç dal (`kuyruk_fazla`,
+    `##FAZLA##` komutu, sonradan ad yazılması) HİÇBİRİNİ yapmıyordu. Sonuç
+    2026-08-28 sayımında görüldü (saha bildirimi S2):
+
+      * `DM-000001` etiketi 47 kez okutuldu, 47 kez fazla yazıldı ve 47 kez
+        adı elle girildi — hiçbir zaman öğrenilmedi.
+      * Fiziksel olarak 109 DS- etiketi ürünlere yapıştırıldı, defterde
+        yalnızca 30'u bağlı göründü; aradaki 79'un hepsi bu yoldan geçmişti.
+        Etiketler sekmesi onları "boşta" gösteriyordu.
+
+    İki ayrı öğrenme var ve ayrımı malzeme kodunun bilinip bilinmemesi yapar:
+
+      kod BİLİNİYOR   -> `eslesme`  (barkod -> Tiger malzeme kodu). Kayıt fazla
+                         olsa bile ürün O malzemedir; yalnızca Tiger'ın seri
+                         numaralarıyla eşleşmemiştir.
+      kod BİLİNMİYOR  -> `fazla_ad` (barkod -> kullanıcının yazdığı ad). Tiger'da
+                         karşılığı yok, yazılacak bir kod da yok. `eslesme`'ye
+                         boş kodla satır atmak Barkod Tablosu'nu kirletirdi.
+
+    SERİ ve KUTU etiketleri hiçbir zaman öğrenilmez (`etiketler.ogrenilebilir`):
+    ikisi de tekil bir nesneye ait, malzeme seviyesine yükseltilemez.
+
+    Öğrenilenler `okutma.geri`ye YAZILIR, yoksa ##GERIAL## / Sil onları geri
+    alamaz ve yanlış ürüne bağlanmış bir ad gelecek yılın sayımına taşınırdı.
+    """
+    r = c.execute("SELECT * FROM okutma WHERE id=?", (okutma_id,)).fetchone()
+    if not r or r["tip"] != "fazla":
+        return {}
+    ts = ts or r["ts"] or _ts()
+    hamlar = [h.strip() for h in str(r["ham"] or "").split(" + ") if h.strip()]
+    kod, ad = r["kod"], (r["ad"] or "").strip()
+
+    ogrenildi, adlandi, etiket = [], [], None
+    for h in hamlar:
+        if not norm(h):
+            continue
+        if not etiketler.ogrenilebilir(h):
+            continue                       # DS- / DK-: tekil nesneye ait
+        if kod:
+            c.execute("INSERT OR REPLACE INTO eslesme VALUES(?,?,?,?)",
+                      (norm(h), kod, "", ts))
+            ogrenildi.append(h)
+        elif ad:
+            c.execute("INSERT OR REPLACE INTO fazla_ad VALUES(?,?,?)",
+                      (norm(h), ad, ts))
+            adlandi.append(h)
+
+    # Fiziksel olarak ürüne yapışan DS- etiketi deftere işlenir. Tiger kaydı
+    # YOK, o yüzden `malzeme` ve `beklenen_id` boş kalır — ama oturum, raf ve
+    # zaman yazılır, yani defter "bu etiket kullanıldı" der. Boş bırakılırsa
+    # Etiketler sekmesi onu havuzda sanır ve aynı numara ikinci kez basılabilir.
+    bos = [h for h in hamlar
+           if etiketler.etiket_turu(norm(h)) == "seri"
+           and c.execute("SELECT 1 FROM etiket WHERE kod=? AND beklenen_id IS NULL "
+                         "AND oturum IS NULL", (norm(h),)).fetchone()]
+    if bos:
+        etiket = bos[0]
+        etiketler.bagla(c, etiket, kod, None, r["oturum"], ts, r["raf"])
+
+    # `geri`ye EKLENİR, üzerine yazılmaz: INSERT anında konmuş anahtarlar
+    # (kuyruk) korunmalı, yoksa Sil tuşu kuyruk kaydını hiç göremezdi.
+    _geri_ekle(c, okutma_id, ogrenilen=ogrenildi, fazla_ad=adlandi, etiket=etiket)
+    return {"ogrenilen": ogrenildi, "fazla_ad": adlandi, "etiket": etiket}
 
 
 def kuyruk_fazla(c, kuyruk_id, ad=None):
@@ -1873,7 +2338,9 @@ def kuyruk_fazla(c, kuyruk_id, ad=None):
         c.execute("UPDATE kuyruk_foto SET okutma=? WHERE kuyruk=?",
                   (idler[0], kuyruk_id))
     c.execute("UPDATE kuyruk SET cozuldu=1 WHERE id=?", (kuyruk_id,))
-    return {"tip": "fazla", "okutma": idler, "kod": q["kod"], "miktar": miktar}
+    yan = fazla_ogren(c, idler[0], ts)
+    return dict({"tip": "fazla", "okutma": idler, "kod": q["kod"], "miktar": miktar},
+                **yan)
 
 
 def kuyruk_coz(c, kuyruk_id, beklenen_id):
@@ -1909,6 +2376,18 @@ def kuyruk_coz(c, kuyruk_id, beklenen_id):
                   (norm(h), b["kod"], "", ts))
     if bos_etiket:
         etiketler.bagla(c, bos_etiket[0], b["kod"], b["id"], q["oturum"], ts, q["raf"])
+    # BOŞ HAVUZ MALZEME ETİKETİ DEFTERE DE İŞLENİR.
+    #
+    # `eslesme`'ye yazmak yetmiyordu: `etiket.malzeme` boş kaldığı için defter
+    # o numarayı "havuzda bekliyor" sayıyordu. İki sonucu var ve ikincisi
+    # fiziksel — `etiketler.bas(kapsam="eksik")` "bu malzemenin etiketi var mı"
+    # diye TAM BU ALANA bakıyor: aynı malzeme için İKİNCİ bir DM- numarası
+    # basılıyor ve depoda tek ürünün üstünde iki farklı kod dolaşıyordu
+    # (CLAUDE.md §12.1 bunun olmamasını şart koşuyor). Gerçek veride
+    # doğrulandı: DM-000002 -> SR335 `eslesme`'de yazılı, defterde boştu;
+    # yeniden basımda SR335'e DM-000174 veriliyordu.
+    malzeme_et = etiketler.malzeme_etiketi_isle(c, hs, b["kod"], q["oturum"], ts,
+                                                q["raf"])
     # Kuyruğa düşerken girilmiş adet burada karara bağlanır: MALZEME artık
     # belli, yani izleme yöntemi de belli. Lot / izlemesizde miktar olarak
     # uygulanır; seri takiplide uygulanamaz (her adet Tiger'da ayrı satır) ama
@@ -1932,7 +2411,7 @@ def kuyruk_coz(c, kuyruk_id, beklenen_id):
               (q["oturum"], ts, " + ".join(hs), b["kod"], b["seri"], miktar, b["id"],
                q["raf"], grup,
                _geri_json(ogrenilecek, bos_etiket[0] if bos_etiket else None,
-                          kuyruk=kuyruk_id), yeni_es))
+                          kuyruk=kuyruk_id, malzeme_etiket=malzeme_et), yeni_es))
     c.execute("UPDATE kuyruk SET cozuldu=1 WHERE id=?", (kuyruk_id,))
     return {"tip": "eslesti", "kod": b["kod"], "aciklama": b["aciklama"],
             "seri": b["seri"], "ogrenilen": ogrenilecek, "miktar": miktar,

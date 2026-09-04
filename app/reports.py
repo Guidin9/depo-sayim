@@ -12,6 +12,7 @@ iki yerde iki ayrı gerçek olmasın.
 """
 import os
 
+from . import matching
 from .norm import kirli_mi
 
 SEKME = ("Eksik", "Fazla", "Eşleşen", "Yedek Parça", "Tiger Düzeltme",
@@ -90,31 +91,42 @@ def _yeni_seri(ham):
     grubunda iki parça da aynı uzunlukta olduğu için max() ilkini — yani MALZEME
     etiketini — seçerdi; malzeme etiketi seri numarası değildir. Seri etiketi
     ancak başka aday yoksa kullanılır (grup_coz'daki yeni_sn sırasının aynısı).
+
+    ELEMELER TEK PARÇALI GİRDİDE DE YAPILIR — `matching._sn_karar` ile aynı
+    sözleşme, aday kalmazsa öneri YOKTUR (boş dize).
     """
     from .etiketler import etiket_turu
     from .norm import upc_mi
     parcalar = [p.strip() for p in str(ham or "").split(" + ") if p.strip()]
-    # KAP KODU HİÇBİR ZAMAN SERİ NUMARASI ADAYI DEĞİLDİR ve son çare de olamaz:
-    # DK-000007 bir cihazın kimliği değil, durduğu kabın numarasıdır. Tiger'a
-    # "bu cihazın S/N'i DK-000007" demek, kap ertesi ay boşaldığında hiçbir
-    # şeye karşılık gelmeyen bir seri numarası bırakır.
+    # İki eleme, ikisi de KOŞULSUZ — kısa devrenin ÜSTÜNDE.
     #
-    # Eleme TEK PARÇALI girdide de yapılmalı. Kısa devre yukarıdayken
-    # `_fazla_seri` tam bu deliğe düşüyordu: malzeme kodunu eledikten sonra
-    # elinde yalnızca kap kodu kalan bir fazla kaydı, kap numarasını seri no
-    # olarak yazıyordu. Aday kalmazsa öneri YOKTUR — boş dize, `reports` de
-    # `matching` de boş öneriyi atlar.
-    parcalar = [p for p in parcalar if etiket_turu(p) != "kutu"]
+    # KAP KODU: DK-000007 bir cihazın kimliği değil, durduğu kabın numarasıdır.
+    # Tiger'a "bu cihazın S/N'i DK-000007" demek, kap ertesi ay boşaldığında
+    # hiçbir şeye karşılık gelmeyen bir seri numarası bırakır.
+    #
+    # UPC: perakende barkodu o malzemenin HER ADEDİNDE aynıdır; seri numarası
+    # tek cihaza aittir. Bu eleme bir dönem yalnızca çok parçalı girdide
+    # yapılıyordu ve tek parçalı dal B2'yi geri getiriyordu (2026-09-04
+    # denetimi, DENETIM_20260904.md K1): `_fazla_seri` malzeme kodunu eledikten
+    # sonra elinde yalnızca UPC kalan bir grupta perakende barkodunu Tiger'a
+    # seri numarası diye yazdırıyordu — `kuyruk_coz`, `fazla_bagla`,
+    # `kuyruk_fazla` ve `##FAZLA##`, yani `_sn_karar`'ın korumadığı DÖRT yol.
+    # Rapordaki son savunma da tutmuyor: `kirli_mi("198701689928", kod)` TEMİZ
+    # döner.
+    #
+    # `or parcalar` gibi bir geri düşüş YOK: hepsi elenirse öneri üretilmez.
+    # `_sn_karar` de aynısını yapıyor (`if not temiz: return yedek`).
+    parcalar = [p for p in parcalar
+                if etiket_turu(p) != "kutu" and not upc_mi(p)]
     if not parcalar:
         return ""
     if len(parcalar) == 1:
         return parcalar[0]
-    adaylar = [p for p in parcalar if not upc_mi(p)] or parcalar
     for sinif in (None, "seri"):            # önce gerçek S/N, sonra seri etiketi
-        havuz = [p for p in adaylar if etiket_turu(p) == sinif]
+        havuz = [p for p in parcalar if etiket_turu(p) == sinif]
         if havuz:
             return max(havuz, key=len)
-    return max(adaylar, key=len)
+    return max(parcalar, key=len)
 
 
 def eksik_kayitlar(c, oturum_id):
@@ -145,21 +157,27 @@ def eksik_kayitlar(c, oturum_id):
         ortak = {"id": r["id"], "kod": r["kod"], "aciklama": r["aciklama"],
                  "seri": r["seri"], "izleme": r["izleme"], "birim": r["birim"],
                  "kirli": r["kirli"]}
-        if r["izleme"] == "seri":
-            if not okunan:
-                eksik.append(dict(ortak, miktar=r["miktar"], not_=(
-                    "KIRLI KAYIT — " + r["kirli_sebep"] if r["kirli"] else "")))
-            continue
-        # lot / izlemesiz: adet karşılaştırması
-        fark = (r["miktar"] or 0) - okunan
+        # TEK KURAL, seri ve lot için aynı: beklenen - sayılan.
+        #
+        # Seri takipli satır eskiden ayrı bir daldan geçiyordu ("okutulduysa
+        # bitti"). Gerçek veride yanlış: `izleme='seri'` olduğu hâlde miktarı
+        # 2 ve 4 olan 32 satır var. Tek okutma o satırı kapatıyor, ikinci
+        # cihaz "tekrar" deyip sayılmıyor ve BURAYA da girmiyordu — adet ne
+        # sayaçta, ne eksikte, ne fazlada görünüyordu.
+        beklenen = matching.beklenen_adet(r)
+        kirli_not = "KIRLI KAYIT — " + r["kirli_sebep"] if r["kirli"] else ""
+        fark = beklenen - okunan
         if fark > 0:
-            eksik.append(dict(ortak, miktar=fark,
-                              not_="adet farkı — sayılan %g / beklenen %g"
-                                   % (okunan, r["miktar"] or 0)))
+            # Hiç okutulmamış satırda not yalnızca kirlilik bilgisidir
+            # (prototipteki metin korunuyor); yarım kalmışta adet de yazılır.
+            not_ = kirli_not if not okunan else (
+                ("adet farkı — sayılan %g / beklenen %g" % (okunan, beklenen))
+                + (" | " + kirli_not if kirli_not else ""))
+            eksik.append(dict(ortak, miktar=fark, not_=not_))
         elif fark < 0:
             adet_fazlasi.append(dict(ortak, miktar=-fark,
                                      not_="adet fazlası — sayılan %g / beklenen %g"
-                                          % (okunan, r["miktar"] or 0)))
+                                          % (okunan, beklenen)))
     return eksik, adet_fazlasi, haric_sayisi
 
 

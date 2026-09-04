@@ -84,6 +84,43 @@ export function Dugme({
   );
 }
 
+/** Düğme gibi görünen İNDİRME BAĞLANTISI.
+ *
+ * `<a download><Dugme/></a>` DEĞİL: etkileşimli içeriğin içine etkileşimli
+ * içerik koymak geçersiz HTML ve klavye davranışı tarayıcının olay yayılımına
+ * kalıyor — odaklanan `<button>`ın kendi `onClick`'i yok, Enter'ın indirmeyi
+ * başlatması tesadüfe bağlı (DENETIM_20260904.md Dx4).
+ *
+ * Yükseklik `min-height` kuralından değil, açıkça geliyor: `a` `stil.css`'teki
+ * 48 px kuralının kapsamında değil (kural `button, select, input,
+ * [role=button]`), oysa bu da eldivenle basılan bir hedef.
+ */
+export function IndirBaglantisi({
+  yol,
+  cocuk,
+  tur = "sade",
+}: {
+  yol: string;
+  cocuk: ReactNode;
+  tur?: "sade" | "ana";
+}) {
+  const stil =
+    tur === "ana"
+      ? "bg-vurgu text-white hover:brightness-115"
+      : "bg-panel text-yazi border border-cizgi-kuvvetli hover:bg-panel2";
+  return (
+    <a
+      href={yol}
+      download
+      className={`${stil} inline-flex min-h-12 items-center justify-center gap-2
+        rounded-sm px-5 text-govde font-semibold no-underline transition-colors
+        duration-150 ease-kolay`}
+    >
+      {cocuk}
+    </a>
+  );
+}
+
 /** Şirket logosu + isim.
  *
  * Bukalemun app.ico'dan geliyor ve public/ altından kökle servis ediliyor;

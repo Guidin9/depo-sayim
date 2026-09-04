@@ -122,15 +122,45 @@ def test_etiket_havuza_doner(c, ot, yaz):
     assert e["malzeme"] is None and e["beklenen_id"] is None
 
 
-def test_kuyruktan_dogan_fazla_silinince_kayit_kuyruga_doner(c, ot, yaz):
+def _kuyruktan_fazla(c, ot, yaz):
+    """UPC okut -> kuyruğa düşür -> fazla olarak kapat. `(kuyruk_id, okutma_id)`."""
     yaz(UPC, SONRAKI)
     kid = c.execute("SELECT id FROM kuyruk WHERE oturum=?", (ot["id"],)).fetchone()["id"]
     matching.kuyruk_fazla(c, kid, ad="deneme ürünü")
     assert c.execute("SELECT cozuldu FROM kuyruk WHERE id=?", (kid,)).fetchone()["cozuldu"] == 1
+    return kid, matching.durum(c, oturum_taze(c, ot))["akis"][0]["id"]
 
-    hedef = matching.durum(c, oturum_taze(c, ot))["akis"][0]["id"]
+
+def test_sil_kaydi_kuyruga_GERI_GONDERMEZ(c, ot, yaz):
+    """Sil tuşu "bu satır hiç olmasın" demektir — "kararı geri al" değil.
+
+    2026-08-28'e kadar tam tersiydi ve bu dosyadaki test onu doğru davranış
+    diye kilitliyordu: kayıt siliniyor, kuyruk satırı yeniden açılıyor, ürün
+    "Tiger'da kaydı yok" kuyruğunda tekrar beliriyordu. Kullanıcı Sil tuşunun
+    çalışmadığını sandı (saha bildirimi S5) ve yanlış okumadan kurtulamadı:
+    oturum, kuyruk boşalmadan kapanmıyor.
+    """
+    kid, hedef = _kuyruktan_fazla(c, ot, yaz)
     r = matching.okutma_sil(c, oturum_taze(c, ot), hedef)
+    assert r["kuyruk_acildi"] is None
+    assert r["kuyruk_kapali"] == kid
+    assert c.execute("SELECT cozuldu FROM kuyruk WHERE id=?", (kid,)).fetchone()["cozuldu"] == 1
+    assert not matching.bekleyen_kuyruk(c, ot["id"]), "kayıt kuyruğa dönmemeli"
+
+
+def test_kuyruga_geri_istenirse_kayit_kuyruga_doner(c, ot, yaz):
+    """"Yanlış çözdüm, yeniden çözeyim" yolu duruyor — ama artık istenerek."""
+    kid, hedef = _kuyruktan_fazla(c, ot, yaz)
+    r = matching.okutma_sil(c, oturum_taze(c, ot), hedef, kuyruga_geri=True)
     assert r["kuyruk_acildi"] == kid
+    assert r["kuyruk_kapali"] is None
+    assert c.execute("SELECT cozuldu FROM kuyruk WHERE id=?", (kid,)).fetchone()["cozuldu"] == 0
+
+
+def test_gerial_kuyrugu_HALA_geri_acar(c, ot, yaz):
+    """##GERIAL## geri alma niyetidir: varsayılanı değişmedi."""
+    kid, _ = _kuyruktan_fazla(c, ot, yaz)
+    matching.gerial(c, oturum_taze(c, ot))
     assert c.execute("SELECT cozuldu FROM kuyruk WHERE id=?", (kid,)).fetchone()["cozuldu"] == 0
 
 

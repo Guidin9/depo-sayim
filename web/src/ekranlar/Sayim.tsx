@@ -159,6 +159,19 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
         alt: r.aciklama ?? "Tiger kaydında karşılığı yok, rapora fazla olarak yazıldı.",
         ...KIRMIZI,
       };
+    /* Tiger'da karşılığı olmayan ama DAHA ÖNCE adlandırılmış ürün: adı bir kez
+       yazıldı, artık soru sorulmuyor. 2026-08-28 sayımında aynı ürün 47 kez
+       okutuldu ve adı 47 kez elle girildi (saha bildirimi S2). */
+    case "fazla_bilinen":
+      return {
+        Ikon: Ik.Uyari,
+        ana: `FAZLA — ${r.ad ?? ""}`,
+        alt:
+          `Bu barkod daha önce adlandırıldı, tanındı ve sorulmadan fazla yazıldı` +
+          (r.miktar && r.miktar > 1 ? ` · ${r.miktar} adet` : "") +
+          (r.etiket ? ` · etiket ${r.etiket} deftere işlendi` : "") + ".",
+        ...KIRMIZI,
+      };
     // Malzeme tanındı ama seri numarası Tiger'daki hiçbir kayıtla eşleşmedi.
     // Bu "stokta yok" demek DEĞİLDİR, o yüzden fazla yazılmaz — kullanıcı
     // karar verene kadar kuyrukta bekler (DEMO_FEEDBACK.md 5).
@@ -178,7 +191,15 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
         // `not` kirli slot yolundan geliyor: "bu seri numarası az önce
         // 0WGP72SAYIM1 slotuna yazıldı". Kullanıcı hangi cihazı ikinci kez
         // elinde tuttuğunu bilmeli.
-        alt: r.not ?? `${r.seri} zaten okutuldu, ikinci kez sayılmadı.`,
+        //
+        // Tampon DURUYOR (S4): elinde ikinci bir fiziksel cihaz olabilir ve
+        // F3 Fazla ile devam edebilmeli. Eskiden tampon tükeniyor, Fazla'ya
+        // basmak hiçbir şey yapmıyordu.
+        alt:
+          (r.not ?? `${r.seri} zaten okutuldu, ikinci kez sayılmadı.`) +
+          (r.tampon_duruyor
+            ? " · Barkodlar tamponda duruyor: ayrı bir cihazsa F3 ile fazla yaz."
+            : ""),
         ...SARI,
       };
     /* ##SONRAKI## unutulmuş: tek grupta birden çok cihaz. Hepsi sayıldı —
@@ -193,6 +214,11 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
           (r.kayitlar ?? []).map((k) => `${k.kod} ${k.seri}`).join(" · ") +
           (r.ogrenilmedi?.length
             ? ` · ÖĞRENİLMEDİ: ${r.ogrenilmedi.join(", ")} (hangi cihaza ait belli değil)`
+            : "") +
+          // Girilen adet burada uygulanamaz (her cihaz Tiger'da ayrı satır) ama
+          // sessizce yutulmaz — `eslesti` / `slot` dallarıyla aynı sözleşme.
+          (r.adet_yersiz
+            ? ` · UYARI: ${r.adet_yersiz} adet uygulanmadı, bu kalem seri takipli`
             : ""),
         ...SARI,
       };
@@ -234,10 +260,19 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
     case "kuyruk":
       return {
         Ikon: Ik.Soru,
-        ana: "KUYRUĞA ATILDI",
-        alt: r.bos_etiket?.length
-          ? `${r.bos_etiket[0]} boş etiketi tek başına okutuldu — hangi malzeme olduğu belli değil.`
-          : `${(r.barkodlar ?? []).join(" + ")} — sayımı durdurma, sonunda çözersin.`,
+        ana: r.kuyruk_tekrar ? "KUYRUĞA ATILDI — AYNISI ZATEN VAR" : "KUYRUĞA ATILDI",
+        alt:
+          (r.bos_etiket?.length
+            ? `${r.bos_etiket[0]} boş etiketi tek başına okutuldu — hangi malzeme olduğu belli değil.`
+            : `${(r.barkodlar ?? []).join(" + ")} — sayımı durdurma, sonunda çözersin.`) +
+          // Kayıt YİNE yazıldı: aynı barkodlu iki fiziksel ürün olabilir ve
+          // birleştirmek birini kaybettirirdi. Karar kullanıcının — ikinci bir
+          // ürün değilse Ctrl+Z ile geri alır.
+          (r.kuyruk_tekrar
+            ? ` · DİKKAT: aynı barkodlar ${r.kuyruk_tekrar.ts}'de` +
+              `${r.kuyruk_tekrar.raf ? ` (raf ${r.kuyruk_tekrar.raf})` : ""}` +
+              " zaten kuyruğa düşmüştü. İkinci bir ürün değilse Ctrl+Z ile geri al."
+            : ""),
         ...SARI,
       };
     /* Kap okutması (KUTU_TASARIM.md). Kap "içinde NE var" der, "kaç tane"
@@ -366,7 +401,14 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
         ana: "KİLİTLENECEK MALZEME YOK",
         // Sessizce kilitlememek şart: kullanıcı kilitlendiğini sanıp onlarca
         // seri numarası okutur, hepsi kuyruğa düşerdi.
-        alt: "Önce malzeme kodunu okut, sonra kilit barkodunu.",
+        //
+        // Tamponda tanınmayan barkod varsa onu YAZIYORUZ. Eskiden bu durumda
+        // kilit sessizce BİR ÖNCEKİ ürünün koduna kuruluyordu (saha bildirimi
+        // S1) — kullanıcı sebebini görmeden yanlış malzemeye sayıyordu.
+        alt: (r.barkodlar ?? []).length
+          ? `${(r.barkodlar ?? []).join(", ")} Tiger'da tanınmadı, o yüzden kilit kurulmadı. ` +
+            "Malzeme kodunu okut, ya da F3 ile fazla yaz."
+          : "Önce malzeme kodunu okut, sonra kilit barkodunu.",
         ...KIRMIZI,
       };
     case "yedek_mod":
@@ -398,15 +440,18 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
     case "silindi":
       return {
         Ikon: Ik.Cop,
-        // Kuyruktan doğmuş bir fazla silinince kayıt kuyruğa GERİ DÖNER —
-        // sayaç yeniden artar, söylenmezse hata sanılır.
         ana:
           (r.silinen ?? 1) > 1 ? `${r.silinen} SATIR SİLİNDİ` : "OKUTMA SİLİNDİ",
+        // Kuyruktan doğmuş bir kaydın AKIBETİ söylenmek zorunda: kuyruğa geri
+        // gönderildi mi, yoksa tamamen mi kaldırıldı. Sil tuşu artık ikincisini
+        // yapıyor (saha bildirimi S5) ve kullanıcı bunu görmeli — sessiz
+        // kalırsa "acaba kuyrukta mı duruyor" sorusu kalırdı.
         alt:
           (r.barkodlar ?? []).join(", ") +
           (r.unutulan?.length ? ` · unutuldu: ${r.unutulan.join(", ")}` : "") +
           (r.etiket_cozuldu ? ` · ${r.etiket_cozuldu} havuza döndü` : "") +
-          (r.kuyruk_acildi ? " · kayıt kuyruğa geri döndü" : ""),
+          (r.kuyruk_acildi ? " · kayıt kuyruğa geri döndü" : "") +
+          (r.kuyruk_kapali ? " · kuyruk kaydı da kapatıldı, geri dönmedi" : ""),
         ...SARI,
       };
     case "raf":
@@ -440,6 +485,19 @@ export function seritMetni(r: OkutmaSonucu): Serit | null {
         ana: `${r.fotosuz?.length} fazla kaydının fotoğrafı yok`,
         alt: "Fazla, sayımdan sonra kimsenin doğrulayamayacağı tek çıktı — ürün rafa geri konuyor, geriye bu satır kalıyor.",
         ...KIRMIZI,
+      };
+    /* Boş tamponda SIRADAKİ ÜRÜN / FAZLA / ATLA. Sessiz kalmak yanlış: sunucu
+       bilerek hiçbir şey yapmadı (adet de korunuyor) ama ekran hiç değişmediği
+       için kullanıcı yalnızca bir bip duyuyor ve komutun işleyip işlemediğini
+       bilmiyordu (DENETIM_20260904.md O4). */
+    case "bos":
+      return {
+        Ikon: Ik.Uyari,
+        ana: "OKUTULMUŞ BARKOD YOK",
+        alt:
+          "Önce ürünün barkodunu okut, sonra bu komutu ver. " +
+          "Girilmiş adet varsa korundu — sonraki ürüne geçmedi.",
+        ...SARI,
       };
     default:
       return null;
@@ -522,6 +580,50 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
     [durum.oturum, setDurum, odakla],
   );
 
+  /* Kaydedilmiş fazla / yedek satırının MİKTARINI düzelt.
+
+     2026-08-28 sayımında bir kap kaydına adet kutusu yerine ADINA "35 tane"
+     yazıldı; satır 1 olarak kaydedildi ve 34 adet raporun dışında kaldı.
+     Düzeltmenin hiçbir yolu yoktu — PATCH ucu yalnızca `ad` ve `not_`
+     alıyordu. Eşleşen satırlarda sunucu 400 döner: oradaki miktar bir
+     `beklenen` kaydına bağlı, düzeltme yolu silip yeniden okutmaktır. */
+  const miktarDuzelt = useCallback(
+    (a: AkisSatiri) => {
+      const giris = window.prompt(
+        `${a.kod ?? a.ham} — kaç adet?\n\n` +
+          "Rapora bu sayı yazılır. Kaptan sayılan adetler buradan düzeltilir.",
+        String(a.miktar ?? 1),
+      );
+      if (giris == null) return siraRef.current;
+      const n = Number(giris.replace(",", "."));
+      if (!Number.isFinite(n) || n <= 0) {
+        setHata("Miktar sıfırdan büyük bir sayı olmalı.");
+        return siraRef.current;
+      }
+      bekleyenRef.current += 1;
+      setMesgul(true);
+      siraRef.current = siraRef.current.then(async () => {
+        try {
+          await api.okutmaMiktar(a.id, n);
+          bip("ok");
+          setHata(null);
+          setDurum(await api.durum(durum.oturum));
+        } catch (e) {
+          bip("uyari");
+          setHata(e instanceof Error ? e.message : String(e));
+        } finally {
+          bekleyenRef.current -= 1;
+          if (bekleyenRef.current === 0) {
+            setMesgul(false);
+            odakla();
+          }
+        }
+      });
+      return siraRef.current;
+    },
+    [durum.oturum, setDurum, odakla],
+  );
+
   /* Akıştan silme (I1). ##GERIAL## yalnızca sonuncuyu alır; yanlış okutma
      sahada bazen birkaç ürün sonra fark ediliyor.
 
@@ -530,9 +632,16 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
   const sil = useCallback(
     (a: AkisSatiri) => {
       const ne = a.kod ?? a.ham ?? "bu okutma";
-      if (!window.confirm(`${ne} okutması silinsin mi?
+      // "Silindi" gerçekten SİLİNDİ demeli. Kayıt eskiden kuyruğa geri
+      // düşüyordu ve kullanıcı tuşun çalışmadığını sanıyordu (saha bildirimi
+      // S5); üstelik oturum kuyruk boşalmadan kapanmadığı için yanlış
+      // okumadan kurtulmanın yolu yoktu.
+      if (
+        !window.confirm(`${ne} okutması silinsin mi?
 
-Öğrenilen barkod unutulur, bağlanan etiket havuza döner.`))
+Kayıt tamamen kaldırılır — kuyruğa geri DÜŞMEZ.
+Öğrenilen barkod unutulur, bağlanan etiket havuza döner.`)
+      )
         return siraRef.current;
       bekleyenRef.current += 1;
       setMesgul(true);
@@ -1223,7 +1332,30 @@ export default function Sayim({ durum, setDurum, canli, uzaktan, modDegistir, gi
                 )}
                 <b className="font-mono">{a.kod ?? a.ham}</b>
                 {a.seri && <span className="font-mono text-solgun">{a.seri}</span>}
+                {a.miktar > 1 && (
+                  <span className="rakam text-mikro font-bold text-uyari">
+                    {a.miktar} adet
+                  </span>
+                )}
                 <span className="ml-auto text-mikro text-solgun">{a.not_ || a.tip}</span>
+                {/* Miktar düzeltme YALNIZCA fazla ve yedekte. Eşleşen satırın
+                    miktarı bir `beklenen` kaydına bağlı (lot dağıtımı,
+                    kapasite, sayaçlar); elle değiştirilirse ekranla rapor iki
+                    ayrı gerçek söyler. Sunucu da 400 ile reddeder. */}
+                {(a.tip === "fazla" || a.tip === "yedek") && (
+                  <button
+                    type="button"
+                    onClick={() => void miktarDuzelt(a)}
+                    disabled={mesgul}
+                    title="Adedi düzelt"
+                    aria-label={`${a.kod ?? a.ham} kaydının adedini düzelt`}
+                    className="border-cizgi text-solgun-hafif hover:border-vurgu hover:text-vurgu
+                      focus-visible:outline-vurgu inline-flex h-8 w-8 shrink-0 items-center
+                      justify-center rounded-sm border focus-visible:outline-2 disabled:opacity-40"
+                  >
+                    <Ik.Katman boy={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void sil(a)}

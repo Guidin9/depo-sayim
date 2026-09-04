@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, type OturumOzeti } from "../api";
-import { Bos, Dugme, Panel } from "../bilesenler";
+import { Bos, Dugme, IndirBaglantisi, Panel } from "../bilesenler";
 import * as Ik from "../ikonlar";
 
 export default function Gecmis({
@@ -97,8 +97,12 @@ export default function Gecmis({
                     </div>
                   </div>
                   <div className="rakam flex gap-4 text-kucuk">
+                    {/* Adet bazında — Sayım ekranındaki sayaçla aynı sayı.
+                        Payda olmadan "171" tek başına anlamsız: 1075'in 171'i
+                        ile 200'ün 171'i aynı şeyi söylemiyor. */}
                     <span>
-                      <b className="text-ok">{o.okutulan}</b> okutulan
+                      <b className="text-ok">{o.okutulan}</b>
+                      <span className="text-solgun"> / {o.toplam}</span> adet
                     </span>
                     <span>
                       <b className={o.fazla ? "text-hata" : ""}>{o.fazla}</b> fazla
@@ -111,15 +115,14 @@ export default function Gecmis({
                     <Dugme cocuk="Yeniden aç" tikla={() => void yenidenAc(o.id)} />
                   )}
                   <Dugme cocuk="Rapor" tikla={() => raporaGit(o.id)} />
-                  <a href={api.raporUrl(o.id)} download>
-                    <Dugme
-                      cocuk={
-                        <>
-                          <Ik.Indir /> Excel
-                        </>
-                      }
-                    />
-                  </a>
+                  <IndirBaglantisi
+                    yol={api.raporUrl(o.id)}
+                    cocuk={
+                      <>
+                        <Ik.Indir /> Excel
+                      </>
+                    }
+                  />
                 </li>
               ))}
             </ul>

@@ -4,7 +4,7 @@
  * eklenirken iki yer birden güncellenir. */
 import { useEffect, useState } from "react";
 import { api, type RaporOnizleme } from "../api";
-import { Bos, Dugme, Panel, Uyari } from "../bilesenler";
+import { Bos, Dugme, IndirBaglantisi, Panel, Uyari } from "../bilesenler";
 import * as Ik from "../ikonlar";
 
 /* `reports.SEKME` ile aynı sırada olmalı — sunucu veriyi sekme adına göre
@@ -79,16 +79,15 @@ export default function Rapor({
               görünen kaydın kendisidir (DEMO_FEEDBACK.md 6). */}
           {acikMi && esleme && <Dugme cocuk="Önce eşleştir" tikla={esleme} />}
           {acikMi && <Dugme cocuk="Sayımı bitir" tur="tehlike" tikla={bitir} />}
-          <a href={api.raporUrl(oturum)} download>
-            <Dugme
-              cocuk={
-                <>
-                  <Ik.Indir /> Excel indir
-                </>
-              }
-              tur="ana"
-            />
-          </a>
+          <IndirBaglantisi
+            yol={api.raporUrl(oturum)}
+            tur="ana"
+            cocuk={
+              <>
+                <Ik.Indir /> Excel indir
+              </>
+            }
+          />
         </div>
       </header>
 

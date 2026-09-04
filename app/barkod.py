@@ -17,8 +17,16 @@ KOMUTLAR = [
      "Bir ürünün tüm barkodlarını okuttuktan sonra bunu okut. Gruplama böyle kapanır."),
     ("##IPTAL##", "GRUBU İPTAL",
      "Az önce okuttuklarını sil, o ürüne baştan başla."),
-    ("##GERIAL##", "SON OKUTMAYI SİL",
-     "Yanlış okuttuğun tek barkodu geri alır."),
+    # Kartın adı ve açıklaması DAVRANIŞLA AYNI OLMAK ZORUNDA: laminatlı kart
+    # sahada elde taşınıyor ve kullanıcı ekrana değil ona bakıyor. Bir dönem
+    # "SON OKUTMAYI SİL / yanlış okuttuğun tek barkodu geri alır" yazıyordu;
+    # oysa `matching.gerial` tampon boşaldıktan sonra SON GRUBUN TAMAMINI alır
+    # — ##ADET-5## çok lotlu malzemede 5 satır — ve öğrenmeleri de çözer.
+    # Kullanıcı bir barkod sildiğini sanıp ürünü siliyordu
+    # (DENETIM_20260904.md Dx1). CLAUDE.md 4.5 zaten "Son GRUBU geri al" diyor.
+    ("##GERIAL##", "GERİ AL",
+     "Grup henüz kapanmadıysa son barkodu, kapandıysa SON ÜRÜNÜN TAMAMINI geri "
+     "alır — öğrenilen barkodu unutur, bağlanan etiketi havuza döndürür."),
     ("##FAZLA##", "FAZLA OLARAK İŞARETLE",
      "Bu ürün Tiger kaydında yok, fazla olarak yaz."),
     ("##ATLA##", "ATLA / SONRA ÇÖZ",
@@ -43,8 +51,17 @@ KOMUTLAR = [
      "Açar/kapatır. Açıkken okutulan hiçbir şey Tiger kayıtlarında ARANMAZ, "
      "doğrudan yedek parça olarak yazılır."),
 ]
+# RENK SAYISI KOMUT SAYISINDAN AZ OLAMAZ.
+#
+# Kartlar `RENKLER[i % len(RENKLER)]` ile boyanıyor: dokuz renk / on komut
+# olduğunda i=0 (##SONRAKI##) ve i=9 (##YEDEK##) aynı koyu yeşile düşüyordu
+# (DENETIM_20260904.md Dx2). Kötü depo ışığında rengi kartı bulmanın birincil
+# yolu; en sık kullanılan komutla, açık unutulduğunda bütün rafı yedek parçaya
+# yazan mod anahtarının aynı renkte olması tam da CLAUDE.md 10.1'in
+# "renk tek başına bilgi taşımaz" kuralının ihlali.
 RENKLER = ["#1b5e20", "#b71c1c", "#e65100", "#4a148c", "#01579b", "#263238",
-           "#004d40", "#33691e", "#880e4f"]
+           "#004d40", "#33691e", "#880e4f", "#3e2723", "#0d47a1", "#4e342e"]
+assert len(RENKLER) >= len(KOMUTLAR), "her komuta ayrı renk düşmeli"
 
 
 def _svg(kod):

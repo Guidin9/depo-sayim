@@ -69,6 +69,7 @@ idempotent kurar, sonra `goc()` ve `kurallari_tohumla()` çalışır.
 | `oturum` | id · yukleme · ambar · basla · bitir · aktif_raf · durum · **bekleyen_adet** · **sabit_kod** · **yedek_parca** · **acik_kutu** · **acik_kutu_ilk** · **bitir_istegi** |
 | `okutma` | id · oturum · ts · **ham** · kod · seri · miktar · beklenen_id · **tip** · raf · grup · not_ · ad · **geri** · **yeni_seri** · **sn_adaylar** |
 | `eslesme` | **barkod (PK)** · kod · seri · ts |
+| `fazla_ad` | **barkod (PK)** · ad · ts — Tiger'da karşılığı OLMAYAN ürünün adı |
 | `tampon` | id · oturum · ts · ham |
 | `kuyruk` | id · oturum · ts · barkodlar (JSON) · raf · cozuldu · not_ · beklet · **tur** · kod · ad · **adet** |
 | `kuyruk_foto` | id · kuyruk · **okutma** · ts · tur · boyut · **veri BLOB** |
@@ -190,7 +191,7 @@ uygulama açılmaz. `EK_INDEKS` göçten sonra uygulanır. Bu gerçekten yaşand
 `goc()` yalnızca **sütun** ekler. Hatalı kodun ürettiği **veriyi** düzeltmek
 ayrı bir iştir; `baglan()` bunun için `bolunmus_fazlalari_birlestir()` çağırır.
 
-İki onarım var.
+Üç onarım var.
 
 `lic_kuralini_duzelt()` — fazla geniş `LIC` hariç kuralını `LICENSE` ile
 değiştirir ve hariç bayraklarını tüm yüklemelerde yeniden hesaplar.
@@ -202,6 +203,15 @@ dokunur: kullanıcı deseni elle yazdıysa karar onundur.
 fazla satırı yazılıyordu (bkz. `CLAUDE.md` §4.4). Onarım aynı `(oturum, grup)`
 içindeki `tip='fazla'` satırlarını tek satıra indirir — `ham` birleşir, `seri`
 yeniden seçilir, fotoğraflar taşınır, fazlası silinir.
+
+`malzeme_etiket_defterini_onar()` — `eslesme`'de bir malzemeye bağlı olan
+`DM-` etiketlerini `etiket.malzeme` alanına da yazar. Boş havuzdan basılan
+malzeme etiketi çözülünce yalnızca `eslesme`'ye yazılıyordu; defter boş
+kaldığı için `etiketler.bas(kapsam="eksik")` aynı malzemeye **ikinci bir
+numara** basıyordu ve depoda tek ürünün üstünde iki farklı kod dolaşıyordu
+(`CLAUDE.md` §12.1 bunu yasaklıyor). Gerçek veride doğrulandı:
+`DM-000002 → SR335` eşleşmede yazılı, defterde boştu. Yalnızca BOŞ alanı
+doldurur — bağlı bir etiketin malzemesi değişmez.
 
 **Yeni onarım yazarken:** idempotent olmalı (her açılışta çalışıyor), yalnızca
 kendi ürettiği hatayı hedeflemeli, ve **silme içeriyorsa testi şart** —
@@ -240,22 +250,29 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | `GET /oturum/{id}/durum` | `?akis=40` | Sayaç + tampon + son akış |
 | **`POST /oturum/{id}/okut`** | `{ham, zorla}` | **Tek giriş noktası** |
 | `POST /oturum/{id}/gerial` | `{kapsam}` — `okutma` \| `grup` | Geri al |
-| `PATCH /okutma/{id}` | `{ad?, not_?}` | Fazla kaydına ürün adı / not (kısmi) |
-| **`DELETE /okutma/{id}`** | `{kapsam?}` — `grup` (varsayılan) \| `satir` | Akıştan sil (I1). Yan etkiler `_yan_etkileri_geri_al` ile geri alınır |
+| **`DELETE /okutma/{id}`** | `{kapsam?}` — `grup` (varsayılan) \| `satir` · `{kuyruga_geri?}` — varsayılan **false** | Akıştan sil (I1). Yan etkiler `_yan_etkileri_geri_al` ile geri alınır. `kuyruga_geri=false` iken kaydı doğuran kuyruk satırı KAPALI kalır — Sil "bu satır hiç olmasın" demektir (S5) |
+| **`PATCH /okutma/{id}`** | `{ad?, not_?, miktar?}` — kısmi | Fazla kaydına ad/not; `miktar` YALNIZCA `fazla` ve `yedek` satırlarında (eşleşende **400**: miktar bir `beklenen` kaydına bağlı). `ad` yazılınca `matching.fazla_ogren` çalışır |
 | `POST /oturum/{id}/sabit-kod` | `{kod}` — null kilidi açar | Malzeme kilidi (I2). İçeride `##KILIT-<kod>##` / `##KILITAC##` üretip `okut()`'a verir |
 | `POST /oturum/{id}/yedek-parca` | `{acik}` | Yedek parça modu (I4), aynı desen |
 | `POST /oturum/{id}/kutu-kapat` | — | Açık seri takipli kabı kapat (`##KUTUKAPAT##` ikizi) |
-| `POST /oturum/{id}/say` | `{beklenen_id, ham?}` | Barkodsuz ürünü listeden seçerek say (I5) |
+| `POST /oturum/{id}/say` | `{beklenen_id, ham?, adet?}` | Barkodsuz ürünü listeden seçerek say (I5). `adet` verilmezse `oturum.bekleyen_adet` kullanılır ve TÜKENİR (##ADET-N## ile aynı yol); lot/izlemesizde miktar olur, seri takiplide `adet_yersiz` ile bildirilir. Kapasiteyi aşarsa 400 `miktar_sigmiyor` ve adet tükenmez |
 | `GET /oturum/{id}/esleme` | — | Sayım sonu: `{fazla, eksik}` |
-| `POST /okutma/{id}/bagla` | `{beklenen_id}` | Fazlayı eksik kayda bağla |
+| `POST /okutma/{id}/bagla` | `{beklenen_id}` | Fazlayı eksik kayda bağla. Hata `{hata, mesaj}` sözlüğü döner (düz slug DEĞİL): `miktar_sigmiyor` arayüzde okunabilir cümleyle çıksın diye — `routers/kuyruk.py` ile aynı sözleşme |
 | **`POST /okutma/{id}/seri-sec`** | `{seri}` — boş dize = "hiçbiri" | Belirsiz kalan seri numarası kararı. `okutma.yeni_seri` güncellenir, `sn_adaylar` temizlenir; `eslesme` DEĞİŞMEZ |
 | **`POST /oturum/{id}/yeniden-ac`** | — | Kazara kapanan oturumu geri aç. Başka açık oturum ya da daha yeni oturum varsa 409 |
 | `POST /okutma/{id}/coz-ayir` | — | Eşleştirmeyi geri al |
-| `POST /oturum/{id}/bitir` | `?zorla=` | Çözülmemiş kuyruk, **adsız fazla** veya fotoğrafsız fazla varsa 409 |
+| `POST /oturum/{id}/bitir` | `?zorla=` | **Dört kapı**, hepsi 409 ve `detail` sözlüğünde kendi ANAHTARIYLA: `kuyruk` · `adsiz` · `fotosuz` · yumuşak uyarı (`eksik_lot` / `sn_secilmemis`). Arayüz aşılabilirliği bu anahtarlardan okur, mesaj metninden değil |
 | `POST /oturum/{id}/raf` | `{raf, zorla}` | Adı `norm.raf_adi()` ile temizler, `##RAF-X##` üretip `okut()`'a verir. Temizlikten sonra boş kalırsa **400** |
 | `POST /oturum/{id}/adet` | `{adet}` | İçeride `##ADET-N##` üretip `okut()`'a verir. 0 sıfırlar, öteki değerler EKLENİR. Telefondaki Adet paneli buraya gider |
 | `GET /oturum/{id}/raflar` | — | Bu oturumda kullanılmış raflar |
 | `GET /oturum/{id}/ara` | `?q=&limit=&offset=&sadece_acik=&kirli=&izleme=` | Malzeme arama / listeleme → `{satirlar, toplam}` |
+
+> **KAPALI OTURUMDA KAYIT DEĞİŞTİRİLEMEZ.** `ortak.oturum_getir(..., acik=True)`
+> `POST /okut`'un yanı sıra `gerial`, `PATCH /okutma`, `DELETE /okutma`,
+> `seri-sec` ve bütün mod uçlarında da 409 veriyor: kapalı oturumun raporu
+> üretilmiş, çoğu zaman Tiger'a girilmiştir. Çıkış yolu **Geçmiş > Yeniden aç**
+> — iz bırakır. Eşleştirme uçları (`/esleme`, `/bagla`, `/coz-ayir`) bilerek
+> DIŞARIDA: eşleştirme sayım sonu adımıdır (DENETIM_20260904.md O2).
 
 > **Grup kapatma / komut barkodları için ayrı uç YOKTUR.** `##SONRAKI##`,
 > `##IPTAL##`, `##GERIAL##`, `##FAZLA##`, `##ATLA##`, `##BITIR##`, `##RAF-X##`,
@@ -322,13 +339,14 @@ Hepsi `/api` önekli. Bağlantı `routers/ortak.py:DB` bağımlılığıyla geli
 | 0 | `norm(ham)` boş | `bos` |
 | 1 | `beklenen.seri_n = n` | `seri` / `tekrar` |
 | 1b | 1 boş **ve** `n` tamamen rakam, `seri_n0 = sifirsiz(n)` | `seri` / `tekrar` |
-| 1c | `etiket.kod=n AND tur='seri'` | bağlıysa `seri`/`tekrar`, boşsa **`etiket_bos`** |
+| 1c | `etiket.kod=n AND tur='seri'` | bağlıysa `seri`/`tekrar`, bu oturumda fazla yazılmışsa **`tekrar`**, boşsa **`etiket_bos`** |
 | 1d | `n` DK- deseni (kap etiketi) | tanımlı `kutu` · tanımsız **`kutu_bos`** · malzemesi bu ambarda yok **`kutu_yabanci`** |
 | 2 | `beklenen.kod_n = n` | `kod` |
 | 3 | `len(n)>=8`, iki yönlü önek eşleşmesi (her iki taraf en az 8) | `kod` |
 | 3b | bu oturumda `okutma.yeni_seri` olarak yazılmış | **`tekrar`** |
 | 4 | `eslesme.barkod = n` (öğrenilmiş) | `ogrenilmis` |
-| 5 | `len(n)>=6`, kirli seri kaydının **içine gömülü** ve bu oturumda sayılmamış | `seri` |
+| 4b | `fazla_ad.barkod = n` (daha önce fazla yazılıp adlandırılmış) | **`fazla_bilinen`** |
+| 5 | `len(n)>=6`, kirli seri kaydının **içine gömülü** ve o kaydın **kapasitesi kalmış** | `seri` |
 | 6/7 | hiçbiri | `upc` ya da `bilinmiyor` |
 
 `tekrar` = o `beklenen` satırının **kapasitesi bitmiş** (`kapasite_kaldi()`):
@@ -343,7 +361,26 @@ aynı cihazın S/N'i ikinci kez okutulunca 4. adımdan geçip malzemenin bir
 sonraki kirli slotunu dolduruyor ve cihaz iki kez sayılıyordu. Temiz kayıtlarda
 korumayı 1. adım veriyor, kirli kayıtlarda karşılığı yoktu.
 
+**1c'nin ikinci dalı — TÜKENMİŞ ETİKET.** `etiket.beklenen_id` yalnızca
+Tiger'da karşılığı OLAN kayda bağlanınca dolar; fazla yolundan geçen etikette
+NULL kalır ama `etiket.oturum` dolar. O alan okunmadığı sürece aynı DS-
+etiketi ikinci kez okutulduğunda ikinci bir fazla satırı doğuyordu ve hiçbir
+kapı yakalamıyordu (DENETIM_20260904.md K2; canlı sayımda oldu — DS-000054,
+okutma #23 ve #26). Kural **yalnızca DS- etiketine** ait: DM- etiketi ve UPC
+ürün TİPİNİ gösterir, ikinci okutma ikinci adet olabilir. Ölçüt **bu oturum**
+— seneye etiket hâlâ ürünün üstünde ve sayılmalı.
+
+**4b adımı 4'ten SONRA gelmek zorunda.** `fazla_ad` yalnızca boşluğu doldurur,
+kural koymaz: ürün sonradan Tiger'a girilirse (fazla fişi işlendikten sonra)
+1-4 arası adımlar tutar ve 4b hiç çalışmaz. Tiger her zaman kazanır.
+
+`fazla_ad` `eslesme`'den AYRI bir tablodur ve olmak zorundadır: `eslesme`
+barkodu bir Tiger **malzeme koduna** bağlar ve Barkod Tablosu sekmesinden
+Tiger'ın malzeme kartına yazılır. Tiger'da karşılığı olmayan ürünün yazılacak
+bir kodu yok; oraya boş kodla satır atmak Barkod Tablosu'nu kirletirdi.
+
 **`coz()` asla "fazla" döndürmez** — fazla kararı yalnızca `grup_coz()`'da alınır.
+`fazla_bilinen` de bir karar değil, bir TANIMA: kararı yine `grup_coz` veriyor.
 
 ### `grup_coz(c, ot, raf)` — `##SONRAKI##`
 
@@ -514,6 +551,47 @@ süren bir sayımı kapatıyordu — `oturumlar.yeniden_ac()` o kazayı geri al�
   kaydında **tek** okutma satırı yazılır (grup tek üründür, barkod başına satır
   yazılsaydı raporda iki fazla görünürdü) ve malzeme kodu korunur;
   `bilinmiyor` kaydında barkod başına bir satır yazılır.
+* `fazla_ogren(c, okutma_id, ts=None)` — **fazla yolunun öğrenmesi ve etiket
+  bağlaması, tek yerde.** `kuyruk_coz` bunları hep yapıyordu, fazla yazan üç
+  dal (`kuyruk_fazla`, `##FAZLA##`, sonradan ad yazılması) HİÇBİRİNİ
+  yapmıyordu — 2026-08-28 sayımında aynı etiket 47 kez okutulup 47 kez
+  adlandırıldı ve fiziksel olarak yapıştırılmış 79 etiket defterde "boşta"
+  göründü (saha bildirimi S2).
+
+  Ayrımı malzeme kodunun bilinip bilinmemesi yapar:
+
+  | Durum | Nereye |
+  |---|---|
+  | `okutma.kod` dolu | `eslesme` (barkod → Tiger malzeme kodu) |
+  | `okutma.kod` boş, `ad` dolu | `fazla_ad` (barkod → serbest ad) |
+
+  SERİ ve KUTU etiketleri asla öğrenilmez (`etiketler.ogrenilebilir`); DS-
+  etiketi yalnızca deftere işlenir (`malzeme`/`beklenen_id` boş, `oturum`/`raf`
+  dolu). Öğrenilenler `okutma.geri`ye **eklenir** (üzerine yazılmaz — INSERT
+  anındaki `kuyruk` anahtarı korunmalı), yoksa `##GERIAL##` ve Sil geri
+  alamazdı.
+
+  `##FAZLA##` satırı adsız yazıldığı için (arayüz adı hemen sonra soruyor)
+  `PATCH /okutma/{id}` de `ad` gelince bu yardımcıyı bir daha çağırır.
+* `beklenen_adet(b)` — **bu satırda Tiger kaç adet diyor.** `kapasite_kaldi`,
+  `sayaclar`, `ara(sadece_acik)`, `eksik_lotlar` ve `reports.eksik_kayitlar`
+  beşi de buradan geçer; SQL tarafındaki karşılığı `BEKLENEN_ADET`.
+
+  Seri ve lot için TEK ölçüt: `sayılan < beklenen`. Eskiden seri takiplinin
+  ayrı bir dalı vardı ("bir kez okutulur, `miktar`a bakma") ve gerçek veride
+  yanlıştı: `izleme='seri'` olduğu hâlde miktarı 2 ve 4 olan 32 satır var. O
+  satırlarda tek okutma satırı kapatıyor, ikinci cihaz `tekrar` deyip
+  sayılmıyor ve **eksik listesine de girmiyordu**. Seri takiplide en az 1
+  döner — Tiger'dan 0 miktarla gelen satır sayılamaz hâle gelmesin.
+* `_geri_ekle(c, okutma_id, **anahtarlar)` — `okutma.geri`ye **ekler**, üzerine
+  yazmaz. `geri` birden çok adımda büyüyor (kuyruktan doğma → fazla yazılırken
+  etiket/ad → sayım sonu bağlama) ve `fazla_bagla` onu yeniden yazıp önceki
+  anahtarların hepsini düşürüyordu.
+* `_tamponu_geri_yaz(c, oturum, hamlar, bekleyen_adet, ts)` — `grup_coz`
+  HİÇBİR SATIR YAZMADAN döndüyse (`tekrar`, `haric`) tamponu ve `##ADET-N##`
+  değerini geri koyar. Tampon en başta siliniyor; o iki dalda tükenmesi ürünü
+  buharlaştırıyordu — kullanıcı ##FAZLA## diyemiyordu, çünkü tampon boştu
+  (saha bildirimi S4). Yanıtta `tampon_duruyor: True` ile bildirilir.
 * `ara(c, yukleme, ambar, q, limit, offset, oturum, sadece_acik, kirli, izleme, raf)`
   — kod / açıklama / seri araması ve listeleme. `q` boşken de çalışır.
   `{satirlar, toplam}` döner; her satırda `sayildi` ve `ayni_raf` bayrağı.
@@ -757,6 +835,39 @@ devDependency'lerine muhtaç, o yüzden `--omit=dev` bir seçenek değil).
 * `.bat` dosyalarında çıplak ad kullanılmaz: `call "%~dp0kisayol.bat"`.
 * `data/etiket` klasörü silinmez — basılmış fiziksel etiket veritabanından uzun
   ömürlüdür (`CLAUDE.md` §12.7).
+* **`grup_coz` hiçbir satır yazmadan dönüyorsa tamponu TÜKETMEZ.** Kullanıcının
+  elinde hâlâ bir ürün var ve karar verebilmeli.
+* **`eslesme` ya da `fazla_ad` yazan her yol `okutma.geri`yi de doldurur.**
+  Yoksa geri alma yarım kalır ve yanlış ürüne bağlanmış bir barkod gelecek
+  yılın sayımına taşınır.
+* **Sil (`okutma_sil`) kuyruk kaydını yeniden AÇMAZ**, `##GERIAL##` açar. İki
+  ayrı niyet: "bu satır hiç olmasın" ile "kararı geri al".
+* **"Kaç adet sayıldı / kaç adet bekleniyor" sorusunun TEK cevabı vardır:**
+  `beklenen_adet()` ve `SAYILAN_ADET`/`BEKLENEN_ADET`. Seri takipliye ayrı bir
+  dal açmayın — ayrıştıkları anda ekranla rapor iki ayrı gerçek söylüyor.
+* **`okutma.geri` hiçbir zaman ÜZERINE yazılmaz**, `_geri_ekle` ile eklenir.
+* **`etiket.malzeme` ile `eslesme` birlikte yazılır.** Biri motorun tanıması,
+  diğeri defter için; yalnız birini doldurmak aynı malzemeye ikinci bir
+  fiziksel etiket bastırıyordu.
+* **`etiketler.klasor()` bellek veritabanında `None` döner.** Kalıcı olmayan
+  bir veritabanının basılmış etiket defterine dokunacak işi yok — eskiden
+  `data/etiket`e düşüp gerçek defteri eziyordu.
+* **Tiger'a önerilecek seri numarası seçen HER yol aynı elemeleri yapar:**
+  kap kodu ve UPC aday değildir, aday kalmazsa öneri yoktur. Karar iki yerde
+  duruyor (`matching._sn_karar` okutma dalı, `reports._yeni_seri` fazla/kuyruk
+  dalları) ve **ikisi aynı şeyi söylemek zorunda**; `_yeni_seri`'deki tek
+  parçalı kısa devre elemenin üstüne çıktığında B2 geri geldi
+  (DENETIM_20260904.md K1).
+* **Aday `beklenen` satırı arayan sorgular `KAPASITE_VAR` kullanır**, "hiç
+  okutulmamış" değil. `BEKLENEN_ADET` / `SAYILAN_ADET` / `KAPASITE_VAR` üçü de
+  `matching.py`'nin BAŞINDA, tek yerde; `kapasite_kaldi()` bunların Python
+  karşılığıdır.
+* **Kullanıcının AÇIK kararı ortam kipini yener.** `fazla_ad`'a yazılmış bir
+  barkod ("bu ürün Tiger'da yok, adı şu") `##KILIT##` tarafından ezilemez;
+  elle okutulan malzeme kodu ise her ikisini de yener.
+* **Ekranda görünen her sayı tek bir ifadeden gelir.** `oturumlar.gecmis` de
+  `sayaclar` ile aynı SQL'i kullanır — iki ekran aynı oturum için farklı sayı
+  gösteremez (DENETIM_20260904.md Y2).
 
 ---
 
@@ -771,6 +882,41 @@ devDependency'lerine muhtaç, o yüzden `--omit=dev` bir seçenek değil).
   testlerin kendisi kilitlemişti — "tanınmayan üretici barkodu" sabiti olarak
   geçerli bir UPC kullanılıyordu ve `slot` dalının UPC'yi seri numarası diye
   Tiger'a önermesi doğru davranış sanılıyordu.
+* **2026-08-28 gerçek sayımı — 5 saha hatası (S1-S5).** S1/S2/S4/S5 kapatıldı
+  ve `tests/test_saha_20260828.py` ile regresyona bağlandı; `test_silme.py`'deki
+  bir test S5'in ESKİ davranışını doğru sanıp kilitliyordu, sözleşme değişince
+  güncellendi (2026-08-27 dersinin aynısı). **S3 bilinçli olarak açık:** Tiger
+  kayıtlarının hepsi temiz olan bir malzemede (`SR335`, 13 temiz kayıt) `slot`
+  dalı `kirli=1` filtresi yüzünden hiç ateşlemiyor ve her cihaz `fazla_onay`
+  kuyruğuna düşüyor — kullanıcı her adet için Tiger'dan seçmek zorunda.
+  Düzeltmek CLAUDE.md §4.4'ün "sistem tahmin yürütmez" kuralına dokunuyor,
+  karar kullanıcıya bırakıldı.
+* **2026-09-02 bağımsız kod denetimi — 5 hata (D1-D5).** Dokümanlara
+  güvenmeden yapılan tarama; **476 test geçerken** bulundu, üçü sessiz yanlış
+  sayım üretiyordu. Hepsi kapatıldı, `tests/test_denetim_20260902.py`.
+  Ayrıntı ve gerekçeler `SAHA_TESTI.md` > "Bağımsız kod denetimi".
+
+  Kalıcı ders öncekinden farklı: 2026-08-27 denetiminde hatalar testlerin
+  kilitlediği yanlış sabitlerden çıkmıştı, burada **hepsi `CLAUDE.md`'de yazılı
+  bir varsayımdan** çıktı. D1 doğrudan §2.4'ün "seri satırında miktar hep 1"
+  cümlesinden doğdu ve o cümle gerçek Tiger verisinde yanlıştı (32 karşı
+  örnek). Alan bilgisi de kod kadar denetlenmeli.
+* **2026-09-04 bağımsız kod denetimi — 11 hata (K1-K3, Y1-Y5, O1-O5 + basılı
+  kart).** **478 test geçerken** bulundu; üçü sessiz yanlış sayım üretiyordu ve
+  ikisi canlı veride gerçekleşmişti. Hepsi kapatıldı,
+  `tests/test_denetim_20260904.py` (+ K1 `test_b1_barkod.py`'de).
+  Ayrıntı `DENETIM_20260904.md`.
+
+  Kalıcı ders üçüncü bir tür: hatalar ne yanlış sabitten (2026-08-27) ne
+  yanlış alan bilgisinden (2026-09-02), **düzeltmenin YARIM UYGULANMASINDAN**
+  çıktı. B2 `_sn_karar`'a kondu ama `_yeni_seri`'ye konmadı; B4 `sayaclar`'a
+  kondu ama `gecmis`'e konmadı; D1 `kapasite_kaldi`'ya kondu ama aday arayan
+  iki sorguya konmadı. Bir kuralı düzeltirken **o kuralı kullanan bütün
+  çağrı yerlerini** arayın; tek yol, kuralı tek bir sabite indirmek.
+
+  S2'nin düzeltmesi ayrıca YENİ bir sessiz çift sayım açtı (K2): fazla yolunda
+  etiketi deftere işlemek doğruydu, ama `coz()` o yeni bilgiyi okumuyordu.
+  Bir alanı doldurmak, onu okuyan tarafı da gözden geçirmeyi gerektirir.
 * **Arayüz testleri yeni ve dar** (8.295 satır TS/TSX, 32 test). Kapsanan:
   şerit rengi/metni, liste süzme, telefon not sözleşmesi — yani "yanlış bilgi
   gösterme" sınıfı. **Kapsanmayan:** okutma sırası (`gonder` kuyruğu; şu an

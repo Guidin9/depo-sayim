@@ -201,10 +201,16 @@ body {
    input BURAYA SONRADAN eklendi: kural yalnızca button/select/[role=button]
    kapsıyordu ve py-2 / py-2.5 ile yazılmış girdiler 48px'in altında kalıyordu
    (Esleme.tsx:198,272 · Sayim.tsx:513). Yeni bir kural değil, var olan bir
-   ihlalin kapatılması. */
+   ihlalin kapatılması.
+
+   textarea de aynı sebeple eklendi (2026-09-04): telefondaki kuyruk notu bir
+   textarea ve kuralın dışında kalıyordu. `a[download]` düğme gibi çizilen tek
+   bağlantı türü — `IndirBaglantisi` yüksekliğini kendi veriyor, burada
+   genel bir `a` kuralı yok (satır içi metin bağlantılarını bozardı). */
 button,
 select,
 input,
+textarea,
 [role="button"] {
   min-height: 48px;
 }

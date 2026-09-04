@@ -227,12 +227,48 @@ def test_eski_kayitlar_hala_raporlanir(c, ot, yaz):
     """`yeni_seri` sütunu eklenmeden yazılmış satırlarda eski kural sürer.
 
     Göç sütunu NULL bırakır; o satırlarda `ham` hâlâ tek değerdi.
+
+    SABİT OLARAK `SERI` KULLANILIYOR, `UPC` DEĞİL. Bu test bir dönem UPC ile
+    yazılmıştı ve "eski kayıt raporlanır" derken aslında "UPC seri numarası
+    diye önerilir"i doğru davranış sanıp kilitliyordu — `test_5_kirli_slot_doldurma`
+    ve `conftest.haric_kur` derslerinin üçüncüsü (CLAUDE.md 7). Testin niyeti
+    göç davranışı; UPC'nin elenip elenmediği aşağıdaki testin işi.
     """
     kod = _kirli_malzeme(c)
-    yaz(kod, UPC, SONRAKI)
+    yaz(kod, SERI, SONRAKI)
+    c.execute("UPDATE okutma SET yeni_seri=NULL, ham=? WHERE oturum=?", (SERI, ot["id"]))
+    duz = _satirlar(reports.rapor_verisi(c, ot["id"]), "Tiger Düzeltme")
+    assert [s[3] for s in duz] == [SERI]
+
+
+def test_eski_kayitta_tek_basina_upc_onerilmez(c, ot, yaz):
+    """Regresyon — DENETIM_20260904.md K1 (B2'nin geri gelişi).
+
+    `reports._yeni_seri` UPC elemesini yalnızca ÇOK PARÇALI girdide yapıyordu;
+    tek parçalı kısa devre elemenin üstündeydi. Sonuç: `_fazla_seri` malzeme
+    kodunu eledikten sonra elinde yalnızca UPC kalan her grupta perakende
+    barkodunu Tiger'a seri numarası diye yazdırıyordu.
+
+    Perakende barkodu o malzemenin HER ADEDİNDE aynıdır; 21 cihaza aynı
+    "tekil" numarayı vermek uygulamanın temizlemeye çalıştığı kirliliğin ta
+    kendisidir. Aday kalmazsa öneri YOKTUR — satır Tiger Düzeltme'ye girmez,
+    sayım yine işlenir (`sn_yok` sözleşmesi).
+    """
+    kod = _kirli_malzeme(c)
+    yaz(kod, SERI, SONRAKI)
     c.execute("UPDATE okutma SET yeni_seri=NULL, ham=? WHERE oturum=?", (UPC, ot["id"]))
     duz = _satirlar(reports.rapor_verisi(c, ot["id"]), "Tiger Düzeltme")
-    assert [s[3] for s in duz] == [UPC]
+    assert duz == [], "UPC Tiger'a seri numarası olarak önerildi"
+
+
+def test_yeni_seri_upc_elemesi_tek_parcada_da_calisir(c):
+    """`_yeni_seri` / `_fazla_seri` sözleşmesi — K1'in birim testi."""
+    assert reports._yeni_seri(UPC) == ""
+    assert reports._yeni_seri("%s + %s" % (SERI, UPC)) == SERI
+    # Malzeme kodu elendikten sonra geriye yalnızca UPC kalan grup: fazla
+    # kaydı da, kuyruktan çözülen kayıt da bu yoldan geçiyor.
+    assert matching._fazla_seri(["0WGP72", UPC], "0WGP72") == ""
+    assert matching._fazla_seri(["0WGP72", UPC, SERI], "0WGP72") == SERI
 
 
 # ------------------------------------------------- B3: aynı S/N ikinci kez

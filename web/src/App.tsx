@@ -5,7 +5,7 @@
  * localStorage yalnızca "bu cihaz okuyucu mu, uzaktan ekran mı" tercihini tutar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Durum } from "./api";
+import { ApiHatasi, api, type Durum } from "./api";
 import { Dugme, Marka, Uyari } from "./bilesenler";
 import Ayarlar from "./ekranlar/Ayarlar";
 import Esleme from "./ekranlar/Esleme";
@@ -92,14 +92,36 @@ export default function App() {
     setEkran("sayim");
   }
 
+  /* `/bitir` DÖRT ayrı kapıdan 409 dönüyor ve ikisi aşılabilir, ikisi değil.
+     Ayrım sunucunun `detail` sözlüğünün ANAHTARINDAN yapılır, mesaj metninden
+     DEĞİL: burası bir dönem `mesaj.includes("çözülmemiş")` diyordu ve yumuşak
+     uyarı kapısının mesajı ("Bitirmeden önce bakın: …") o kelimeyi
+     içermiyordu — Rapor ekranındaki "Sayımı bitir" düğmesi çıkmaz sokak
+     oluyordu (DENETIM_20260904.md Y3). Ambar 1'de 69 lot satırı var, yani
+     sayım sonunda o kapıya kesinlikle takılınıyor.
+
+     AŞILABİLİR: kuyruk (kullanıcı bilerek erteleyebilir) ve yumuşak uyarılar
+     (eksik lot / seçilmemiş seri no — sayımın kendisi doğru, eksik olan bilgi).
+     AŞILAMAZ: adsız ve fotoğrafsız fazla — o satır raporda kullanılamaz, geriye
+     yalnızca seri numarası ve raf kalır. Onlarda düzeltilecek ekran söylenir. */
   async function oturumBitir(zorla = false) {
     if (!durum) return;
     try {
       await api.bitir(durum.oturum, zorla);
       setDurum(await api.durum(durum.oturum));
+      setHata(null);
     } catch (e) {
       const mesaj = e instanceof Error ? e.message : String(e);
-      if (mesaj.includes("çözülmemiş") && confirm(`${mesaj}\n\nYine de bitirilsin mi?`)) {
+      const d = e instanceof ApiHatasi ? (e.detay ?? {}) : {};
+      if (d.adsiz || d.fotosuz) {
+        setHata(
+          `${mesaj} Eşleştirme ekranından bu kayıtların ne olduğunu yazın; ` +
+            "kodu ya da adı olmayan fazla satırı raporda bulunamaz.",
+        );
+        return;
+      }
+      const asilabilir = !!(d.kuyruk || d.eksik_lot || d.sn_secilmemis);
+      if (asilabilir && confirm(`${mesaj}\n\nYine de bitirilsin mi?`)) {
         await oturumBitir(true);
         return;
       }

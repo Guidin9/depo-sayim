@@ -24,3 +24,7 @@ deneme.XLSX
 *.xlsx
 *.xls
 *.xlsm
+
+# Bu projeye ait DEGIL: baska projelere kopyalanmak icin yazilmis tasinabilir
+# arayuz yontemi. Diskte duruyor, deponun gecmisine girmiyor (2026-09-04 karari).
+TASARIM.md

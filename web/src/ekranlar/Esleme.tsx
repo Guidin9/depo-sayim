@@ -194,6 +194,16 @@ export default function Esleme({
                       <div className="flex flex-wrap items-baseline gap-2">
                         <b className="font-mono text-govde break-all">{f.ham}</b>
                         {f.kod && <span className="text-kucuk text-vurgu">{f.kod}</span>}
+                        {/* Adet 1 değilse GÖRÜNMEK ZORUNDA: 150 adetlik bir
+                            kaydı tek cihazlık bir satıra bağlamaya çalışmak
+                            sunucudan red alır ve kullanıcı sebebini ancak
+                            adedi görürse anlar. */}
+                        {f.miktar > 1 && (
+                          <span className="rakam bg-uyari-tint text-uyari border-uyari
+                            rounded-sm border px-1.5 text-mikro font-bold">
+                            {f.miktar} adet
+                          </span>
+                        )}
                       </div>
                       <div className="mt-1 text-mikro text-solgun">
                         {f.ad && <span className="text-yazi">{f.ad} · </span>}
