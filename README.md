@@ -200,9 +200,10 @@ Yazdırılabilir kart: `POST /api/komut-karti` gövdesinde `{"raflar":["A1","B2"
 
 ---
 
-> **Sahada ne yapılacak?** `SAHA_TESTI.md` — tek liste. Kodda bilinen açık
-> hata yok; yazılanların hiçbiri gerçek okuyucu, yazıcı ve telefonla
-> denenmedi, sıradaki iş bu.
+> **Sahada ne yapılacak?** `SAHA_TESTI.md` — tek liste (iç doküman, depoya
+> girmez; yalnızca geliştirme makinesinde durur). Kodda bilinen açık hata yok;
+> yazılanların hiçbiri gerçek okuyucu, yazıcı ve telefonla denenmedi, sıradaki
+> iş bu.
 
 ## Basılan her şey: Barkod ekranı
 

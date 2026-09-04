@@ -25,6 +25,15 @@ deneme.XLSX
 *.xls
 *.xlsm
 
-# Bu projeye ait DEGIL: baska projelere kopyalanmak icin yazilmis tasinabilir
-# arayuz yontemi. Diskte duruyor, deponun gecmisine girmiyor (2026-09-04 karari).
+# Ic dokumanlar: diskte duruyor, deponun gecmisine girmiyor (2026-09-04 karari).
+# Depoda yalnizca CLAUDE.md ve README.md kalir. TASARIM.md zaten bu projeye ait
+# degil - baska projelere kopyalanmak icin yazilmis tasinabilir arayuz yontemi.
+ACIL_PLAN.md
+DEMO_FEEDBACK.md
+DENETIM_20260904.md
+KUTU_TASARIM.md
+MIMARI.md
+PROMPT.md
+SAHA_TESTI.md
 TASARIM.md
+depo_sayim_bugs_improvements.md
